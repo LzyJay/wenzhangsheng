@@ -1,0 +1,1735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' file: blob:; connect-src 'self' ws: wss:" />
+  <title>问长生</title>
+  <style>
+    /* ═══════════ 主题变量（阶段三可整包替换为皮肤） ═══════════ */
+    :root {
+      /* ── 颜色语义表：一套颜色 = 一个含义。新增颜色前先看这张表，别凭手感配色 ──
+         · 鎏金 gold / gold-light …… 修为 · 灵石 · 修行主序
+                                       （修为数值 / 每秒产出 / 进度条 / 突破按钮 / 灵石图标）
+         · 灵玉 jade ………………… 寿元 · 生机 · 增益
+                                       （寿元数值 / 寿命条 / 增益开关 / 破境续命飘字）
+         · 灵紫 violet ……………… 灵根
+                                       （灵根徽记 / 灵根加成数值 / 洗髓相关）
+         · 劫红 fail ………………… 劫难 · 失败 · 危险
+                                       （渡劫关口 / 失败飘字 / 重置类按钮）
+         · 警示 warn ………………… 减益与阈值告急
+                                       （道伤 / 寿元 <20% / 产出下降）
+         · 青蓝 sys ………………… 系统消息（非修行、非劫难）
+         · 灰 ash / text-dim …… 次要说明与占位
+         规则：同一个量（如"修为"）在数值、速率、图形、飘字、日志里必须同族配色。 */
+      /* ── 实色槽位（被 color / border-color / gradient 直接消费）──
+         3.4 起：每个槽位都有一份 `--<名>`（实色）与一份 `--<名>-rgb`（r,g,b 三元组，
+         供 `rgba(var(--<名>-rgb), a)` 形态使用）。**两处的真源都在 `src/data/themes.js`**，
+         切换皮肤时由装配层 applySkin() 整包覆写；此处只是「默认鎏金」的静态兜底
+         （保证首帧不闪白、也保证 DevTools 里能直接读到可读色值）。改色请改 themes.js。 */
+      --gold: #e8b96a;
+      --gold-light: #ffe3a8;
+      --gold-deep: rgb(201, 143, 60);
+      --gold-pale: rgb(240, 220, 180);
+      --jade: #7fd6a8;
+      --jade-deep: rgb(79, 158, 119);
+      --jade-light: rgb(191, 235, 212);
+      --violet: #b98cff;
+      --violet-light: rgb(220, 201, 255);
+      --ash: #b9b3a8;
+      --fail: #ff8f7d;
+      --fail-light: rgb(255, 185, 166);
+      --warn: #ffae8c;
+      --warn-light: rgb(255, 215, 196);
+      --warn-deep: rgb(176, 85, 63);
+      --sys: #9fd6ff;
+      --world: rgb(159, 182, 255);
+      --world-light: rgb(207, 224, 255);
+      --dim: rgb(143, 135, 124);
+      --dim-deep: rgb(127, 122, 115);
+      --dim-light: rgb(207, 199, 186);
+      --text: #efe9dd;
+      --text-dim: rgb(164, 156, 146);
+      --plate: rgba(18, 15, 24, 0.66);
+      --plate-line: rgba(var(--gold-rgb), 0.20);
+      /* ── 三元组槽位（只以 rgba(var(--x-rgb), a) 形态出现）── */
+      --gold-rgb: 232, 185, 106;
+      --gold-light-rgb: 255, 227, 168;
+      --gold-deep-rgb: 201, 143, 60;
+      --gold-pale-rgb: 240, 220, 180;
+      --jade-rgb: 127, 214, 168;
+      --jade-deep-rgb: 79, 158, 119;
+      --jade-light-rgb: 191, 235, 212;
+      --violet-rgb: 185, 140, 255;
+      --violet-light-rgb: 220, 201, 255;
+      --ash-rgb: 185, 179, 168;
+      --ash-deep-rgb: 150, 145, 140;
+      --fail-rgb: 255, 143, 125;
+      --fail-light-rgb: 255, 185, 166;
+      --fail-deep-rgb: 255, 120, 90;
+      --warn-rgb: 255, 174, 140;
+      --warn-light-rgb: 255, 215, 196;
+      --warn-deep-rgb: 176, 85, 63;
+      --sys-rgb: 159, 214, 255;
+      --world-rgb: 159, 182, 255;
+      --world-light-rgb: 207, 224, 255;
+      --dim-rgb: 143, 135, 124;
+      --dim-deep-rgb: 127, 122, 115;
+      --dim-light-rgb: 207, 199, 186;
+      --text-rgb: 239, 233, 221;
+      --text-dim-rgb: 164, 156, 146;
+      /* 暗底族：面板 / 浮层 / 卡片 / 遮罩渐变两端（皮肤切换时一并换掉，玄墨与月白才立得住） */
+      --bg-blue-rgb: 18, 15, 24;
+      --bg-tip-rgb: 20, 16, 27;
+      --bg-chip-rgb: 24, 19, 30;
+      --bg-veil-hi-rgb: 30, 24, 44;
+      --bg-veil-lo-rgb: 10, 8, 14;
+      --bg-sunken-rgb: 38, 34, 46;
+      --bg-deep-rgb: 8, 6, 12;
+      --bg-card-rgb: 34, 28, 38;
+      --bg-float-rgb: 28, 22, 34;
+      --bg-card-warm-rgb: 34, 27, 15;
+      --bg-world-rgb: 24, 28, 44;
+      --bg-danger-rgb: 46, 24, 26;
+      --serif: "KaiTi", "STKaiti", "Microsoft YaHei", serif;
+      --sans: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      overflow: hidden;
+      background: transparent;      /* 窗口透明：整页背景必须为空 */
+    }
+
+    body {
+      font-family: var(--sans);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      cursor: default;
+    }
+
+    /* ═══════════ 层 1：Phaser 画布（透明，铺满窗口） ═══════════ */
+    #game { position: absolute; inset: 0; z-index: 0; }
+    #game canvas { display: block; }
+
+    /* ═══════════ 层 2：DOM 面板（浮于画布之上） ═══════════ */
+    #ui {
+      position: absolute; inset: 0; z-index: 1;
+      display: flex; flex-direction: column;
+      padding: 6px;                  /* V2 立绘 UI：紧凑化腾出中部（设计稿落地规格） */
+      pointer-events: none;          /* 默认穿透到画布/桌面 */
+    }
+    .hit { pointer-events: auto; }
+
+    /* 半透明面板：只在有内容处压暗，中间留给桌面与人形 */
+    .plate {
+      background: var(--plate);
+      border: 1px solid var(--plate-line);
+      border-radius: 10px;
+      backdrop-filter: blur(7px);
+    }
+
+    /* ── 顶部：境界 / 灵根 / 灵石 / 修为 / 进度条 ── */
+    #top-panel { padding: 4px 8px 4px; }
+
+    #topbar {
+      position: relative;            /* 穿透热区的定位父级 */
+      display: flex; align-items: center; gap: 3px;
+      height: 18px;
+      overflow: hidden;              /* 顶栏不许溢出（窗口只有 420 宽，按钮多） */
+      -webkit-app-region: drag;      /* 无边框窗口：此栏可拖动窗口 */
+      pointer-events: auto;
+    }
+    #topbar > * { min-width: 0; }
+    #realm-name {
+      font-family: var(--serif);
+      font-size: 14px; font-weight: 700;
+      color: var(--gold-light);
+      letter-spacing: 1px;
+      text-shadow: 0 0 10px rgba(var(--gold-rgb), 0.45);
+      white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    .spacer { flex: 1; }
+
+    /* 灵根 / 世界徽记：常驻显示（未测也显示），点一下在浮层里看详情 */
+    #root-chip, #world-chip {
+      display: inline-flex;
+      align-items: center; gap: 3px;
+      flex: none;
+      font-size: 10.5px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid currentColor;
+      white-space: nowrap;
+      color: var(--ash);
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
+    }
+
+    .stone-wrap { display: flex; align-items: center; gap: 4px; flex: none; font-size: 11px; color: var(--text-dim); }
+    #stone-text { color: var(--gold-light); font-variant-numeric: tabular-nums; }
+
+    #btn-hide {
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
+      flex: none;
+      width: 18px; height: 18px; line-height: 16px;
+      border-radius: 50%;
+      border: 1px solid rgba(var(--gold-rgb), 0.35);
+      background: rgba(var(--gold-rgb), 0.10);
+      color: var(--gold-light);
+      font-size: 12px; cursor: pointer;
+    }
+    #btn-hide:hover { background: rgba(var(--gold-rgb), 0.30); }
+
+    #qi-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-top: 2px;
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    /* 修为 = 鎏金族：数值 / 速率 / 下方进度条三者同族（此前速率是绿色，与金色条割裂） */
+    #qi-text { color: var(--gold-light); }
+    #qi-rate { font-size: 10.5px; color: var(--gold); font-variant-numeric: tabular-nums; }
+    #qi-rate.low { color: var(--warn); }          /* 道伤等减益时转为警示色 */
+
+    /* 寿元行：文字在最左，条紧随其后（条本身不再可交互——文字已经能点开明细） */
+    #life-row {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-top: 3px;
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    /* 「破境回满」小字提示已按主人要求移除（点余寿文字即可看完整解释） */
+    /* 灵石在寿元条右下角、战力在左下角（主人 2026-09-18：左右对称） */
+    #stone-row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 2px; }
+    #stone-row .stone-wrap, #stone-row .power-wrap { font-size: 10.5px; font-variant-numeric: tabular-nums; }
+    .stone-key, .power-key { color: var(--text-dim); }
+    /* 战力数字：劫红（主人 2026-09-19 指定颜色） */
+    #power-text { color: var(--fail); }
+
+    /* ── 可交互数值 / 图标：悬停高亮，点击展开明细（统一由 #tip 承载）── */
+    .ix {
+      pointer-events: auto;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    }
+    /* 顶栏整条是拖拽区：里面的可交互元素必须退出拖拽，否则点不动 */
+    #topbar .ix { -webkit-app-region: no-drag; }
+    .ix:hover {
+      background: rgba(var(--gold-rgb), 0.14);
+      box-shadow: 0 0 0 2px rgba(var(--gold-rgb), 0.10);
+    }
+    .ix.ix-open { background: rgba(var(--gold-rgb), 0.20); }
+
+    /* 明细浮层（跟随被点元素出现；Esc 或点空白关闭） */
+    #tip {
+      -webkit-app-region: no-drag;
+      position: absolute; z-index: 9; display: none;
+      max-width: 268px; min-width: 150px;
+      padding: 7px 9px;
+      border-radius: 8px;
+      background: rgba(var(--bg-tip-rgb), 0.97);
+      border: 1px solid rgba(var(--gold-rgb), 0.42);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+      font-size: 10.5px; line-height: 1.62;
+      color: #ded7c9;
+      pointer-events: none;
+    }
+    #tip.show { display: block; }
+    #tip .t-h {
+      display: block; margin-bottom: 3px;
+      font-family: var(--serif);
+      font-size: 12px; letter-spacing: 1px;
+      color: var(--gold-light);
+    }
+    #tip .t-r { display: flex; justify-content: space-between; gap: 10px; }
+    #tip .t-r .k { color: #9b948a; white-space: nowrap; }
+    #tip .t-r .v { color: var(--text); font-variant-numeric: tabular-nums; text-align: right; }
+    #tip .t-r .v.gold { color: var(--gold-light); }
+    #tip .t-r .v.jade { color: var(--jade); }
+    #tip .t-r .v.violet { color: var(--violet); }
+    #tip .t-r .v.fail { color: var(--fail); }
+    /* V3.5.1 灵根浮层三栏行：灵根 ｜ 修炼速度 ｜ 概率 */
+    #tip .t-r3 { display: flex; align-items: baseline; gap: 8px; }
+    #tip .t-r3 .k { color: #9b948a; flex: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #tip .t-r3 .m { color: var(--text); font-variant-numeric: tabular-nums; flex: 0.9; text-align: right; }
+    #tip .t-r3 .v { color: var(--text); font-variant-numeric: tabular-nums; flex: 0.9; text-align: right; }
+    #tip .t-r3 .v.gold { color: var(--gold-light); }
+    #tip .t-r3 .v.violet { color: var(--violet); }
+    #tip .t-note {
+      display: block; margin-top: 4px; padding-top: 4px;
+      border-top: 1px solid rgba(var(--gold-rgb), 0.16);
+      font-size: 9.5px; line-height: 1.55; color: var(--dim);
+    }
+    /* 带动作的浮层（如灵根的「测灵根 / 洗髓」）：需要能点，所以解除穿透 */
+    #tip.tip-act { pointer-events: auto; cursor: default; }
+    #tip .t-act { display: flex; gap: 6px; margin-top: 8px; }
+    #tip .t-act button {
+      flex: 1; height: 24px; border-radius: 6px;
+      border: 1px solid rgba(var(--gold-rgb), 0.5);
+      background: rgba(var(--gold-rgb), 0.16);
+      color: var(--gold-light);
+      font-family: var(--sans); font-size: 11px; letter-spacing: 1px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    #tip .t-act button:hover:not(:disabled) { background: rgba(var(--gold-rgb), 0.34); }
+    #tip .t-act button.violet {
+      border-color: rgba(var(--violet-rgb), 0.55);
+      background: rgba(var(--violet-rgb), 0.18);
+      color: var(--violet-light);
+    }
+    #tip .t-act button.violet:hover:not(:disabled) { background: rgba(var(--violet-rgb), 0.34); }
+    #tip .t-act button:disabled {
+      color: #8d867c; border-color: rgba(var(--ash-deep-rgb), 0.25);
+      background: rgba(var(--bg-sunken-rgb), 0.55); cursor: default;
+    }
+
+    /* 顶栏图标按钮（穿透 / 锁定 / 置顶 / 设置）—— 只放"设置类"，状态类在左侧 */
+    .ico-btn {
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
+      width: 16px; height: 16px; line-height: 14px;
+      flex: none;
+      border-radius: 50%;
+      border: 1px solid rgba(var(--gold-rgb), 0.28);
+      background: rgba(var(--gold-rgb), 0.07);
+      color: var(--text-dim);
+      font-family: var(--sans);
+      font-size: 9.5px; cursor: pointer;
+      padding: 0;
+      transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+    }
+    .ico-btn:hover { color: var(--gold-light); background: rgba(var(--gold-rgb), 0.24); }
+    .ico-btn.on {
+      color: var(--gold-light);
+      border-color: rgba(var(--gold-rgb), 0.65);
+      background: rgba(var(--gold-rgb), 0.28);
+    }
+    .ico-btn.jade.on {
+      color: var(--jade-light);
+      border-color: rgba(var(--jade-rgb), 0.55);
+      background: rgba(var(--jade-rgb), 0.20);
+    }
+
+    /* 快捷条：贴在突破按钮的**上方**（不盖住按钮），文字标签而非圆点 */
+    /* 2026-09-19：新增「成就」键后共 10 键 → 收紧内边距；窄窗放不下时自动折行（向上生长） */
+    #quick-row {
+      position: absolute; right: 0; bottom: 4px;
+      display: flex; flex-wrap: wrap; justify-content: flex-end;
+      gap: 4px; row-gap: 3px;
+      max-width: 100%;
+      -webkit-app-region: no-drag;   /* 挂在拖拽区 #mid 内，必须免拖拽才点得动 */
+    }
+    .q-pill {
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
+      height: 18px; padding: 0 6px;
+      border-radius: 9px;
+      border: 1px solid rgba(var(--gold-rgb), 0.42);
+      background: rgba(var(--bg-chip-rgb), 0.92);
+      color: var(--gold-light);
+      font-family: var(--sans);
+      font-size: 10px; letter-spacing: 1px;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.42);
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .q-pill:hover { background: rgba(var(--gold-rgb), 0.30); }
+    .q-pill.on { background: rgba(var(--gold-rgb), 0.30); border-color: rgba(var(--gold-rgb), 0.85); }
+
+    /* ═══════════ 层 5b：内容遮罩（背包 / 功法 / 丹房 … 共用同一套骨架） ═══════════
+       位置由装配层 syncOverlayZone() 按修行日志面板的实际矩形写入 --ov-* 变量，
+       于是遮罩"只盖住修行日志那一块"：上方的境界 / 修为 / 立绘 / 突破按钮 / 快捷条
+       不被遮盖，仍可点、仍可见（主人 2026-09-17 要求）。 */
+    .ov {
+      -webkit-app-region: no-drag;
+      position: absolute; z-index: 6;
+      left: var(--ov-left, 5px);
+      top: var(--ov-top, 5px);
+      right: var(--ov-right, 5px);
+      bottom: var(--ov-bottom, 5px);
+      display: none; flex-direction: column;
+      border-radius: 10px;
+      background: radial-gradient(circle at 50% 0%, rgba(var(--bg-veil-hi-rgb), 0.94), rgba(var(--bg-veil-lo-rgb), 0.97));
+      border: 1px solid rgba(var(--gold-rgb), 0.26);
+      backdrop-filter: blur(9px);
+      pointer-events: auto;
+      overflow: hidden;
+    }
+    .ov.show { display: flex; }
+    .ov-head {
+      display: flex; align-items: center; gap: 6px;
+      padding: 8px 9px 6px;
+      border-bottom: 1px solid rgba(var(--gold-rgb), 0.14);
+    }
+    .ov-title {
+      font-family: var(--serif);
+      font-size: 13px; letter-spacing: 3px;
+      color: var(--gold-light);
+    }
+    .ov-head .spacer { flex: 1; }
+    .ov-body { flex: 1; overflow-y: auto; padding: 9px 10px 12px; }
+    .ov-body::-webkit-scrollbar { width: 4px; }
+    .ov-body::-webkit-scrollbar-thumb { background: rgba(var(--gold-rgb), 0.25); border-radius: 2px; }
+    .ov-close {
+      width: 18px; height: 18px; line-height: 16px;
+      border-radius: 50%;
+      border: 1px solid rgba(var(--gold-rgb), 0.35);
+      background: rgba(var(--gold-rgb), 0.10);
+      color: var(--gold-light); font-size: 12px; cursor: pointer;
+    }
+    .ov-close:hover { background: rgba(var(--gold-rgb), 0.30); }
+
+    /* ── 3.4 面板转场（设计稿「动效纪律」：状态切换 ≤150ms）──
+       开：淡入 + 上浮 6px（160ms 缓出）。**不加 fill-mode**——动画结束后属性回到自然值
+       （opacity 1 / 无 transform），避免 transform 常驻把 .ov 变成固定定位的包含块。
+       关：**立即摘 .show**（syncDragRegions() 靠 .ov.show 判拖拽区，不能等动画），
+       反向淡出挂在 .closing 上；.closing 自带 display:flex 且 pointer-events:none，
+       所以关掉的这一百多毫秒里既看得见收场、又绝不会吞掉点击。 */
+    .ov.show { animation: ov-in 160ms cubic-bezier(0.16, 0.84, 0.44, 1); }
+    .ov.closing {
+      display: flex;
+      pointer-events: none;
+      animation: ov-out 130ms ease-in forwards;
+    }
+    @keyframes ov-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes ov-out {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(6px); }
+    }
+
+    /* ── 3.4 按钮 / 开关按压反馈：下沉 1px + 缩放 0.96 + 亮度降低（90ms 内完成）──
+       只给「可按」的控件；:disabled 与静态档（html.motion-static）下由上面的归零块统一吃掉。 */
+    .ico-btn:active:not(:disabled),
+    .q-pill:active:not(:disabled),
+    .toggle:active:not(:disabled),
+    .mini:active:not(:disabled),
+    .d-btn:active:not(:disabled),
+    .ov-close:active,
+    .tab:active {
+      transform: translateY(1px) scale(0.96);
+      filter: brightness(0.86);
+      transition-duration: 90ms;
+    }
+
+    /* ── 功法面板专用 ── */
+    .tech-sec {
+      margin: 2px 0 6px;
+      font-size: 10.5px; letter-spacing: 1px;
+      color: var(--text-dim);
+    }
+    .slot {
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 8px; margin-bottom: 5px;
+      border-radius: 8px;
+      border: 1px solid rgba(var(--gold-rgb), 0.16);
+      background: rgba(0, 0, 0, 0.22);
+      font-size: 11px;
+    }
+    .slot .sk { color: var(--text-dim); font-size: 10px; min-width: 28px; flex: none; }
+    .slot .sn { font-family: var(--serif); font-size: 12px; flex: none; }
+    .slot .sl { color: var(--gold); font-size: 10.5px; flex: none; font-variant-numeric: tabular-nums; }
+    .slot .sp { flex: 1; font-size: 10px; color: var(--dim); }
+    .slot.empty { border-style: dashed; border-color: rgba(var(--ash-deep-rgb), 0.22); }
+    .tech-row {
+      display: flex; align-items: center; gap: 7px;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 11px;
+    }
+    .tech-row .tn { font-size: 11.5px; min-width: 76px; }
+    .tech-row .tg { font-size: 9.5px; color: var(--dim); min-width: 62px; }
+    .tech-row .tl { color: var(--gold); font-size: 10.5px; min-width: 30px; font-variant-numeric: tabular-nums; }
+    .tech-row .tp { color: var(--jade); font-size: 10.5px; min-width: 44px; font-variant-numeric: tabular-nums; }
+    .tech-row .ta { flex: 1; font-size: 9.5px; color: var(--dim-deep); }
+    .tech-row.locked { opacity: 0.55; }
+    .tech-row.locked .tn { color: var(--ash); }
+
+    /* ── 事件簿（2.3）：待抉择卡片 / 自动策略 / 近事录 ── */
+    #event-luck { font-size: 10px; color: var(--gold); font-variant-numeric: tabular-nums; }
+    .ev-strat {
+      display: flex; align-items: center; gap: 5px;
+      padding: 4px 10px 0;
+      font-size: 10px; color: var(--text-dim);
+    }
+    /* author 的 display:flex 会盖掉 [hidden]，这里显式让 hidden 生效（页签切换靠它） */
+    .ev-strat[hidden] { display: none; }
+    .strat-pill {
+      padding: 2px 8px;
+      border-radius: 9px;
+      border: 1px solid rgba(var(--gold-rgb), 0.30);
+      background: rgba(var(--gold-rgb), 0.08);
+      color: var(--gold);
+      font-family: var(--sans);
+      font-size: 10px; letter-spacing: 1px;
+      cursor: pointer; white-space: nowrap;
+    }
+    .strat-pill:hover { background: rgba(var(--gold-rgb), 0.24); }
+    .strat-pill.on { background: rgba(var(--gold-rgb), 0.30); border-color: rgba(var(--gold-rgb), 0.85); color: var(--gold-light); }
+    .evt-card {
+      border: 1px solid rgba(var(--gold-rgb), 0.20);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.22);
+      padding: 6px 8px; margin-bottom: 6px;
+      font-size: 11px;
+    }
+    .evt-card.sig { border-color: rgba(var(--sys-rgb), 0.45); }
+    .evt-card .en { font-family: var(--serif); font-size: 12px; }
+    .evt-card .eq { font-size: 9.5px; margin-left: 5px; }
+    .evt-card .ec { font-size: 9.5px; color: var(--dim); margin-left: 4px; }
+    .evt-card .ed { color: var(--dim); font-size: 10px; margin: 2px 0 5px; }
+    .evt-opts { display: flex; gap: 5px; flex-wrap: wrap; }
+    .evt-opts .mini.poor { opacity: 0.5; }
+    .book-row {
+      display: flex; align-items: baseline; gap: 6px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 10.5px;
+    }
+    .book-row .bt { color: var(--dim-deep); font-size: 9px; flex: none; font-variant-numeric: tabular-nums; }
+    .book-row .bn { font-family: var(--serif); flex: none; }
+    .book-row .bx { flex: 1; color: #a89f92; }
+    .book-row.bad .bx { color: var(--warn); }
+    /* 未读角标：快捷条「纪事」键 + 面板内「事件」页签共用（原 #btn-event 的角标，已并册） */
+    #btn-chronicle, .bag-tab { position: relative; }
+    #btn-chronicle .dot, .bag-tab .dot {
+      display: none;
+      position: absolute; top: -2px; right: -2px;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--gold-light);
+      box-shadow: 0 0 5px rgba(var(--gold-light-rgb), 0.9);
+    }
+    #btn-chronicle.attn .dot, .bag-tab.attn .dot { display: block; }
+    #btn-chronicle.attn { border-color: rgba(var(--gold-light-rgb), 0.85); }
+
+    /* 鼠标穿透热区（穿透生效时唯一可点的地方）—— 挂在顶栏内，作为免拖拽子元素 */
+    #ct-hotspot {
+      -webkit-app-region: no-drag;
+      position: absolute; left: 50%; top: 1px; transform: translateX(-50%);
+      z-index: 10; display: none;
+      align-items: center; justify-content: center;
+      width: 140px; height: 17px;
+      border-radius: 9px;
+      border: 1px dashed rgba(var(--fail-rgb), 0.75);
+      background: rgba(var(--bg-danger-rgb), 0.86);
+      color: var(--warn-light);
+      font-size: 10px; letter-spacing: 0.5px;
+      pointer-events: auto;
+      animation: ct-breathe 1.8s ease-in-out infinite;
+    }
+    #ct-hotspot.show { display: flex; }
+    #ct-hotspot:hover { background: rgba(var(--fail-deep-rgb), 0.34); border-style: solid; }
+    @keyframes ct-breathe { 0%, 100% { opacity: 0.6 } 50% { opacity: 1 } }
+    /* 穿透中：窗口边缘给一圈极淡的红框，提示"点不到" */
+    body.click-through #ui { box-shadow: inset 0 0 0 1px rgba(var(--fail-rgb), 0.28); }
+
+    /* 锁定位置：拖拽区失效，防止误拖 */
+    body.locked #topbar, body.locked #mid { -webkit-app-region: no-drag; cursor: default; }
+
+    /* 寿元（主人 2026-09-19 统一口径：1 现实分钟 = 1 游戏天，与游戏历同源） */
+    #life-text {
+      font-size: 10px; color: var(--jade);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    #life-text.warn { color: var(--warn); }
+    #life-track {
+      margin-top: 3px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(var(--jade-rgb), 0.20);
+      overflow: hidden;
+    }
+    #life-progress {
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, var(--jade-deep), var(--jade));
+      transition: width 200ms linear;
+    }
+    #life-progress.warn { background: linear-gradient(90deg, var(--warn-deep), var(--warn)); }
+
+    #progress-track {
+      position: relative;
+      margin-top: 3px;
+      height: 7px;
+      border-radius: 5px;
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid rgba(var(--gold-rgb), 0.16);
+      overflow: hidden;
+    }
+    #qi-progress {
+      height: 100%; width: 0%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--gold-deep), var(--gold), var(--gold-light));
+      box-shadow: 0 0 10px rgba(var(--gold-rgb), 0.6);
+      transition: width 120ms linear;
+    }
+    /* 目标为渡劫关口：进度条转劫红 */
+    #qi-progress.trial {
+      background: linear-gradient(90deg, #c2563f, var(--fail), var(--fail-light));
+      box-shadow: 0 0 10px rgba(var(--fail-rgb), 0.55);
+    }
+    /* 关口刻度：给出"三成 / 六成 / 圆满"的尺度感（末刻度在关卡为渡劫/小瓶颈时转红） */
+    #progress-ticks { position: absolute; inset: 0; pointer-events: none; }
+    #progress-ticks i {
+      position: absolute; top: 0; bottom: 0; width: 1px;
+      background: rgba(var(--text-rgb), 0.28);
+    }
+    #progress-ticks i.key { background: rgba(var(--fail-rgb), 0.6); }
+
+    /* ── 中部：打坐人形区（同时是拖拽区，也是浮层的定位父级） ── */
+    #mid {
+      position: relative;            /* 背包键 / 明细浮层 / 渡劫气泡都挂在这里 */
+      flex: 1;
+      -webkit-app-region: drag;
+      pointer-events: auto;
+      cursor: grab;
+      min-height: 32px;              /* 状态区加了寿元行+灵石行，中部留一点弹性余量，缩到 300 高也不挤破 */
+    }
+    #mid:active { cursor: grabbing; }
+
+    /* 关键：任何浮层打开时，**中部**取消拖拽区。
+       Electron 的 -webkit-app-region: drag 会把鼠标点击交给系统拖动窗口，
+       浮层按钮会因此"点不动"（JS 的 el.click() 测不出来，只有真人鼠标才会中招）。
+       V3.5.1（主人：偶尔窗口拖不动）：收窄取消范围——只摘 #mid 的 drag，#topbar 保持可拖。
+       顶栏交互子元素（.ix / .ico-btn / .buff-chip / #btn-hide / #ct-hotspot）本就逐个 no-drag，
+       不会复发"点不动"；而浮层开着时顶栏仍是拖拽把手，窗口永远拖得动。 */
+    body.no-drag-all #mid { -webkit-app-region: no-drag; cursor: default; }
+
+    /* ── 下部：突破按钮 + 状态行 ── */
+    #action { padding: 5px 9px 4px; margin-top: 4px; }
+
+    #btn-breakthrough {
+      width: 100%; height: 30px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(var(--gold-rgb), 0.45);
+      background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.24), rgba(var(--gold-rgb), 0.09));
+      color: var(--gold-light);
+      font-family: var(--sans);
+      font-size: 12.5px; letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.1s ease;
+    }
+    #btn-breakthrough:hover:not(:disabled) {
+      background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.38), rgba(var(--gold-rgb), 0.16));
+      box-shadow: 0 0 15px rgba(var(--gold-rgb), 0.35);
+    }
+    #btn-breakthrough:active:not(:disabled) { transform: translateY(1px) scale(0.995); filter: brightness(0.9); }
+    #btn-breakthrough:disabled {
+      cursor: default;
+      color: #9c948a;
+      border-color: rgba(var(--ash-deep-rgb), 0.22);
+      background: rgba(var(--bg-sunken-rgb), 0.55);
+      box-shadow: none;
+    }
+    /* 渡劫关口：红金警示色 */
+    #btn-breakthrough.trial {
+      color: var(--warn-light);
+      border-color: rgba(var(--fail-rgb), 0.6);
+      background: linear-gradient(180deg, rgba(var(--fail-deep-rgb), 0.30), rgba(var(--fail-deep-rgb), 0.10));
+      box-shadow: 0 0 16px rgba(var(--fail-deep-rgb), 0.28);
+    }
+    #btn-breakthrough.trial:hover:not(:disabled) {
+      background: linear-gradient(180deg, rgba(var(--fail-deep-rgb), 0.44), rgba(var(--fail-deep-rgb), 0.18));
+      box-shadow: 0 0 18px rgba(var(--fail-deep-rgb), 0.42);
+    }
+    #btn-rate {
+      font-size: 11px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.32);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 减益 / 增益提示已移到顶栏 buff 小牌（主人 2026-09-17），此处不再占位 */
+
+    /* ── 日志 ──
+       日志面板同时是全部内容遮罩的宿主：遮罩只覆盖这一块，
+       上方的「境界 / 修为 / 立绘 / 突破按钮」修炼界面不再被遮住（主人 2026-09-17 要求）。 */
+    #log-panel { position: relative; margin-top: 4px; padding: 4px 9px 5px; }
+
+    #log-head {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 10.5px; color: var(--text-dim);
+      letter-spacing: 0.5px;
+      margin-bottom: 3px;
+    }
+    #log-head .spacer { flex: 1; }
+    /* 日志标题旁的一行摘要：道历年份 · 挂机时长 · 离线时长与离线收益 */
+    #log-meta {
+      font-size: 9.5px; color: rgba(var(--text-dim-rgb), 0.78);
+      letter-spacing: 0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-variant-numeric: tabular-nums;
+    }
+    #log-meta b { color: var(--gold-light); font-weight: 600; }
+    #log-meta i { color: var(--gold); font-style: normal; }
+    .log-btn {
+      pointer-events: auto;
+      border: none; background: none;
+      color: rgba(var(--text-dim-rgb), 0.85);
+      font-size: 10px; cursor: pointer;
+      font-family: var(--sans);
+      padding: 0 2px;
+      white-space: nowrap;
+    }
+    .log-btn:hover { color: var(--gold-light); }
+    #btn-reset:hover { color: var(--fail); }
+
+    #log {
+      /* 主人 2026-09-17：日志要能看满 10 行（10.5px × 1.5 ≈ 15.75px/行）。
+         主人 2026-09-18：日志区再加高 —— 它是全部内容遮罩的宿主，
+         要能"完整展示背包 / 功法 / 宗门等功能界面"，故按窗口高度自适应到 20 行上限 */
+      height: calc(100vh - 380px);
+      min-height: 63px;
+      max-height: 330px;
+      overflow-y: auto;
+      font-size: 10.5px;
+      line-height: 1.5;
+      scrollbar-width: thin;
+    }
+    #log::-webkit-scrollbar { width: 4px; }
+    #log::-webkit-scrollbar-thumb { background: rgba(var(--gold-rgb), 0.25); border-radius: 2px; }
+    .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .log-time { color: #6f6a63; margin-right: 5px; font-size: 9.5px; }
+    .log-info { color: #c9c2b8; }
+    .log-sys { color: var(--sys); }
+    .log-ok { color: var(--gold-light); }
+    .log-fail { color: var(--fail); }
+    .log-offline { color: var(--gold); }     /* 离线补发的是修为 → 同族配色 */
+    .log-root { color: var(--violet); }
+
+    /* ═══════════ 层 3：测灵根遮罩（开局一次性流程） ═══════════ */
+    #root-overlay {
+      -webkit-app-region: no-drag;
+      position: absolute; inset: 5px; z-index: 5;
+      display: none;
+      align-items: center; justify-content: center;
+      border-radius: 12px;
+      background: radial-gradient(circle at 50% 42%, rgba(var(--bg-veil-hi-rgb), 0.86), rgba(var(--bg-veil-lo-rgb), 0.94));
+      border: 1px solid rgba(var(--gold-rgb), 0.28);
+      backdrop-filter: blur(9px);
+      pointer-events: auto;
+    }
+    #root-overlay.show { display: flex; }
+
+    #root-card {
+      width: 100%; padding: 0 22px;
+      text-align: center;
+    }
+    .root-title {
+      font-family: var(--serif);
+      font-size: 19px; font-weight: 700;
+      letter-spacing: 6px;
+      color: var(--gold-light);
+      text-shadow: 0 0 14px rgba(var(--gold-rgb), 0.5);
+    }
+    #root-desc {
+      margin-top: 9px;
+      font-size: 11px; line-height: 1.7;
+      color: var(--dim-light);
+    }
+    #root-hint {
+      margin-top: 7px;
+      font-size: 10px;
+      color: var(--dim);
+    }
+    #btn-draw-root {
+      margin-top: 14px;
+      width: 100%; height: 32px;
+      border-radius: 8px;
+      border: 1px solid rgba(var(--gold-rgb), 0.55);
+      background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.30), rgba(var(--gold-rgb), 0.12));
+      color: var(--gold-light);
+      font-family: var(--sans);
+      font-size: 13px; letter-spacing: 2px;
+      cursor: pointer;
+    }
+    #btn-draw-root:hover { background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.45), rgba(var(--gold-rgb), 0.20)); }
+
+    /* 推演中：遮罩变浅，让画布上的光轮演出完整可见，提示文字挪到底部 */
+    #root-overlay[data-state="spin"] {
+      background: rgba(var(--bg-deep-rgb), 0.30);
+      backdrop-filter: none;
+      align-items: flex-end;
+      padding-bottom: 14px;
+    }
+    #root-overlay[data-state="spin"] #root-card { padding: 0; }
+
+    /* 三块内容按 data-state 切换显隐 */
+    #root-spinning, #root-result { display: none; }
+    #root-overlay[data-state="spin"] #root-intro { display: none; }
+    #root-overlay[data-state="spin"] #root-spinning { display: block; }
+    #root-overlay[data-state="result"] #root-intro { display: none; }
+    #root-overlay[data-state="result"] #root-result { display: block; }
+
+    #root-spin-text {
+      margin-top: 12px;
+      font-size: 12px; letter-spacing: 3px;
+      color: var(--gold-light);
+      animation: breathe 1.1s ease-in-out infinite;
+    }
+    @keyframes breathe { 0%, 100% { opacity: 0.45 } 50% { opacity: 1 } }
+
+    #root-result-name {
+      margin-top: 10px;
+      font-family: var(--serif);
+      font-size: 21px; font-weight: 700;
+      letter-spacing: 2px;
+    }
+    #root-result-trait {
+      margin-top: 5px;
+      font-size: 11px;
+      color: #d6cfc2;
+    }
+    #root-result-mods {
+      margin-top: 9px;
+      font-size: 11px;
+      line-height: 1.7;
+      color: var(--violet);           /* 灵根加成 → 灵紫（此前是绿，与寿元撞色） */
+    }
+    #root-result-pity {
+      margin-top: 6px;
+      font-size: 10px;
+      color: var(--dim);
+    }
+    #btn-root-ok {
+      margin-top: 13px;
+      width: 100%; height: 30px;
+      border-radius: 8px;
+      border: 1px solid rgba(var(--gold-rgb), 0.45);
+      background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.24), rgba(var(--gold-rgb), 0.09));
+      color: var(--gold-light);
+      font-family: var(--sans);
+      font-size: 12.5px; letter-spacing: 3px;
+      cursor: pointer;
+    }
+    #btn-root-ok:hover { background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.40), rgba(var(--gold-rgb), 0.18)); }
+
+    /* ═══════════ 层 3b：世界卡池遮罩（2.9 · 复用测灵根视觉） ═══════════ */
+    #world-overlay {
+      -webkit-app-region: no-drag;
+      position: absolute; inset: 5px; z-index: 5;
+      display: none;
+      align-items: center; justify-content: center;
+      border-radius: 12px;
+      background: radial-gradient(circle at 50% 42%, rgba(var(--bg-world-rgb), 0.88), rgba(var(--bg-veil-lo-rgb), 0.95));
+      border: 1px solid rgba(var(--world-rgb), 0.30);
+      backdrop-filter: blur(9px);
+      pointer-events: auto;
+    }
+    #world-overlay.show { display: flex; }
+
+    #world-card { width: 100%; padding: 0 22px; text-align: center; }
+
+    #world-desc { margin-top: 9px; font-size: 11px; line-height: 1.7; color: var(--dim-light); }
+    #world-hint { margin-top: 7px; font-size: 10px; color: var(--dim); }
+
+    #btn-draw-world {
+      margin-top: 14px; width: 100%; height: 32px;
+      border-radius: 8px;
+      border: 1px solid rgba(var(--world-rgb), 0.55);
+      background: linear-gradient(180deg, rgba(var(--world-rgb), 0.30), rgba(var(--world-rgb), 0.12));
+      color: var(--world-light);
+      font-family: var(--sans); font-size: 13px; letter-spacing: 2px; cursor: pointer;
+    }
+    #btn-draw-world:hover { background: linear-gradient(180deg, rgba(var(--world-rgb), 0.45), rgba(var(--world-rgb), 0.20)); }
+
+    /* 两块内容按 data-state 切换显隐 */
+    #world-result { display: none; }
+    #world-overlay[data-state="result"] #world-intro { display: none; }
+    #world-overlay[data-state="result"] #world-result { display: block; }
+
+    #world-result-name {
+      margin-top: 10px;
+      font-family: var(--serif);
+      font-size: 22px; font-weight: 700;
+      letter-spacing: 3px;
+    }
+    #world-result-tag { margin-top: 5px; font-size: 11px; color: #d6cfc2; }
+    #world-result-mods { margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--world); }
+    #world-result-desc { margin-top: 7px; font-size: 10.5px; line-height: 1.6; color: var(--dim); }
+    #world-result-exclusive, #world-result-friction {
+      margin-top: 6px; font-size: 10.5px; line-height: 1.6; color: var(--dim-light); text-align: left;
+    }
+    #world-result-exclusive b, #world-result-friction b { color: var(--gold-light); }
+
+    .world-act { display: flex; gap: 8px; margin-top: 14px; }
+    .world-act button {
+      flex: 1; height: 30px; border-radius: 8px;
+      font-family: var(--sans); font-size: 12px; letter-spacing: 2px; cursor: pointer;
+      border: 1px solid rgba(var(--world-rgb), 0.45);
+      background: linear-gradient(180deg, rgba(var(--world-rgb), 0.22), rgba(var(--world-rgb), 0.08));
+      color: var(--world-light);
+    }
+    .world-act button:hover { background: linear-gradient(180deg, rgba(var(--world-rgb), 0.40), rgba(var(--world-rgb), 0.18)); }
+    .world-act button:disabled { opacity: 0.4; cursor: default; }
+    .world-act #btn-world-ok {
+      border-color: rgba(var(--gold-rgb), 0.50);
+      background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.28), rgba(var(--gold-rgb), 0.10));
+      color: var(--gold-light);
+    }
+    .world-act #btn-world-ok:hover { background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.44), rgba(var(--gold-rgb), 0.20)); }
+
+    /* ═══════════ 层 3：渡劫确认气泡（挂在 #mid 内，带按钮必须免拖拽） ═══════════ */
+    #confirm-bubble {
+      -webkit-app-region: no-drag;
+      position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+      width: 232px; z-index: 4; display: none;
+      background: rgba(var(--bg-card-rgb), 0.96);
+      border: 1px solid rgba(var(--fail-rgb), 0.55);
+      border-radius: 10px; padding: 10px 12px;
+      font-size: 11px; color: var(--warn-light); text-align: center;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      pointer-events: auto;
+      animation: pop-in 180ms ease-out;
+    }
+    #confirm-bubble.show { display: block; }
+    #confirm-bubble b { color: var(--fail-light); font-variant-numeric: tabular-nums; }
+    #confirm-bubble .row { display: flex; gap: 8px; margin-top: 9px; }
+    #confirm-bubble button {
+      flex: 1; height: 26px; border-radius: 6px; font-size: 11.5px; cursor: pointer;
+      font-family: var(--sans);
+      border: 1px solid rgba(var(--fail-rgb), 0.55);
+      background: rgba(var(--fail-deep-rgb), 0.18); color: var(--warn-light);
+      transition: background 0.15s ease;
+    }
+    #confirm-bubble button:hover { background: rgba(var(--fail-deep-rgb), 0.32); }
+    #confirm-bubble button.ghost {
+      border-color: rgba(var(--ash-deep-rgb), 0.35);
+      background: transparent; color: var(--text-dim);
+    }
+    #confirm-bubble button.ghost:hover { background: rgba(255, 255, 255, 0.05); }
+
+    /* ═══════════ 层 4：闭关归来结算卡（本次精修 · 高光交互之二） ═══════════ */
+    /* 结算的是"修为" → 归入鎏金族（此前是绿色，与修为同量不同色） */
+    #return-card {
+      -webkit-app-region: no-drag;
+      position: absolute; left: 50%; top: 46px; transform: translateX(-50%);
+      width: 268px; z-index: 4; display: none; cursor: pointer;
+      background: rgba(var(--bg-card-warm-rgb), 0.95);
+      border: 1px solid rgba(var(--gold-rgb), 0.5);
+      border-radius: 10px; padding: 9px 12px;
+      font-size: 11px; color: var(--gold-pale);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      pointer-events: auto;
+      animation: pop-in 220ms ease-out;
+    }
+    #return-card.show { display: block; }
+    #return-card b { color: var(--gold-light); font-variant-numeric: tabular-nums; }
+    #return-card .hint {
+      display: block; margin-top: 3px;
+      font-size: 9.5px; color: rgba(var(--gold-pale-rgb), 0.55);
+    }
+    #return-card:hover { border-color: rgba(var(--gold-rgb), 0.85); }
+
+    @keyframes pop-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* ═══════════ 层 5：设置 / 存档（覆盖式面板，非侧栏；骨架复用 .ov） ═══════════ */
+    #panel-head {
+      display: flex; align-items: center; gap: 5px;
+      padding: 8px 9px 6px;
+      border-bottom: 1px solid rgba(var(--gold-rgb), 0.14);
+    }
+    #panel-head .spacer { flex: 1; }
+    .tab {
+      border: none; background: none;
+      color: var(--text-dim);
+      font-family: var(--sans);
+      font-size: 11.5px; letter-spacing: 1px;
+      padding: 2px 8px; border-radius: 6px;
+      cursor: pointer;
+    }
+    .tab:hover { color: var(--gold-light); background: rgba(var(--gold-rgb), 0.10); }
+    .tab.on { color: var(--gold-light); background: rgba(var(--gold-rgb), 0.20); }
+    #btn-panel-close {
+      width: 18px; height: 18px; line-height: 16px;
+      border-radius: 50%;
+      border: 1px solid rgba(var(--gold-rgb), 0.35);
+      background: rgba(var(--gold-rgb), 0.10);
+      color: var(--gold-light); font-size: 12px; cursor: pointer;
+    }
+    #btn-panel-close:hover { background: rgba(var(--gold-rgb), 0.30); }
+
+    #panel-body { flex: 1; overflow-y: auto; padding: 9px 10px 12px; }
+    #panel-body::-webkit-scrollbar { width: 4px; }
+    #panel-body::-webkit-scrollbar-thumb { background: rgba(var(--gold-rgb), 0.25); border-radius: 2px; }
+    .pane[hidden] { display: none; }
+
+    .row { display: flex; align-items: center; gap: 8px; min-height: 24px; font-size: 11.5px; }
+    .row .k { color: var(--text-dim); }
+    .row .v { color: var(--text); font-variant-numeric: tabular-nums; }
+    .row .v.dim { color: var(--dim); }
+    .row .spacer { flex: 1; }
+    .toggle {
+      min-width: 40px; height: 20px;
+      border-radius: 5px;
+      border: 1px solid rgba(var(--ash-deep-rgb), 0.3);
+      background: rgba(var(--bg-sunken-rgb), 0.6);
+      color: #9c948a;
+      font-family: var(--sans); font-size: 10.5px;
+      cursor: pointer;
+    }
+    .toggle.on {
+      border-color: rgba(var(--jade-rgb), 0.55);
+      background: rgba(var(--jade-rgb), 0.20);
+      color: var(--jade-light);
+    }
+    .mini {
+      height: 22px; padding: 0 9px;
+      border-radius: 6px;
+      border: 1px solid rgba(var(--gold-rgb), 0.35);
+      background: rgba(var(--gold-rgb), 0.10);
+      color: var(--gold-light);
+      font-family: var(--sans); font-size: 11px;
+      cursor: pointer;
+    }
+    .mini:hover { background: rgba(var(--gold-rgb), 0.24); }
+    .mini.danger { border-color: rgba(var(--fail-rgb), 0.45); color: var(--warn-light); background: rgba(var(--fail-deep-rgb), 0.12); }
+    .mini.danger:hover { background: rgba(var(--fail-deep-rgb), 0.26); }
+    .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .hint2 { margin-top: 6px; font-size: 10px; line-height: 1.6; color: var(--dim); }
+    .divider { height: 1px; background: rgba(var(--gold-rgb), 0.12); margin: 10px 0; }
+    .mono {
+      margin-top: 3px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 9.5px; color: var(--text-dim);
+      word-break: break-all; line-height: 1.5;
+    }
+
+    /* 背包 */
+    .bag-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+    .bag-item .nm { color: var(--gold-light); font-size: 11.5px; min-width: 62px; }
+    /* 持有量：明确打出「持有 N 枚」，不再只是一个孤零零的 ×5 */
+    .bag-item .qt { min-width: 58px; font-size: 10.5px; color: var(--dim); white-space: nowrap; }
+    .bag-item .qt b { color: var(--gold-light); font-size: 11.5px; margin-right: 2px; font-variant-numeric: tabular-nums; }
+    .bag-item .ds { flex: 1; font-size: 10px; line-height: 1.55; color: var(--text-dim); }
+    .bag-item .ds em { color: rgba(var(--gold-rgb), 0.72); font-style: normal; }
+    .bag-empty { margin-top: 14px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.9; }
+    .bag-note { margin-top: 10px; font-size: 10px; line-height: 1.6; color: var(--dim); }
+
+    /* 页签（坊市 / 纪事共用；行囊与丹房已各自独立遮罩，不再是页签） */
+    .bag-tabs { display: flex; gap: 4px; padding: 4px 9px 0; }
+    .bag-tab {
+      padding: 3px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: none;
+      border-radius: 6px 6px 0 0;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-dim); font-size: 11px; letter-spacing: 1px; cursor: pointer;
+    }
+    .bag-tab.on {
+      color: var(--gold-light);
+      border-color: rgba(var(--gold-rgb), 0.30);
+      background: rgba(var(--gold-rgb), 0.10);
+    }
+    /* 丹方行 */
+    .brew-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+    .brew-row .bn { min-width: 56px; font-size: 11.5px; font-weight: 600; }
+    .brew-row .bi { flex: 1; font-size: 10px; line-height: 1.7; color: var(--text-dim); }
+    .brew-row .bi .lack { color: var(--fail); }
+    .brew-row .bi .rate { color: var(--dim); }
+    .brew-row .mini { flex: none; align-self: center; }
+    /* 「当前所需」（缺丹时点亮）与库存标注 */
+    .brew-row.needed {
+      border-left: 2px solid var(--gold);
+      padding-left: 6px;
+      background: rgba(var(--gold-rgb), 0.06);
+    }
+    .brew-mark { color: var(--gold-light); font-size: 9px; margin-left: 4px; }
+    .brew-have { color: var(--jade); font-size: 9.5px; margin-left: 4px; }
+    #alchemy-mats {
+      padding: 7px 9px 0;
+      font-size: 9.5px; line-height: 1.6;
+      color: var(--dim);
+    }
+    #alchemy-mats b { color: var(--gold-light); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+    /* ── 宗门（2.4）── */
+    #sect-info { font-size: 11px; line-height: 1.8; }
+    #sect-info .si-name { font-family: var(--serif); font-size: 14px; letter-spacing: 3px; color: var(--gold-light); }
+    #sect-info .si-line { color: var(--text-dim); }
+    #sect-info .si-line b { color: var(--gold-light); font-variant-numeric: tabular-nums; font-weight: 600; }
+    #sect-info .si-line .jade { color: var(--jade); }
+    #sect-info .si-line .violet { color: var(--violet); }
+    #sect-info .si-btns { margin-top: 7px; display: flex; gap: 6px; }
+    .sect-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 11px; }
+    .sect-row .tn { font-size: 11.5px; font-weight: 600; min-width: 52px; flex: none; }
+    .sect-row .td { flex: 1; font-size: 9.5px; line-height: 1.55; color: var(--dim); }
+    .sect-row .tp { color: var(--jade); font-size: 10px; min-width: 72px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+    .sect-row .tp.dim { color: var(--dim); }
+    .sect-row.locked { opacity: 0.5; }
+    .sect-row .mini { flex: none; align-self: center; }
+    .sect-row .mini.gap { margin-left: 4px; }
+
+    /* ── 坊市（2.6）── */
+    .m-disc {
+      flex: none; min-width: 32px; text-align: center;
+      padding: 1px 5px; border-radius: 8px;
+      font-size: 9.5px; color: var(--jade-light);
+      border: 1px solid rgba(var(--jade-rgb), 0.40);
+      background: rgba(var(--jade-rgb), 0.12);
+    }
+    .m-old { color: var(--dim-deep); font-size: 9.5px; text-decoration: line-through; margin-right: 4px; }
+
+    /* ── 秘境（2.7 · 试炼塔 / 资源秘境 / 分身派遣）── */
+    .dungeon-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 11px; flex-wrap: wrap; }
+    .dungeon-row .dn { font-size: 11.5px; font-weight: 600; min-width: 58px; flex: none; }
+    .dungeon-row .dd { flex: 1; font-size: 9.5px; line-height: 1.5; color: var(--dim); min-width: 0; }
+    .dungeon-row .dd b { color: var(--gold-light); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .dungeon-row .ds { color: var(--jade); font-size: 10px; flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .dungeon-row .ds.dim { color: var(--dim); }
+    .dungeon-row.locked { opacity: 0.5; }
+    .dungeon-row .dbtns { display: flex; gap: 3px; flex: none; }
+    .d-btn {
+      height: 18px; padding: 0 6px;
+      border-radius: 5px;
+      border: 1px solid rgba(var(--gold-rgb), 0.32);
+      background: rgba(var(--gold-rgb), 0.08);
+      color: var(--gold-light);
+      font-family: var(--sans); font-size: 9.5px;
+      cursor: pointer; white-space: nowrap;
+      transition: background 0.15s ease;
+    }
+    .d-btn:hover:not(:disabled) { background: rgba(var(--gold-rgb), 0.24); }
+    .d-btn:disabled { color: #8d867c; border-color: rgba(var(--ash-deep-rgb), 0.25); background: rgba(var(--bg-sunken-rgb), 0.55); cursor: default; }
+
+    /* ── 渡劫（2.5 · 八关口 / 准备加成 / 三道天雷）── */
+    #trial-node { font-size: 11px; line-height: 1.8; }
+    #trial-node .tn-name {
+      font-family: var(--serif); font-size: 14px; letter-spacing: 3px; color: var(--gold-light);
+    }
+    #trial-node .tn-line { color: var(--text-dim); }
+    #trial-node .tn-line b { color: var(--gold-light); font-variant-numeric: tabular-nums; font-weight: 600; }
+    #trial-node .tn-line .red { color: var(--fail); }
+    #trial-node .tn-line .jade { color: var(--jade); }
+    #trial-node .tn-desc { margin-top: 3px; font-size: 10px; line-height: 1.6; color: var(--dim); }
+    .tr-gates { display: flex; gap: 3px; margin-top: 7px; }
+    .tr-gate {
+      flex: 1; min-width: 0; height: 24px; padding: 1px 0;
+      border-radius: 4px; border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03); color: var(--dim);
+      font-size: 9px; line-height: 1.1; text-align: center;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      overflow: hidden; white-space: nowrap;
+    }
+    .tr-gate i { font-style: normal; font-size: 8px; opacity: 0.72; }
+    .tr-gate.passed { border-color: rgba(var(--gold-rgb), 0.45); background: rgba(var(--gold-rgb), 0.14); color: var(--gold-light); }
+    .tr-gate.cur { border-color: rgba(var(--fail-rgb), 0.70); background: rgba(var(--fail-deep-rgb), 0.16); color: var(--warn-light); }
+    .tr-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 11px; }
+    .tr-row .pn { font-size: 11.5px; font-weight: 600; min-width: 56px; flex: none; }
+    .tr-row .pd { flex: 1; font-size: 9.5px; line-height: 1.55; color: var(--dim); }
+    .tr-row .pb { color: var(--gold-light); font-size: 10px; min-width: 40px; flex: none; text-align: right; font-variant-numeric: tabular-nums; }
+    .tr-row.locked { opacity: 0.5; }
+    .tr-row .mini { flex: none; align-self: center; }
+    .tr-row .mini.on { border-color: rgba(var(--jade-rgb), 0.55); background: rgba(var(--jade-rgb), 0.20); color: var(--jade-light); }
+
+    /* ── 称号（2.10）：**叠在立绘上层**，显示在人物头顶上方
+       （主人 2026-09-18 两次口径：① 不是程序顶栏；② 立绘不必让位，牌子浮在上层即可）
+       宿主 = #mid（拖拽区）：自身必须 no-drag，否则真鼠标点不动（坑 10） */
+    #title-bar {
+      -webkit-app-region: no-drag;
+      position: absolute; left: 50%; top: 1px; transform: translateX(-50%);
+      z-index: 5;                /* #ui 整体在画布之上（#game z-index 0），牌子再叠一层 */
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;      /* 只有称号牌本身可点，其余区域照旧透给桌面 */
+    }
+    #title-chip {
+      -webkit-app-region: no-drag;
+      font-size: 10px; color: var(--gold-light);
+      padding: 0 7px; border-radius: 8px;
+      border: 1px solid rgba(var(--gold-rgb), 0.35);
+      background: rgba(var(--bg-float-rgb), 0.92);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.42);
+      max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      pointer-events: auto; cursor: pointer;
+    }
+    #title-chip[hidden] { display: none; }
+    #title-chip:hover { border-color: rgba(var(--gold-rgb), 0.75); }
+
+    /* ── 顶栏增益 / 减益小牌（主人 2026-09-17：挂在灵根徽记右边，用于展示 buff 与各类加成）── */
+    #buff-chips {
+      display: inline-flex; align-items: center; gap: 3px;
+      flex: 0 1 auto; min-width: 0; max-width: 110px;
+      overflow: hidden;
+    }
+    .buff-chip {
+      -webkit-app-region: no-drag;
+      pointer-events: auto;
+      font-size: 9.5px; line-height: 13px;
+      padding: 0 4px; border-radius: 4px;
+      border: 1px solid currentColor;
+      white-space: nowrap; flex: none;
+    }
+    /* 配色照 §〇 色表：增益＝灵玉，减益＝警示 */
+    .buff-chip.buff { color: var(--jade); }
+    .buff-chip.debuff { color: var(--warn); }
+    .buff-chip .bt { color: var(--dim); font-size: 8.5px; margin-left: 2px; }
+    .chr-item { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+    .chr-line1 { font-size: 9.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+    .chr-text { margin-top: 2px; font-size: 11px; line-height: 1.6; color: var(--text); }
+    .chr-note { margin-top: 2px; font-size: 9.5px; line-height: 1.5; color: var(--dim-deep); }
+    .chr-item.chr-you .chr-text { color: var(--gold-light); }
+    .chr-item.chr-you .chr-line1 { color: var(--gold); }
+    /* 互动纪事（主人 2026-09-17：纪事消息增加互动选项） */
+    .chr-item.chr-act { border-left: 2px solid rgba(var(--gold-rgb), 0.65); padding-left: 7px; }
+    .chr-opts { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+    .chr-opts .mini { height: 21px; font-size: 10.5px; }
+    .chr-opts .mini.poor { opacity: 0.5; }
+    .chr-result {
+      margin-top: 5px; font-size: 10.5px; line-height: 1.6;
+      color: var(--jade);
+    }
+    .chr-result.gap { color: var(--text-dim); }
+
+    .achv-cat {
+      margin: 9px 0 4px;
+      font-family: var(--serif); font-size: 11px; letter-spacing: 2px;
+      color: var(--gold-light);
+    }
+    .achv-cat i { font-style: normal; font-size: 9.5px; color: var(--dim); margin-left: 5px; letter-spacing: 0; }
+    .achv-row { padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+    .achv-row:not(.got) { opacity: 0.55; }
+    .achv-top { display: flex; align-items: baseline; gap: 6px; font-size: 11px; }
+    .achv-top .an { font-weight: 600; min-width: 76px; flex: none; }
+    .achv-top .ap { margin-left: auto; color: var(--gold-light); font-size: 10px; flex: none; font-variant-numeric: tabular-nums; }
+    .achv-row.got .an { color: var(--gold-light); }
+    .achv-desc { margin-top: 2px; font-size: 9.5px; line-height: 1.5; color: var(--dim); }
+    .achv-bar { margin-top: 4px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+    .achv-bar i { display: block; height: 100%; background: var(--gold); border-radius: 2px; }
+
+    .chr-pill {
+      padding: 2px 8px;
+      border-radius: 9px;
+      border: 1px solid rgba(var(--gold-rgb), 0.30);
+      background: rgba(var(--gold-rgb), 0.08);
+      color: var(--gold);
+      font-family: var(--sans);
+      font-size: 10px; letter-spacing: 1px;
+      cursor: pointer; white-space: nowrap;
+    }
+    .chr-pill:hover { background: rgba(var(--gold-rgb), 0.24); }
+    .chr-pill.on { background: rgba(var(--gold-rgb), 0.30); border-color: rgba(var(--gold-rgb), 0.85); color: var(--gold-light); }
+
+    .title-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 11px;
+    }
+    .title-row .tn { font-weight: 600; min-width: 76px; flex: none; }
+    .title-row .tf { flex: 1; font-size: 9.5px; color: var(--dim); }
+    .title-row.on .tn { color: var(--jade); }
+
+    /* 成就解锁提示（层 6b：浮在所有遮罩之上，3.6s 自动收起，点按进成就墙） */
+    #achv-toast {
+      -webkit-app-region: no-drag;
+      position: fixed; left: 50%; top: 108px; transform: translateX(-50%);
+      z-index: 20; display: none;
+      width: 236px; padding: 8px 11px;
+      border-radius: 10px;
+      background: rgba(var(--bg-card-rgb), 0.96);
+      border: 1px solid rgba(var(--gold-rgb), 0.55);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      color: var(--gold-light); text-align: center;
+      pointer-events: auto; cursor: pointer;
+      animation: pop-in 180ms ease-out;
+    }
+    #achv-toast.show { display: block; }
+    #achv-toast .at-k { font-size: 9px; letter-spacing: 2px; color: var(--dim); }
+    #achv-toast .at-n { margin-top: 2px; font-family: var(--serif); font-size: 13px; letter-spacing: 2px; }
+    #achv-toast .at-p { margin-top: 2px; font-size: 9.5px; color: var(--gold); }
+
+    /* 「减弱动态」：全部动效降级为透明度过渡（设计稿「动效纪律」）
+       3.4 起加**作用域**：动效总档选「全开」时（<html class="motion-full">）本块失效 ——
+       口径沿用 3.3 氛围系统（见 src/data/motion.js 与 data/ambience.js 的 resolveAmbienceMode 注释）：
+       手动选择永远优先于系统偏好，否则本机（主人这台系统就开着「减弱动态」）等于没有动效。
+       要彻底安静请在设置里选「静态」——那是本模块给主人的明文口子。 */
+    @media (prefers-reduced-motion: reduce) {
+      :root:not(.motion-full) *, :root:not(.motion-full) *::before, :root:not(.motion-full) *::after {
+        animation-duration: 0.001s !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    /* 动效总档＝「静态」：与系统偏好无关，一律归零（只保留内容与状态色变化） */
+    :root.motion-static *, :root.motion-static *::before, :root.motion-static *::after {
+      animation-duration: 0.001s !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  </style>
+</head>
+<body>
+  <!-- 层 1：Phaser 透明画布 -->
+  <div id="game"></div>
+
+  <!-- 层 2：中文面板 -->
+  <div id="ui">
+    <div class="plate hit" id="top-panel">
+      <!-- 左：境界 · 灵根（状态）　右：穿透 · 锁定 · 置顶 · 设置 · 隐藏（设置类） -->
+      <div id="topbar">
+        <span id="realm-name" class="ix" data-tip="realm" title="点按查看境界详情">炼气一重</span>
+        <!-- 主人 2026-09-19：灵根与所处世界调换位置（灵根在前、世界在后） -->
+        <span id="root-chip" class="ix" data-tip="root" data-tip-mode="click" title="点按查看灵根详情 / 洗髓">未测灵根</span>
+        <span id="world-chip" class="ix" data-tip="world" data-tip-mode="click" title="点按查看世界词条">未定世界</span>
+        <!-- 增益 / 减益小牌：灵根徽记右边（主人 2026-09-17 要求） -->
+        <span id="buff-chips"></span>
+        <span class="spacer"></span>
+        <button class="ico-btn" id="btn-through" title="鼠标穿透：整窗不再接收点击，只留顶部热区（快捷键 Ctrl+Alt+Q）">穿</button>
+        <button class="ico-btn" id="btn-lock" title="锁定位置：禁止拖动窗口">锁</button>
+        <button class="ico-btn jade" id="btn-top" title="窗口置顶">顶</button>
+        <button class="ico-btn" id="btn-settings" title="设置 / 存档">设</button>
+        <button class="ico-btn" id="btn-bgm" title="背景音乐：默认关（点按开关 · 右键切曲）">乐</button>
+        <button id="btn-hide" title="隐藏到托盘（游戏继续）">×</button>
+        <!-- 鼠标穿透热区：挂在顶栏内，才能作为"免拖拽子元素"被点到 -->
+        <div id="ct-hotspot" title="点此恢复鼠标操作（快捷键 Ctrl+Alt+Q）">鼠标穿透中 · 点此恢复</div>
+      </div>
+      <div id="qi-row">
+        <span class="ix" id="qi-text" data-tip="qi" title="点按查看修为明细">修为 0 / 0</span>
+        <span class="ix" id="qi-rate" data-tip="qi" title="点按查看产出明细">+1.00/秒</span>
+      </div>
+      <div id="progress-track"><div id="qi-progress"></div><div id="progress-ticks"></div></div>
+      <div id="life-row">
+        <span class="ix" id="life-text" data-tip="life" title="点按查看寿元明细">余寿 100 / 100 年</span>
+      </div>
+      <div id="life-track"><div id="life-progress"></div></div>
+      <div id="stone-row">
+        <!-- 战力：与灵石左右对称（主人 2026-09-18：战力显示在寿命进度条的左下方） -->
+        <span class="ix power-wrap" id="power-wrap" data-tip="power" title="点按查看战力明细"><span class="power-key">战力</span><span id="power-text">0</span></span>
+        <span class="stone-wrap ix" id="stone-wrap" data-tip="stones" data-tip-action="bag" title="点按打开背包 · 悬停看灵石明细"><span class="stone-key">灵石</span><span id="stone-text">0</span></span>
+      </div>
+    </div>
+
+    <!-- 中部：打坐人形（画布）在此显示；同时承载背包键 / 明细浮层 / 渡劫气泡
+         —— 它们必须挂在拖拽区内部并标 no-drag，否则真鼠标点不动 -->
+    <div id="mid" title="按住可拖动窗口">
+      <!-- 称号牌：叠在立绘上层，显示在**人物头部上方**
+           （主人 2026-09-18：① 不放程序顶栏；② 立绘不必让位，牌子浮在上层即可） -->
+      <div id="title-bar">
+        <span id="title-chip" hidden title="佩戴中的称号（纯展示，不涉数值）"></span>
+      </div>
+
+      <!-- 快捷条：功法 / 背包 / 丹房 / 宗门（在突破按钮上方，不遮挡按钮） -->
+      <div id="quick-row">
+        <button class="q-pill" id="btn-tech" title="功法（主修 · 升级）">功法</button>
+        <button class="q-pill" id="btn-bag" title="背包（丹药 · 材料 · 法宝）">背包</button>
+        <button class="q-pill" id="btn-alchemy" title="丹房（丹方 · 炼制 · 缺料自动开炉）">丹房</button>
+        <button class="q-pill" id="btn-sect" title="宗门（任务板 · 贡献 · 藏经阁 · 商店）">宗门</button>
+        <button class="q-pill" id="btn-market" title="坊市（折扣店 · 回收 · 拍卖行）">坊市</button>
+        <button class="q-pill" id="btn-beast" title="灵兽（万兽林寻蛋 · 孵化 · 出战）">灵兽</button>
+        <button class="q-pill" id="btn-trial" title="渡劫（八关口 · 渡劫准备 · 三道天雷）">渡劫</button>
+        <button class="q-pill" id="btn-dungeon" title="秘境（试炼塔 · 资源秘境 · 分身派遣）">秘境</button>
+        <!-- 主人 2026-09-18 / 09-19：事件与纪事合成一册（同页看完）；成就与称号另立一册 -->
+        <button class="q-pill" id="btn-chronicle" title="事件与纪事（待抉择事件 · 近事录 · 三频道纪事）">纪事<i class="dot"></i></button>
+        <button class="q-pill" id="btn-achv" title="成就与称号（成就墙 · 称号佩戴）">成就<i class="dot"></i></button>
+      </div>
+
+      <!-- 渡劫确认气泡（带按钮，必须免拖拽） -->
+      <div id="confirm-bubble">
+        <div>三道天雷 · 过二即成 ｜ 当前成率 <b id="bubble-rate">--%</b><span id="bubble-prep"></span></div>
+        <div class="row">
+          <button id="btn-strike">引 雷</button>
+          <button id="btn-wait" class="ghost">再等等</button>
+        </div>
+      </div>
+
+      <!-- 数值明细浮层（跟随被点元素出现；Esc 或点空白关闭） -->
+      <div id="tip"></div>
+    </div>
+
+    <div class="plate" id="action">
+      <button class="hit" id="btn-breakthrough">
+        <span id="btn-label">修为不足</span>
+        <span id="btn-rate"></span>
+      </button>
+    </div>
+
+    <div class="plate hit" id="log-panel">
+      <div id="log-head">
+        <span>修行日志</span>
+        <!-- 主人 2026-09-19：标题旁显示游戏年份 / 实际挂机时长 / **累计离线时长**；
+             上次离线的时长与收益（含"占挂机收益百分比"）移入交互浮层（点累计离线即可看） -->
+        <span id="log-meta"></span>
+        <span class="ix" id="log-offline" data-tip="offline" title="点按查看离线结算明细（上次离线上多久、拿了多少、折算成挂机收益的几成）">累计离线 —</span>
+        <span class="spacer"></span>
+        <button id="btn-export" class="log-btn" title="把当前进度另存为 JSON 文件">导出</button>
+        <button id="btn-import" class="log-btn" title="从 JSON 文件恢复进度（会覆盖当前进度）">导入</button>
+        <button id="btn-reset" class="log-btn" title="清空存档（无法恢复）">重置</button>
+      </div>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <!-- 层 5b：背包（独立遮罩 · 只装行囊；丹房已独立成 #alchemy-overlay，主人 2026-09-17 要求） -->
+  <div class="ov" id="bag-overlay">
+    <div class="ov-head">
+      <span class="ov-title" id="bag-title">行 囊</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-bag-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="bag-list"></div>
+      <div class="bag-note" id="bag-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5b2：丹房（独立遮罩；主人 2026-09-17：背包与丹房界面分离） -->
+  <div class="ov" id="alchemy-overlay">
+    <div class="ov-head">
+      <span class="ov-title">丹 房</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-alchemy-close" title="关闭（Esc）">×</button>
+    </div>
+    <div id="alchemy-mats"></div>
+    <div class="ov-body">
+      <div id="brew-list"></div>
+      <div class="bag-note" id="brew-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5c：功法（主修 / 辅修 · 升级） -->
+  <div class="ov" id="tech-overlay">
+    <div class="ov-head">
+      <span class="ov-title">功 法</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-tech-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="tech-slots"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">已习得</div>
+      <div id="tech-owned"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">图鉴 · 来源</div>
+      <div id="tech-catalog"></div>
+      <div class="bag-note" id="tech-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5d：宗门（2.4 · 任务板 / 藏经阁 / 商店） -->
+  <div class="ov" id="sect-overlay">
+    <div class="ov-head">
+      <span class="ov-title">宗 门</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-sect-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="sect-info"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">任务板 · 按境界出题（每 7 游戏天刷新）· 限时到点自动交差，战力达标的活接取即办妥</div>
+      <div id="sect-tasks"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">藏经阁 · 贡献借阅功法（入袋后去「功法」面板装槽）</div>
+      <div id="sect-library"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">宗门商店 · 贡献换丹药材料（职级越高折扣越大）</div>
+      <div id="sect-shop"></div>
+      <div class="bag-note" id="sect-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5g：坊市（2.6 · 折扣店 / 回收 / 拍卖行） -->
+  <div class="ov" id="market-overlay">
+    <div class="ov-head">
+      <span class="ov-title">坊 市</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-market-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="bag-tabs">
+      <button class="bag-tab on" data-markettab="shop">折扣店</button>
+      <button class="bag-tab" data-markettab="recycle">回收</button>
+      <button class="bag-tab" data-markettab="auction">拍卖行</button>
+    </div>
+    <div class="ov-body">
+      <div id="market-shop-page">
+        <div id="market-shop"></div>
+      </div>
+      <div id="market-recycle-page" hidden>
+        <div id="market-recycle"></div>
+      </div>
+      <div id="market-auction-page" hidden>
+        <div id="market-auction"></div>
+      </div>
+      <div class="bag-note" id="market-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5e：灵兽（2.8 · 万兽林寻蛋 / 孵化 / 灵兽园与出战） -->
+  <div class="ov" id="beast-overlay">
+    <div class="ov-head">
+      <span class="ov-title">灵 兽</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-beast-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="beast-info"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">万兽林 · 寻蛋</div>
+      <div id="beast-dispatch"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">孵化位</div>
+      <div id="beast-eggs"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">灵兽园 · 喂养 / 出战</div>
+      <div id="beast-park"></div>
+      <div class="bag-note" id="beast-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5f：渡劫（2.5 · 八关口 / 准备加成 / 三道天雷） -->
+  <div class="ov" id="trial-overlay">
+    <div class="ov-head">
+      <span class="ov-title">渡 劫</span>
+      <span class="spacer"></span>
+      <button class="mini danger" id="btn-trial-cure" hidden title="花灵石静养，立即清除道伤">静 养 疗 伤</button>
+      <button class="ov-close" id="btn-trial-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="trial-node"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">渡劫准备 · 单道天雷通过率加成（上限 +35%）</div>
+      <div id="trial-preps"></div>
+      <div class="btnrow"><button class="mini" id="btn-trial-go" title="回到主界面引雷（须先满足修为与调息条件）">前 去 引 雷</button></div>
+      <div class="bag-note" id="trial-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5g：秘境（2.7 · 试炼塔 / 资源秘境 / 分身派遣） -->
+  <div class="ov" id="dungeon-overlay">
+    <div class="ov-head">
+      <span class="ov-title">秘 境</span>
+      <span class="spacer"></span>
+      <button class="ov-close" id="btn-dungeon-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div class="tech-sec">试炼塔 · 战力标尺（首通发灵石 · 每 10 层另有里程碑奖励 · 每周一自动扫荡）</div>
+      <div id="dungeon-tower"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">资源秘境 · 首通发灵石 + 主题材料 + 功法残卷（只列基础收益，时长自选）</div>
+      <div id="dungeon-res"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">分身派遣 · 挂机第二引擎</div>
+      <div id="dungeon-dispatch"></div>
+      <div class="bag-note" id="dungeon-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 3a：世界卡池遮罩（2.9 · 开局先抽世界，再测灵根） -->
+  <div id="world-overlay" data-state="intro">
+    <div id="world-card">
+      <div id="world-intro">
+        <div class="root-title">随 机 世 界 开 局</div>
+        <div id="world-desc">
+          每一世，你都将落进十二界之一。<br />
+          产出、寿元、天劫各有修正，亦有专属与摩擦，各成一方道途。
+        </div>
+        <div id="world-hint">十二界等概率 ｜ 开局免费重掷 1 次</div>
+        <button id="btn-draw-world">抽 取 世 界</button>
+      </div>
+
+      <div id="world-result">
+        <div class="root-title">此 界 已 定</div>
+        <div id="world-result-name">—</div>
+        <div id="world-result-tag">—</div>
+        <div id="world-result-mods">—</div>
+        <div id="world-result-desc"></div>
+        <div id="world-result-exclusive"></div>
+        <div id="world-result-friction"></div>
+        <div class="world-act">
+          <button id="btn-world-reroll">重 掷 此 界</button>
+          <button id="btn-world-ok">入 此 界</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 层 5i：事件与纪事（2.10 + 2.3 · 主人 2026-09-19：两者同页看完，不再分页签） -->
+  <div class="ov" id="chronicle-overlay">
+    <div class="ov-head">
+      <span class="ov-title">纪 事</span>
+      <span class="spacer"></span>
+      <button class="mini" id="btn-goto-achv" title="成就与称号另立一册（成就墙 · 称号佩戴）">成就与称号 ›</button>
+      <button class="ov-close" id="btn-chronicle-close" title="关闭（Esc）">×</button>
+    </div>
+    <!-- 气运摘要 + 自动策略（原事件簿整页并入） -->
+    <div class="ev-strat" id="ev-strat-row">
+      <span id="event-luck">气运 50 · 平运</span>
+      <span class="spacer" style="flex:1"></span>
+      自动策略
+      <button class="strat-pill" data-strategy="steady" title="保底项优先：不求有功，但求无过">稳健</button>
+      <button class="strat-pill" data-strategy="balanced" title="期望项优先：长期收益最大化">均衡</button>
+      <button class="strat-pill" data-strategy="aggressive" title="高波动项优先：富贵险中求">激进</button>
+    </div>
+    <div class="ev-strat" id="chr-filter">
+      频道
+      <button class="chr-pill on" data-chrfilter="all">全部</button>
+      <button class="chr-pill" data-chrfilter="you">你</button>
+      <button class="chr-pill" data-chrfilter="realm">本界</button>
+      <button class="chr-pill" data-chrfilter="sect">宗门</button>
+      <button class="chr-pill" data-chrfilter="world">天下</button>
+    </div>
+    <div class="ov-body">
+      <!-- V3.5.1（主人）：事件与纪事合并为一册纪事——
+           绝 / 仙级置顶为「关键事件」，强制亲断，不决不走（角标常亮）；
+           已结算事件按统一格式并入下方纪事流，不再单列「近事录」。 -->
+      <div class="tech-sec">关键事件 · 绝 / 仙级，须亲断（不决不走）</div>
+      <div id="event-pending"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">纪事流 · 事件与消息同列</div>
+      <div id="chr-list"></div>
+      <div class="bag-note" id="chr-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 5j：成就与称号（主人 2026-09-19：自「事件与纪事」拆出另立一册，两页签） -->
+  <div class="ov" id="achv-overlay">
+    <div class="ov-head">
+      <span class="ov-title">成就与称号</span>
+      <span class="spacer"></span>
+      <span id="achv-head"></span>
+      <button class="ov-close" id="btn-achv-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="bag-tabs">
+      <button class="bag-tab on" data-achvtab="wall">成就墙</button>
+      <button class="bag-tab" data-achvtab="title">称号</button>
+    </div>
+    <div class="ov-body">
+      <div id="achv-wall"></div>
+      <div id="title-list" hidden></div>
+      <div class="bag-note" id="achv-note"></div>
+    </div>
+  </div>
+
+  <!-- 层 6b：成就解锁提示（浮于遮罩之上；3.6 秒自动收起，点按进成就墙） -->
+  <div id="achv-toast">
+    <div class="at-k">成 就 达 成</div>
+    <div class="at-n">—</div>
+    <div class="at-p">—</div>
+  </div>
+
+  <!-- 层 3：测灵根遮罩 -->
+  <div id="root-overlay" data-state="intro">
+    <div id="root-card">
+      <div id="root-intro">
+        <div class="root-title">测 灵 根</div>
+        <div id="root-desc">
+          取三滴精血，投入测灵石。<br />
+          灵根是此世修行的起点——它决定吞吐灵气的快慢，也决定破境之难易。
+        </div>
+        <div id="root-hint">
+          伪灵根 60% ｜ 真灵根 28% ｜ 变异 10% ｜ 天灵根 2%<br />
+          洗髓重掷只会上调高资质的权重，绝不会把已有资质改差
+        </div>
+        <button id="btn-draw-root">开 始 测 灵 根</button>
+      </div>
+
+      <div id="root-spinning">
+        <div class="root-title">推 演 中</div>
+        <div id="root-spin-text">天机流转 · 命格未定</div>
+      </div>
+
+      <div id="root-result">
+        <div class="root-title">灵 根 已 定</div>
+        <div id="root-result-name">—</div>
+        <div id="root-result-trait">—</div>
+        <div id="root-result-mods">—</div>
+        <div id="root-result-pity"></div>
+        <button id="btn-root-ok">入 道</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 层 4：闭关归来结算卡 -->
+  <div id="return-card">
+    闭关归来 · 离开 <b id="rc-away">--</b>　修为 <b id="rc-gain">--</b>
+    <span class="hint">点击关闭（5 秒后自动收起）</span>
+  </div>
+
+  <!-- 层 5：设置 / 存档（覆盖式面板，骨架复用 .ov；位置同样只盖修行日志区） -->
+  <div class="ov" id="panel-overlay">
+    <div id="panel-head">
+      <button class="tab on" data-tab="settings">设置</button>
+      <button class="tab" data-tab="save">存档</button>
+      <span class="spacer"></span>
+      <button id="btn-panel-close" title="关闭（Esc）">×</button>
+    </div>
+
+    <div id="panel-body">
+      <!-- ① 设置（1.8a） -->
+      <div class="pane" data-pane="settings">
+        <div class="row"><span class="k">暂停挂机</span><span class="spacer"></span><button class="toggle" id="tg-pause">关</button></div>
+        <div class="hint2">暂停后：在线不再产出，离开时长照常累计（回来后一次性结算）。</div>
+        <div class="row"><span class="k">音效</span><span class="spacer"></span><button class="toggle" id="tg-sound">关</button></div>
+        <div class="row"><span class="k">音效音量</span><span class="spacer"></span><button class="toggle" id="tg-vol-sfx">中</button></div>
+        <div class="row"><span class="k">音乐音量</span><span class="spacer"></span><button class="toggle" id="tg-vol-bgm">中</button></div>
+        <div class="hint2">
+          音效＝点按 / 面板开合 / 突破 / 渡劫雷声 / 灵根 / 成就 / 宗门 / 秘境 / 灵兽 / 闭关归来，
+          全程<b>程序化合成</b>（无音频素材文件）；打坐时还有一层极轻的环境气息，暂停挂机或切到后台会自动停。<br />
+          音效与音乐各有低 / 中 / 高三档；音乐沿用顶栏「乐」键与右键切曲。
+        </div>
+        <div class="row"><span class="k">化身</span><span class="spacer"></span><button class="toggle" id="tg-avatar">男修</button></div>
+        <div class="hint2">立绘化身：男修·红黑金 / 女修·月白水蓝（V2 立绘 UI）。</div>
+        <div class="row"><span class="k">窗口置顶</span><span class="spacer"></span><button class="toggle" id="tg-top">开</button></div>
+        <div class="row"><span class="k">鼠标穿透</span><span class="spacer"></span><button class="toggle" id="tg-through">关</button></div>
+        <div class="hint2">穿透后整窗不再接收点击（"看得到、点不到"），顶部热区与快捷键 Ctrl+Alt+Q 可随时恢复。</div>
+        <div class="row"><span class="k">锁定位置</span><span class="spacer"></span><button class="toggle" id="tg-lock">关</button></div>
+        <div class="hint2">锁定后拖动面板与打坐区不再移动窗口，避免误拖。</div>
+        <div class="row"><span class="k">动效</span><span class="spacer"></span><span class="v dim" id="v-motion">系统·标准</span><button class="toggle" id="tg-motion">全开</button></div>
+        <div class="hint2">面板转场 · 数值滚动 · 按钮按压。默认<b>全开</b>——即便系统开着「减弱动态」也照播（否则本机等于没有动效）；想彻底安静就切「静态」，「自动」则跟系统走。</div>
+        <div class="row"><span class="k">自动突破</span><span class="spacer"></span><button class="toggle" id="tg-autobreak">开</button></div>
+        <div class="hint2">修为够了自动冲关（含 ×3 / ×6 小瓶颈，缺破境丹会自动开炉）。<b>渡劫不自动</b>——引雷要你亲自按。</div>
+        <div class="row"><span class="k">自动寻蛋</span><span class="spacer"></span><button class="toggle" id="tg-autoegg">开</button></div>
+        <div class="hint2">灵鹰空闲即自动入万兽林，回来自动收蛋入笼（孵化与破壳仍由你决定）。</div>
+        <div class="row"><span class="k">氛围</span><span class="spacer"></span><button class="toggle" id="tg-ambience">自动</button></div>
+        <div class="hint2">昼夜色调 · 灵气粒子流 · 轻天气（雨 / 雪 / 霞）。「自动」＝全开，但系统开着「减弱动态」时自动降一档（粒子更稀更缓）；想彻底安静点上面这一行切成「静态」或「关闭」。</div>
+        <div class="row"><span class="k">天气</span><span class="spacer"></span><button class="toggle" id="tg-weather">自动</button></div>
+        <div class="hint2">「自动」按游戏日轮换（现实约 4 分钟一变；霞只出现在晨/暮）；手动指定即固定，便于挨个看。</div>
+        <div class="row"><span class="k">昼夜</span><span class="spacer"></span><button class="toggle" id="tg-dayphase">自动</button></div>
+        <div class="hint2">「自动」跟现实时钟（24 小时一循环）：白天亮、黄昏暖、夜里冷；也可手动定格晨 / 昼 / 暮 / 夜。</div>
+        <div class="row"><span class="k">氛围负载</span><span class="spacer"></span><span class="v" id="v-ambience-load">标准</span></div>
+        <div class="hint2">低性能自动降载：帧率不足时先减稀粒子、必要时停天气，恢复后自动升回（无需你操心；窗口被遮挡时不会误判）。</div>
+        <div class="row"><span class="k">皮肤</span><span class="spacer"></span><button class="toggle" id="tg-skin">鎏金</button></div>
+        <div class="hint2">四套色板 + 一档「随世界」（按当前世界色系自动跟随，重掷此界即时换）：鎏金 / 朱砂 / 玄墨 / 月白。只换色彩语义，版式与数值一律不动。</div>
+        <div class="divider"></div>
+        <div class="row"><span class="k">存档位置</span><span class="spacer"></span><button class="mini" id="btn-reveal">在资源管理器中定位</button></div>
+        <div class="mono" id="v-savepath">—</div>
+      </div>
+
+      <!-- ② 存档（1.8c） -->
+      <div class="pane" data-pane="save" hidden>
+        <div class="row"><span class="k">存档写入版本</span><span class="spacer"></span><span class="v" id="v-app-version">—</span></div>
+        <div class="row"><span class="k">主存档</span><span class="spacer"></span><span class="v" id="v-save-meta">—</span></div>
+        <div class="row"><span class="k">备份档</span><span class="spacer"></span><span class="v" id="v-bak-meta">—</span></div>
+        <div class="mono" id="v-savepath2">—</div>
+        <div class="btnrow">
+          <button class="mini" id="btn-restore">从备份恢复</button>
+          <button class="mini" id="btn-export2">导出</button>
+          <button class="mini" id="btn-import2">导入</button>
+          <button class="mini danger" id="btn-reset2">重置存档</button>
+        </div>
+        <div class="hint2">
+          写档为「先转存 .bak → 写 .tmp → 改名」的原子写，断电不会留半截文件；<br />
+          导入或恢复都会覆盖当前进度（原档自动留在 .bak / .before-restore）。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 层 6：鼠标穿透热区已移入顶栏；此处只留脚本入口 -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

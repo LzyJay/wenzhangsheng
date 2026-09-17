@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>问长生 · UI 交互稿 V1（无限画布）</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #111110;
+    --bg-subtle: #191918;
+    --surface: #1e1e1d;
+    --surface-raised: #252524;
+    --border: rgba(255,255,255,0.06);
+    --border-hover: rgba(255,255,255,0.12);
+    --accent: #e8b96a;
+    --accent-dim: rgba(232,185,106,0.15);
+    --text: #e8e6e3;
+    --text-secondary: rgba(232,230,227,0.6);
+    --text-tertiary: rgba(232,230,227,0.32);
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.25);
+    --shadow-lg: 0 12px 40px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.3);
+    --shadow-drag: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1.5px var(--accent);
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 20px;
+    --font-sans: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+    --font-serif: "KaiTi", "STKaiti", "Microsoft YaHei", serif;
+    --font-mono: "Cascadia Mono", "Consolas", "Courier New", monospace;
+    --note-bg: #262019;
+    --note-border: rgba(232,185,106,0.22);
+    --transition-fast: 120ms cubic-bezier(0.25, 0.1, 0.25, 1);
+    --transition-normal: 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    font-family: var(--font-sans);
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 512px 512px;
+    mix-blend-mode: overlay;
+  }
+
+  .canvas-viewport { position: fixed; inset: 0; overflow: hidden; cursor: grab; --grid-color: rgba(255,255,255,0.04); }
+  .canvas-viewport.panning { cursor: grabbing; }
+
+  .canvas-world {
+    position: absolute; left: 0; top: 0;
+    width: 20000px; height: 20000px;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+
+  .canvas-el {
+    position: absolute;
+    cursor: grab;
+    transition: box-shadow var(--transition-normal), transform var(--transition-fast);
+  }
+  .canvas-el:hover { z-index: 10; }
+  .canvas-el.dragging {
+    cursor: grabbing; z-index: 999;
+    box-shadow: var(--shadow-drag) !important;
+    transform: scale(1.01);
+    transition: none;
+  }
+
+  .section-header {
+    position: absolute; pointer-events: none;
+    display: flex; align-items: center; gap: 16px; white-space: nowrap;
+  }
+  .section-header .section-num { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; color: var(--accent); opacity: 0.8; }
+  .section-header .section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--text-tertiary); }
+  .section-header .section-line { flex: none; width: 48px; height: 1px; background: linear-gradient(90deg, var(--accent) 0%, transparent 100%); opacity: 0.3; }
+
+  .canvas-title { position: absolute; pointer-events: none; font-weight: 700; line-height: 1.12; letter-spacing: -0.01em; color: var(--text); }
+  .canvas-text { position: absolute; line-height: 1.75; letter-spacing: 0.005em; color: var(--text-secondary); min-width: 200px; max-width: 560px; white-space: pre-wrap; word-break: break-word; }
+
+  .canvas-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 14px; border-radius: 100px;
+    font-size: 12px; font-weight: 500; letter-spacing: 0.02em;
+    color: var(--text-secondary); background: var(--surface);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+  .canvas-tag:hover { border-color: var(--border-hover); background: var(--surface-raised); }
+  .canvas-tag .tag-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+  .context-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm); overflow: hidden; min-width: 220px;
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+  }
+  .context-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
+  .context-card .card-head { padding: 16px 20px 12px; display: flex; align-items: center; gap: 10px; }
+  .context-card .card-head .head-indicator { width: 3px; height: 16px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
+  .context-card .card-head h3 { font-size: 13px; font-weight: 600; letter-spacing: 0.01em; color: var(--text); }
+  .context-card .card-content { padding: 0 20px 20px; font-size: 13px; line-height: 1.75; color: var(--text-secondary); }
+  .context-card .card-content ul { list-style: none; padding: 0; }
+  .context-card .card-content li { padding: 4px 0 4px 12px; position: relative; }
+  .context-card .card-content li::before { content: ''; position: absolute; left: 0; top: 12px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-tertiary); }
+
+  .ds-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm); overflow: hidden;
+    transition: border-color var(--transition-normal), box-shadow var(--transition-normal);
+  }
+  .ds-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-md); }
+  .ds-card .ds-head { padding: 16px 20px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.1em; color: var(--text-tertiary); }
+  .ds-card .ds-body { padding: 0 20px 20px; }
+
+  .canvas-note { background: var(--note-bg); border: 1px solid var(--note-border); border-radius: var(--radius-md); padding: 16px 18px; min-width: 200px; max-width: 320px; box-shadow: var(--shadow-sm); }
+  .canvas-note .note-tag { font-size: 10px; font-weight: 600; letter-spacing: 0.06em; color: var(--accent); opacity: 0.75; margin-bottom: 8px; }
+  .canvas-note .note-body { font-size: 13px; line-height: 1.7; color: var(--text-secondary); }
+
+  .design-page { background: #141118; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-lg); transition: box-shadow var(--transition-normal); }
+  .design-page:hover { box-shadow: 0 16px 56px rgba(0,0,0,0.5), 0 6px 16px rgba(0,0,0,0.35); }
+  .design-page .page-content { width: 100%; height: 100%; overflow: hidden; }
+  .page-label { position: absolute; bottom: -32px; left: 0; font-size: 11.5px; font-weight: 500; color: var(--text-tertiary); white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+  .page-label .label-num { font-family: var(--font-mono); font-size: 10px; color: var(--accent); opacity: 0.6; }
+
+  .canvas-diagram { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm); }
+  .canvas-diagram .diagram-content { width: 100%; height: 100%; padding: 20px; }
+
+  .zoom-controls { position: fixed; bottom: 24px; right: 24px; display: flex; align-items: center; gap: 1px; z-index: 100; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-md); }
+  .zoom-btn { width: 36px; height: 36px; background: transparent; border: none; color: var(--text-secondary); font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background var(--transition-fast), color var(--transition-fast); }
+  .zoom-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+  .zoom-btn:active { background: rgba(255,255,255,0.03); }
+  .zoom-label { min-width: 50px; height: 36px; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+
+  .coord-indicator { position: fixed; bottom: 28px; left: 24px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--text-tertiary); z-index: 100; padding: 4px 10px; background: rgba(17,17,16,0.85); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .kbd-hint { position: fixed; top: 20px; right: 24px; z-index: 100; font-size: 10px; color: var(--text-tertiary); display: flex; gap: 12px; opacity: 0; transition: opacity 0.4s ease; pointer-events: none; }
+  .canvas-viewport:hover ~ .kbd-hint { opacity: 1; }
+  .kbd-hint kbd { font-family: var(--font-mono); padding: 2px 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; font-size: 10px; }
+
+  /* ══ 部件：小窗状态设计稿（Row 3 专用，纯实色、无发光/模糊/渐变） ══ */
+  .wcs { position: relative; width: 100%; height: 100%; background: #0F0D13; color: #EFE9DD; font-family: var(--font-sans); display: flex; flex-direction: column; padding: 8px; gap: 6px; }
+  .wcs .plate { background: #1A1620; border: 1px solid rgba(232,185,106,0.18); border-radius: 10px; padding: 7px 9px 8px; }
+  .wcs .topbar { display: flex; align-items: center; gap: 8px; height: 20px; }
+  .wcs .realm { font-family: var(--font-serif); font-size: 14px; font-weight: 700; color: #FFE3A8; letter-spacing: 0.05em; }
+  .wcs .stone { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 11px; color: #A49C92; }
+  .wcs .stone i { width: 8px; height: 8px; border-radius: 50%; background: #E8B96A; }
+  .wcs .stone b { color: #FFE3A8; font-weight: 500; }
+  .wcs .hide { width: 18px; height: 18px; line-height: 16px; text-align: center; border-radius: 50%; border: 1px solid rgba(232,185,106,0.35); background: #2A2320; color: #FFE3A8; font-size: 12px; }
+  .wcs .qi-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 5px; font-size: 11.5px; }
+  .wcs .rate { font-size: 10.5px; color: #7FD6A8; }
+  .wcs .rate.low { color: #FFAE8C; }
+  .wcs .track { position: relative; margin-top: 5px; height: 9px; border-radius: 5px; background: #0B0910; border: 1px solid rgba(232,185,106,0.16); overflow: hidden; }
+  .wcs .fill { height: 100%; background: #E8B96A; border-radius: 4px; }
+  .wcs .fill.trial { background: #FF8F7D; }
+  .wcs .ticks { position: absolute; inset: 0; }
+  .wcs .ticks i { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(239,233,221,0.22); }
+  .wcs .ticks i.key { background: rgba(255,143,125,0.55); }
+  .wcs .mid { flex: 1; position: relative; }
+  .wcs .fig { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); }
+  .wcs .btn { height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12.5px; letter-spacing: 0.5px; border: 1px solid rgba(232,185,106,0.45); background: #2A2212; color: #FFE3A8; }
+  .wcs .btn.disabled { color: #9C948A; border-color: rgba(150,145,140,0.22); background: #221E28; }
+  .wcs .btn.trial { color: #FFD7C4; border-color: rgba(255,143,125,0.6); background: #2E1A18; }
+  .wcs .badge { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: #0B0910; }
+  .wcs .buff { height: 13px; font-size: 10.5px; color: #FFAE8C; }
+  .wcs .log { background: #1A1620; border: 1px solid rgba(232,185,106,0.18); border-radius: 10px; padding: 6px 9px; font-size: 10.5px; line-height: 1.55; color: #C9C2B8; height: 76px; overflow: hidden; }
+  .wcs .log .ln { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wcs .log .t { color: #6F6A63; font-size: 9.5px; margin-right: 5px; }
+  .wcs .ok { color: #FFE3A8; } .wcs .fail { color: #FF8F7D; } .wcs .off { color: #7FD6A8; } .wcs .sys { color: #9FD6FF; }
+  .wcs .float { position: absolute; left: 50%; transform: translateX(-50%); font-weight: 700; color: #FFD98A; font-size: 15px; white-space: nowrap; }
+  .wcs .float.fail { color: #FF8F7D; } .wcs .float.off { color: #8FE3B6; }
+  .wcs .bubble { position: absolute; left: 50%; transform: translateX(-50%); bottom: 92px; background: #221C26; border: 1px solid rgba(255,143,125,0.55); border-radius: 10px; padding: 9px 12px; font-size: 11px; color: #FFD7C4; text-align: center; width: 210px; }
+  .wcs .bubble .row { display: flex; gap: 8px; margin-top: 8px; }
+  .wcs .bubble .b { flex: 1; height: 24px; line-height: 22px; border-radius: 6px; font-size: 11px; text-align: center; border: 1px solid rgba(255,143,125,0.55); color: #FFD7C4; }
+  .wcs .bubble .b.ghost { border-color: rgba(150,145,140,0.3); color: #A49C92; }
+  .wcs .card { position: absolute; left: 50%; transform: translateX(-50%); top: 46px; background: #16201C; border: 1px solid rgba(127,214,168,0.5); border-radius: 10px; padding: 8px 12px; font-size: 11px; color: #BFEBD4; width: 250px; }
+  .wcs .card b { color: #8FE3B6; }
+  .wcs .center { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+  .wcs .dim { color: #A49C92; font-size: 11.5px; }
+  .wcs .big { font-family: var(--font-serif); font-size: 17px; color: #FFE3A8; }
+</style>
+</head>
+<body>
+
+<div class="canvas-viewport" id="viewport">
+  <div class="canvas-world" id="world"></div>
+</div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" id="zoomOut" aria-label="缩小">&#8722;</button>
+  <div class="zoom-label" id="zoomLabel">100%</div>
+  <button class="zoom-btn" id="zoomIn" aria-label="放大">+</button>
+  <button class="zoom-btn" id="zoomReset" title="重置视图" aria-label="重置视图">&#8962;</button>
+</div>
+
+<div class="coord-indicator" id="coordIndicator">0, 0</div>
+<div class="kbd-hint" id="kbdHint"></div>
+<script>
+(() => {
+  // ═══════════════════════════════════════════════════════════
+  // 本地化：UI_STRINGS 为画布自身界面文案（中文）。
+  // ═══════════════════════════════════════════════════════════
+  const UI_STRINGS = {
+    docTitle: '问长生 · UI 交互稿 V1（无限画布）',
+    zoom: { zoomIn: '放大', zoomOut: '缩小', reset: '重置视图' },
+    kbdHints: [['滚轮', '平移'], ['Ctrl 滚轮', '缩放'], ['Ctrl Z', '撤销']],
+    sections: { context: '01 项目介绍', designSystem: '02 设计系统', deliverables: '03 设计稿 · 交互链路' },
+  };
+
+  document.title = UI_STRINGS.docTitle;
+  document.getElementById('zoomIn').setAttribute('aria-label', UI_STRINGS.zoom.zoomIn);
+  document.getElementById('zoomOut').setAttribute('aria-label', UI_STRINGS.zoom.zoomOut);
+  document.getElementById('zoomReset').setAttribute('aria-label', UI_STRINGS.zoom.reset);
+  document.getElementById('zoomReset').title = UI_STRINGS.zoom.reset;
+  document.getElementById('kbdHint').innerHTML = UI_STRINGS.kbdHints
+    .map(([keys, action]) => `<span><kbd>${keys}</kbd> ${action}</span>`)
+    .join('');
+
+  const viewport = document.getElementById('viewport');
+  const world = document.getElementById('world');
+  const zoomLabel = document.getElementById('zoomLabel');
+  const coordIndicator = document.getElementById('coordIndicator');
+
+  let panX = 0, panY = 0, zoom = 1;
+  const MIN_ZOOM = 0.05, MAX_ZOOM = 8;
+
+  function updateTransform() {
+    world.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+    zoomLabel.textContent = Math.round(zoom * 100) + '%';
+    updateGrid();
+  }
+
+  function updateGrid() {
+    const g = 40 * zoom;
+    const ox = panX % g, oy = panY % g;
+    viewport.style.backgroundImage = `radial-gradient(circle, var(--grid-color) 0.8px, transparent 0.8px)`;
+    viewport.style.backgroundSize = `${g}px ${g}px`;
+    viewport.style.backgroundPosition = `${ox}px ${oy}px`;
+  }
+
+  let isPanning = false, panSX, panSY;
+  viewport.addEventListener('pointerdown', (e) => {
+    if (e.target === viewport || e.target === world) {
+      isPanning = true;
+      panSX = e.clientX - panX;
+      panSY = e.clientY - panY;
+      viewport.classList.add('panning');
+      viewport.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+  });
+  viewport.addEventListener('pointermove', (e) => {
+    if (!isPanning) return;
+    panX = e.clientX - panSX;
+    panY = e.clientY - panSY;
+    updateTransform();
+  });
+  viewport.addEventListener('pointerup', () => {
+    isPanning = false;
+    viewport.classList.remove('panning');
+  });
+
+  viewport.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = viewport.getBoundingClientRect();
+    if (e.ctrlKey || e.metaKey) {
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+      const factor = e.deltaY > 0 ? 0.95 : 1.05;
+      zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+      panX = mx - wx * zoom;
+      panY = my - wy * zoom;
+    } else {
+      const hasX = Math.abs(e.deltaX) > 0.5;
+      if (hasX || Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.3) {
+        panX -= e.deltaX; panY -= e.deltaY;
+      } else {
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+        const factor = e.deltaY > 0 ? 0.95 : 1.05;
+        zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+        panX = mx - wx * zoom;
+        panY = my - wy * zoom;
+      }
+    }
+    updateTransform();
+  }, { passive: false });
+
+  function zoomAt(factor) {
+    const r = viewport.getBoundingClientRect();
+    const cx = r.width / 2, cy = r.height / 2;
+    const wx = (cx - panX) / zoom, wy = (cy - panY) / zoom;
+    zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * factor));
+    panX = cx - wx * zoom;
+    panY = cy - wy * zoom;
+    updateTransform();
+  }
+  document.getElementById('zoomIn').onclick = () => zoomAt(1.25);
+  document.getElementById('zoomOut').onclick = () => zoomAt(0.8);
+  document.getElementById('zoomReset').onclick = () => { zoom = 1; panX = 0; panY = 0; updateTransform(); };
+
+  viewport.addEventListener('pointermove', (e) => {
+    if (isPanning) return;
+    const r = viewport.getBoundingClientRect();
+    coordIndicator.textContent = `${Math.round((e.clientX - r.left - panX) / zoom)}, ${Math.round((e.clientY - r.top - panY) / zoom)}`;
+  });
+
+  let lastPinchDist = null, lastPinchCenter = null;
+  viewport.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      const t0 = e.touches[0], t1 = e.touches[1];
+      lastPinchDist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+      lastPinchCenter = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+      e.preventDefault();
+    }
+  }, { passive: false });
+  viewport.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2) return;
+    e.preventDefault();
+    const t0 = e.touches[0], t1 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    const center = { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+    if (lastPinchDist > 0) {
+      const r = viewport.getBoundingClientRect();
+      const mx = center.x - r.left, my = center.y - r.top;
+      const wx = (mx - panX) / zoom, wy = (my - panY) / zoom;
+      zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom * Math.pow(dist / lastPinchDist, 0.6)));
+      panX = mx - wx * zoom;
+      panY = my - wy * zoom;
+    }
+    if (lastPinchCenter) {
+      panX += center.x - lastPinchCenter.x;
+      panY += center.y - lastPinchCenter.y;
+    }
+    lastPinchDist = dist;
+    lastPinchCenter = center;
+    updateTransform();
+  }, { passive: false });
+  viewport.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) { lastPinchDist = null; lastPinchCenter = null; }
+  });
+
+  const undoStack = [];
+  function saveUndo() {
+    const s = [];
+    world.querySelectorAll('.canvas-el').forEach(el => {
+      s.push({ id: el.id, left: el.style.left, top: el.style.top });
+    });
+    undoStack.push({ panX, panY, zoom, assets: s });
+    if (undoStack.length > 60) undoStack.shift();
+  }
+  function undo() {
+    if (!undoStack.length) return;
+    const st = undoStack.pop();
+    panX = st.panX; panY = st.panY; zoom = st.zoom;
+    st.assets.forEach(a => {
+      const el = document.getElementById(a.id);
+      if (el) { el.style.left = a.left; el.style.top = a.top; }
+    });
+    updateTransform();
+  }
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+  });
+
+  function makeDraggable(el) {
+    let dragging = false, sx, sy, ox, oy;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      el.classList.add('dragging');
+      saveUndo();
+      sx = e.clientX; sy = e.clientY;
+      ox = parseFloat(el.style.left); oy = parseFloat(el.style.top);
+      el.setPointerCapture(e.pointerId);
+      e.stopPropagation();
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      el.style.left = (ox + (e.clientX - sx) / zoom) + 'px';
+      el.style.top = (oy + (e.clientY - sy) / zoom) + 'px';
+    });
+    el.addEventListener('pointerup', () => {
+      if (dragging) { dragging = false; el.classList.remove('dragging'); }
+    });
+  }
+
+  let _id = 0;
+  function uid(prefix) { return (prefix || 'el') + '-' + (++_id); }
+  /* ===== API ===== */
+  function addSection(rowY, label) {
+    const parts = label.split(' ');
+    const num = parts[0] || '';
+    const rest = parts.slice(1).join(' ');
+    const el = document.createElement('div');
+    el.className = 'section-header';
+    el.style.left = '60px';
+    el.style.top = rowY + 'px';
+    el.innerHTML = `<span class="section-line"></span><span class="section-num">${num}</span><span class="section-label">${rest}</span>`;
+    world.appendChild(el);
+    return rowY;
+  }
+
+  function addTitle(x, y, text, options = {}) {
+    const el = document.createElement('div');
+    el.className = 'canvas-title';
+    el.id = uid('title');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.fontSize = (options.fontSize || 48) + 'px';
+    if (options.fontWeight) el.style.fontWeight = options.fontWeight;
+    if (options.color) el.style.color = options.color;
+    if (options.maxWidth) el.style.maxWidth = options.maxWidth + 'px';
+    el.textContent = text;
+    world.appendChild(el);
+    return el;
+  }
+
+  function addText(x, y, text, options = {}) {
+    const el = document.createElement('div');
+    el.className = 'canvas-text canvas-el';
+    el.id = uid('text');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.fontSize = (options.fontSize || 14) + 'px';
+    if (options.color) el.style.color = options.color;
+    if (options.maxWidth) el.style.maxWidth = options.maxWidth + 'px';
+    el.textContent = text;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function addTag(x, y, label, options = {}) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('tag');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    const dotColor = options.color || 'var(--accent)';
+    el.innerHTML = `<div class="canvas-tag"><span class="tag-dot" style="background:${dotColor}"></span>${label}</div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function addContextCard(x, y, w, h, title, content) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('ctx');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    if (h) el.style.height = h + 'px';
+    el.innerHTML = `<div class="context-card" style="width:100%;${h ? 'height:100%' : ''}">
+      <div class="card-head"><div class="head-indicator"></div><h3>${title}</h3></div>
+      <div class="card-content">${content}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function addDesignSystemCard(x, y, w, h, type, data) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('ds');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    if (h) el.style.height = h + 'px';
+    let body = '';
+    if (type === 'color' && Array.isArray(data.colors)) {
+      body = `<div class="color-grid">${data.colors.map(c =>
+        `<div class="color-chip" style="background:${c.hex}"><span class="chip-label">${c.name || c.hex}</span></div>`
+      ).join('')}</div>`;
+    } else if (type === 'typography' && Array.isArray(data.samples)) {
+      body = `<div class="type-stack">${data.samples.map(s =>
+        `<div class="type-row"><span class="type-label">${s.label}</span><span class="type-sample" style="font-size:${s.size}px;font-weight:${s.weight || 400};${s.font ? 'font-family:' + s.font : ''}">${s.text || 'Aa'}</span></div>`
+      ).join('')}</div>`;
+    } else if (typeof data.html === 'string') {
+      body = data.html;
+    }
+    el.innerHTML = `<div class="ds-card" style="width:100%;${h ? 'height:100%' : ''}">
+      <div class="ds-head">${data.title || type}</div>
+      <div class="ds-body">${body}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function addPage(x, y, w, h, label, htmlContent) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('page');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    el.style.height = (h + 40) + 'px';
+    el.innerHTML = `<div class="design-page" style="width:${w}px;height:${h}px;">
+      <div class="page-content">${htmlContent}</div>
+    </div>
+    <div class="page-label">${label}</div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function addNote(x, y, tag, text) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('note');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.innerHTML = `<div class="canvas-note">
+      <div class="note-tag">${tag}</div>
+      <div class="note-body">${text}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function addDiagram(x, y, w, h, htmlContent) {
+    const el = document.createElement('div');
+    el.className = 'canvas-el';
+    el.id = uid('diagram');
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    el.innerHTML = `<div class="canvas-diagram" style="width:100%;height:100%;">
+      <div class="diagram-content">${htmlContent}</div>
+    </div>`;
+    world.appendChild(el);
+    makeDraggable(el);
+    return el;
+  }
+
+  function below(el, gap) { if (gap === undefined) gap = 20; return parseFloat(el.style.top) + el.offsetHeight + gap; }
+  function rightOf(el, gap) { if (gap === undefined) gap = 20; return parseFloat(el.style.left) + el.offsetWidth + gap; }
+  function maxY(els, gap) { if (gap === undefined) gap = 20; return Math.max(...els.map(e => parseFloat(e.style.top) + e.offsetHeight)) + gap; }
+  function maxX(els, gap) { if (gap === undefined) gap = 20; return Math.max(...els.map(e => parseFloat(e.style.left) + e.offsetWidth)) + gap; }
+
+  /* ===== 内容 ===== */
+  function initDemo() {
+
+    /* ── Row 1: 项目介绍 ─────────────────────────── */
+    addSection(40, UI_STRINGS.sections.context);
+
+    const r1Title = addTitle(100, 90, '问长生', { fontSize: 64, fontWeight: 700 });
+    r1Title.style.fontFamily = 'var(--font-serif)';
+    r1Title.style.letterSpacing = '0.08em';
+    const r1Sub = addText(100, below(r1Title, 10), '桌面常驻挂机修仙小窗 · 配套 UI 交互稿 V1（Refinement）', { fontSize: 16 });
+    const r1Desc = addText(100, below(r1Sub, 14), '420×320 无边框透明小窗：Phaser 程序化人形画布 + DOM 半透明面板，常驻桌面一角、托盘随行。\n本稿为「配套交互稿」：小窗形态与视觉血统保持不变，补全全部交互状态，并把「临关 · 渡劫 · 归来」三个高光时刻做出仪式感。', { fontSize: 14, maxWidth: 560 });
+
+    const tagsY = below(r1Desc, 18);
+    const tag1 = addTag(100, tagsY, 'Electron 桌面小窗');
+    const tag2 = addTag(rightOf(tag1, 8), tagsY, '挂机修仙');
+    const tag3 = addTag(rightOf(tag2, 8), tagsY, '420×320 透明置顶');
+    addTag(rightOf(tag3, 8), tagsY, '交互稿 V1');
+
+    const cardsY = below(tag1, 26);
+    const card1 = addContextCard(100, cardsY, 320, null, '是什么', '<ul><li>无边框 · 透明 · 始终置顶的桌面小窗</li><li>三层信息：境界与修为、突破入口、修行日志</li><li>关闭即隐藏到托盘，修行不中断</li></ul>');
+    const card2 = addContextCard(440, cardsY, 320, null, '给谁用', '<ul><li>修仙题材挂机玩家</li><li>喜欢「桌面养成陪伴感」的用户</li><li>要「不打扰、但一直在」的小工具用户</li></ul>');
+    const card3 = addContextCard(780, cardsY, 320, null, '解决什么', '<ul><li>一眼看到修行进度，顺手一记突破</li><li>离开有闭关收益，回来有「归来时刻」</li><li>零窗口管理负担：不占任务栏、不抢屏</li></ul>');
+    const card4 = addContextCard(1120, cardsY, 340, null, '已实现交互（基线）', '<ul><li>修为自动入账（100ms 结算）与进度条</li><li>突破 / 小瓶颈 / 渡劫 / 飞升四类关口</li><li>成功率、调息冷却、道伤减益（−30% · 1 小时）</li><li>离线结算（上限 12 小时）、隐藏托盘、日志与重置</li></ul>');
+
+    const notesY = maxY([card1, card2, card3, card4], 28);
+    const note1 = addNote(100, notesY, '保留边界 · 不动', '窗口形态（420×320 透明置顶）｜双层架构（人形画布 + DOM 面板）｜全部数值与规则（成功率 / 冷却 / 道伤 / 离线上限）｜色彩血统（鎏金 · 灵玉 · 劫红）｜楷体境界名。');
+    const note2 = addNote(rightOf(note1, 20), notesY, '可重构 · 本次范围', '面板间距与层级｜状态呈现方式｜动效组织｜交互仪式：新增「引雷确认」与「闭关归来结算卡」两处高光交互（不改数值逻辑）。');
+    const note3 = addNote(rightOf(note2, 20), notesY, '最大平庸源与对策', '仪式感缺位：突破 / 渡劫 / 归来三个高光时刻与日常长得一样（一个按钮 + 一行日志）。本次精修：进度条关口刻度、渡劫确认、归来结算卡三处。');
+
+    window.__R1 = [card1, card2, card3, card4, note1, note2, note3];
+  }
+  function initRow2() {
+    const r2Start = maxY(window.__R1, 80);
+    addSection(r2Start, UI_STRINGS.sections.designSystem);
+
+    const tone = addText(100, r2Start + 48, '调性：暗夜鎏金 · 桌面夜色里的一盏修行灯。烟晶玻璃面板压暗桌面、鎏金描线勾出秩序；金 = 灵性与进阶，玉 = 增益与归途，绯 = 劫难与警示。', { fontSize: 14, maxWidth: 780 });
+
+    const dsY = below(tone, 28);
+
+    const colorCard = addDesignSystemCard(100, dsY, 520, null, 'custom', {
+      title: '色板 · Color Tokens',
+      html: `<div class="color-swatch-group" style="flex-wrap:wrap;gap:16px;">
+        <div class="swatch-item"><div class="swatch-circle" style="background:#E8B96A"></div><div class="swatch-name">鎏金</div><div class="swatch-hex">#E8B96A</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#FFE3A8"></div><div class="swatch-name">金亮</div><div class="swatch-hex">#FFE3A8</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#7FD6A8"></div><div class="swatch-name">灵玉</div><div class="swatch-hex">#7FD6A8</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#FF8F7D"></div><div class="swatch-name">劫红</div><div class="swatch-hex">#FF8F7D</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#EFE9DD"></div><div class="swatch-name">霜白</div><div class="swatch-hex">#EFE9DD</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#A49C92"></div><div class="swatch-name">烟灰</div><div class="swatch-hex">#A49C92</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:#12101A"></div><div class="swatch-name">烟晶</div><div class="swatch-hex">#12101A</div></div>
+        <div class="swatch-item"><div class="swatch-circle" style="background:rgba(232,185,106,0.35);box-shadow:inset 0 0 0 1px #E8B96A"></div><div class="swatch-name">金描线</div><div class="swatch-hex">rgba .20</div></div>
+      </div>`
+    });
+
+    const typeCard = addDesignSystemCard(660, dsY, 430, null, 'custom', {
+      title: '字体 · Typography',
+      html: `<div class="type-sample-group">
+        <div class="type-sample-row"><span class="type-sample-meta">境界名 · 楷体<br>14px / 700</span><span class="type-sample-text" style="font-family:var(--font-serif);font-size:14px;font-weight:700;color:#FFE3A8;letter-spacing:0.05em;">炼气一重 · 引气入体</span></div>
+        <div class="type-sample-row"><span class="type-sample-meta">按钮 · 雅黑<br>12.5px / 500</span><span class="type-sample-text" style="font-size:12.5px;font-weight:500;">突破 → 筑基一重</span></div>
+        <div class="type-sample-row"><span class="type-sample-meta">数值<br>11.5px</span><span class="type-sample-text" style="font-size:11.5px;">修为 12,345 / 15,678</span></div>
+        <div class="type-sample-row"><span class="type-sample-meta">日志<br>10.5px</span><span class="type-sample-text" style="font-size:10.5px;color:#C9C2B8;font-family:var(--font-sans);">09:41:07　突破成功</span></div>
+        <div class="type-sample-row"><span class="type-sample-meta">注脚<br>9.5px</span><span class="type-sample-text" style="font-size:9.5px;color:#6F6A63;">时间戳 / 辅助信息</span></div>
+      </div>`
+    });
+
+    const compCard = addDesignSystemCard(1130, dsY, 340, null, 'custom', {
+      title: '组件 · Components',
+      html: `<div style="display:flex;flex-direction:column;gap:10px;">
+        <div class="wcs" style="padding:0;background:transparent;"><div class="btn">突破 → 炼气五重 <span class="badge">92%</span></div></div>
+        <div class="wcs" style="padding:0;background:transparent;"><div class="btn trial">渡劫 → 筑基一重</div></div>
+        <div class="wcs" style="padding:0;background:transparent;"><div class="btn disabled">修为不足 · 还需 1,204</div></div>
+        <div class="wcs" style="padding:0;background:transparent;"><div class="track" style="margin-top:2px;"><div class="fill" style="width:62%;"></div><div class="ticks"><i style="left:33.3%"></i><i style="left:66.6%"></i><i class="key" style="left:99%;"></i></div></div></div>
+        <div class="wcs" style="padding:0;background:transparent;font-size:10.5px;color:#C9C2B8;white-space:nowrap;"><span class="t">09:41:07</span><span class="ok">突破成功</span><span style="color:#C9C2B8;">：炼气四重 → 炼气五重</span></div>
+        <div class="wcs" style="padding:0;background:transparent;font-size:10.5px;color:#FFAE8C;">道伤：产出 −30%（剩余 59:12）</div>
+      </div>`
+    });
+
+    const dsY2 = maxY([colorCard, typeCard, compCard], 24);
+
+    const statesCard = addDesignSystemCard(100, dsY2, 440, null, 'custom', {
+      title: '交互状态枚举 · States',
+      html: `<ul style="list-style:none;padding:0;margin:0;font-size:12.5px;line-height:2.05;color:var(--text-secondary);">
+        <li>突破按钮：默认 / 悬停提亮 / 按下下沉 1px / 禁用 / 渡劫（红金）</li>
+        <li>进度条：增长 / 满格 / 冷却中</li>
+        <li>面板：常态 / 拖拽中（描边高亮）</li>
+        <li>窗口：显示 / 隐藏到托盘</li>
+        <li>系统：调息冷却 / 道伤（×0.70） / 已飞升</li>
+        <li>键盘焦点：2px 金色描边（Tab 可走查）</li>
+      </ul>`
+    });
+
+    const motionCard = addDesignSystemCard(560, dsY2, 440, null, 'custom', {
+      title: '动效纪律 · Motion',
+      html: `<ul style="list-style:none;padding:0;margin:0;font-size:12.5px;line-height:2.05;color:var(--text-secondary);">
+        <li>人形呼吸 1.9s（缩放 ±3.5%）｜光晕呼吸 2.4s</li>
+        <li>飘字 1.5s：上浮 42px 淡出（一次性）</li>
+        <li>突破爆发 28~46 枚粒子 · 0.5~1.1s｜渡劫震屏 320ms</li>
+        <li>进度条 120ms linear｜状态切换 ≤150ms</li>
+        <li>「减弱动态」开启时：全部动效降级为透明度过渡</li>
+      </ul>`
+    });
+
+    const anatomyCard = addDesignSystemCard(1020, dsY2, 450, null, 'custom', {
+      title: '窗口解剖 · Anatomy',
+      html: `<ul style="list-style:none;padding:0;margin:0;font-size:12.5px;line-height:2.05;color:var(--text-secondary);">
+        <li>① 顶部信息条：境界 / 灵石 / 隐藏按钮 / 修为 / 进度条</li>
+        <li>② 打坐区：人形 + 光晕（透明背景 · 可拖拽窗口）</li>
+        <li>③ 突破动作区：主按钮 + 概率徽章 + 状态行</li>
+        <li>④ 修行日志：滚动区 + 重置（右下）</li>
+        <li>窗口 420×320 · 最小 380×300 · 右下角默认位 · 位置记忆</li>
+      </ul>`
+    });
+
+    window.__R2 = [colorCard, typeCard, compCard, statesCard, motionCard, anatomyCard];
+  }
+  function initRow3() {
+    const r3Start = maxY(window.__R2, 80);
+    addSection(r3Start, UI_STRINGS.sections.deliverables);
+
+    const flowNote = addText(100, r3Start + 46, '流程：启动凝聚 → 挂机常态 →（修为满）突破关口（就绪 / 小瓶颈 / 渡劫）→ 成功或失败分支 →（窗口显示）闭关归来 → 飞升。小窗全部界面均在此链路内，无额外页面。', { fontSize: 13.5, maxWidth: 980 });
+    const pagesY = below(flowNote, 30);
+
+    const FIG = `<svg class="fig" width="118" height="118" viewBox="0 0 120 120" aria-hidden="true">
+      <circle cx="60" cy="58" r="46" fill="none" stroke="#7FD6A8" stroke-opacity="0.22" stroke-width="2"></circle>
+      <ellipse cx="60" cy="88" rx="42" ry="10" fill="#2B2118" stroke="#E8B96A" stroke-opacity="0.3"></ellipse>
+      <rect x="38" y="44" width="44" height="42" rx="12" fill="#3B4A63"></rect>
+      <rect x="52" y="42" width="12" height="38" rx="6" fill="#55688A"></rect>
+      <rect x="26" y="46" width="12" height="28" rx="6" fill="#33415A"></rect>
+      <rect x="82" y="46" width="12" height="28" rx="6" fill="#33415A"></rect>
+      <rect x="55" y="30" width="10" height="14" rx="4" fill="#E8C9A0"></rect>
+      <circle cx="60" cy="24" r="11" fill="#F0D3AB"></circle>
+      <ellipse cx="60" cy="14" rx="12" ry="7" fill="#2A2320"></ellipse>
+      <circle cx="60" cy="9" r="5" fill="#2A2320"></circle>
+      <circle cx="60" cy="19" r="2" fill="#E8B96A"></circle>
+    </svg>`;
+
+    function topPlate(realm, stones, qi, rate, pct, opts = {}) {
+      const rateCls = opts.rateLow ? 'rate low' : 'rate';
+      const fillCls = opts.trial ? 'fill trial' : 'fill';
+      return `<div class="plate">
+        <div class="topbar"><span class="realm">${realm}</span><span class="stone"><i></i><b>${stones}</b></span><span class="hide">×</span></div>
+        <div class="qi-row"><span>修为 ${qi}</span><span class="${rateCls}">${rate}</span></div>
+        <div class="track"><div class="${fillCls}" style="width:${pct}%"></div><div class="ticks"><i style="left:33.3%"></i><i style="left:66.6%"></i><i class="key" style="left:99%;"></i></div></div>
+      </div>`;
+    }
+    function actionPlate(btn, buff = '') {
+      return `<div class="plate"><div class="${btn}"></div><div class="buff">${buff}</div></div>`;
+    }
+    function logPlate(lines) {
+      return `<div class="log">${lines.map(l => `<div class="ln"><span class="t">${l[0]}</span><span class="${l[1]}">${l[2]}</span></div>`).join('')}</div>`;
+    }
+
+    const pages = [];
+
+    pages.push(addPage(100, pagesY, 420, 320, '01 启动凝聚 · 过场（约 560ms）', `
+      <div class="wcs" style="align-items:center;justify-content:center;"><div style="font-size:14px;color:#E8E2D6;">凝聚灵气…</div></div>`));
+
+    pages.push(addPage(580, pagesY, 420, 320, '02 挂机常态 · 修为缓涨', `
+      <div class="wcs">
+        ${topPlate('炼气一重', '0', '12 / 30', '+1.00/秒', 40)}
+        <div class="mid">${FIG}</div>
+        ${actionPlate('btn disabled', '')}
+        ${logPlate([['09:12:03', 'sys', '问长生 · 开局（炼气一重）修为开始自动增长。'], ['09:12:05', 'info', '打坐中：灵气缓慢汇入丹田。']])}
+      </div>`));
+
+    pages.push(addPage(1060, pagesY, 420, 320, '03 突破就绪 · 按钮点亮（悬停提亮）', `
+      <div class="wcs">
+        ${topPlate('炼气二重', '0', '68 / 72', '+1.30/秒', 94)}
+        <div class="mid">${FIG}</div>
+        <div class="plate"><div class="btn">突破 → 炼气三重 <span class="badge">92%</span></div><div class="buff"></div></div>
+        ${logPlate([['09:31:12', 'sys', '修为已满，可冲击炼气三重。'], ['09:31:12', 'info', '点击「突破」开始冲击。']])}
+      </div>`));
+
+    pages.push(addPage(1540, pagesY, 420, 320, '04 小瓶颈 · 第 3 / 6 重（概率 70%）', `
+      <div class="wcs">
+        ${topPlate('筑基二重', '36', '1,556 / 1,557', '+3.38/秒', 99)}
+        <div class="mid">${FIG}</div>
+        <div class="plate"><div class="btn">破境 → 筑基三重（小瓶颈） <span class="badge">70%</span></div><div class="buff"></div></div>
+        ${logPlate([['09:52:40', 'info', '此关为小瓶颈，成功率略低（70%），建议焚香静心。']])}
+      </div>`));
+
+    pages.push(addPage(2020, pagesY, 420, 320, '05 渡劫关口 · 红金警示 + 引雷确认（新增）', `
+      <div class="wcs">
+        ${topPlate('炼气九重', '0', '1,554 / 1,557', '+13.46/秒', 99, { trial: true })}
+        <div class="mid">${FIG}</div>
+        <div class="bubble">三道天雷 · 过二即成｜当前成率 63.4%
+          <div class="row"><div class="b">引雷</div><div class="b ghost">再等等</div></div>
+        </div>
+        <div class="plate" style="margin-top:auto;"><div class="btn trial">渡劫 → 筑基一重 <span class="badge">63.4%</span></div><div class="buff"></div></div>
+        ${logPlate([['10:00:00', 'info', '炼气圆满，天劫将至。']])}
+      </div>`));
+
+    pages.push(addPage(2500, pagesY, 420, 320, '06 突破成功 · 飘字 + 爆发（一次性）', `
+      <div class="wcs">
+        ${topPlate('炼气五重', '14', '0 / 111', '+2.20/秒', 0)}
+        <div class="mid">${FIG}<div class="float" style="top:64px;">突破成功</div><div class="float" style="top:92px;font-size:13px;">炼气五重</div></div>
+        ${actionPlate('btn disabled')}
+        ${logPlate([['09:41:07', 'ok', '炼气五重 · 引气化神：炼气四重 → 炼气五重（成功率 92%），灵石 +14']])}
+      </div>`));
+
+    pages.push(addPage(2980, pagesY, 420, 320, '07 突破失败 · 道伤与调息', `
+      <div class="wcs">
+        ${topPlate('炼气九重', '0', '1,120 / 1,557', '+9.42/秒（×0.70）', 72, { rateLow: true })}
+        <div class="mid">${FIG}<div class="float fail" style="top:64px;">天雷难渡…</div></div>
+        ${actionPlate('btn disabled', '道伤：产出 −30%（剩余 59:12）')}
+        ${logPlate([['10:02:31', 'fail', '渡劫失败：三道天雷未能过二（成功率 63.4%），损耗修为 437，道伤加身（产出 −30%，持续 60 分钟）']])}
+      </div>`));
+
+    pages.push(addPage(3460, pagesY, 420, 320, '08 闭关归来 · 结算卡（新增）', `
+      <div class="wcs">
+        ${topPlate('筑基一重', '36', '0 / 155', '+3.38/秒', 0)}
+        <div class="mid">${FIG}
+          <div class="card">闭关归来 · 离开 <b>8 小时 12 分</b>　修为 <b>+12,345</b>　点击关闭</div>
+          <div class="float off" style="top:170px;">闭关归来 +12,345</div>
+        </div>
+        ${actionPlate('btn disabled')}
+        ${logPlate([['08:00:00', 'off', '闭关归来：离开 8小时12分，修为 +12,345']])}
+      </div>`));
+
+    pages.push(addPage(3940, pagesY, 420, 320, '09 已飞升 · 二期占位', `
+      <div class="wcs">
+        ${topPlate('大乘九重', '9,999万', '圆满', '+∞', 100)}
+        <div class="center"><div class="big">羽化飞升！</div><div class="dim">仙界之门暂封 · 二期内容</div></div>
+        ${actionPlate('btn disabled')}
+        ${logPlate([['', 'ok', '羽化飞升！大乘九重 已是圆满，仙界之门暂封（二期内容）。']])}
+      </div>`));
+
+    // 引导线与分支标注
+    const arrowY = pagesY + 150;
+    for (let i = 0; i < pages.length - 1; i++) {
+      addText(100 + i * 480 + 432, arrowY, '▶', { fontSize: 13, color: '#E8B96A' });
+    }
+    addText(2414, arrowY - 26, '成功', { fontSize: 11, color: 'rgba(232,230,227,0.4)' });
+    addText(2894, arrowY - 26, '失败', { fontSize: 11, color: 'rgba(232,230,227,0.4)' });
+    addText(3374, arrowY - 26, '窗口显示时', { fontSize: 11, color: 'rgba(232,230,227,0.4)' });
+    addText(3854, arrowY - 26, '大乘圆满', { fontSize: 11, color: 'rgba(232,230,227,0.4)' });
+
+    window.__R3 = pages;
+  }
+
+  initDemo();
+  initRow2();
+  initRow3();
+
+  const r = viewport.getBoundingClientRect();
+  panX = r.width * 0.04;
+  panY = r.height * 0.04;
+  updateTransform();
+})();
+</script>
+</body>
+</html>

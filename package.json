@@ -1,0 +1,71 @@
+{
+  "name": "wenzhangsheng",
+  "productName": "问长生",
+  "version": "3.5.1",
+  "description": "问长生 —— 桌面常驻挂机修仙小窗（阶段一 MVP · 设计库 v1.0）",
+  "author": "问长生项目组",
+  "private": true,
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "electron .",
+    "gen:values": "node scripts/gen_values.mjs",
+    "gen:icon": "python scripts/gen_icon.py",
+    "dist": "npm run build && electron-builder",
+    "dist:dir": "npm run build && electron-builder --dir"
+  },
+  "dependencies": {
+    "phaser": "^3.80.1"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.4.11",
+    "vite-plugin-electron": "^0.28.8"
+  },
+  "build": {
+    "appId": "com.wenzhangsheng.wcs",
+    "productName": "问长生",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "WenChangSheng-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "问长生",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "WenChangSheng-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}

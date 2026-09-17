@@ -1,0 +1,19 @@
+# 依赖与构建产物
+node_modules/
+dist/
+dist-electron/
+release/
+release-build/
+
+# 运行期产物
+*.log
+window-bounds.json
+
+# 编辑器 / 工具
+.codebuddy/
+.workbuddy/
+$null
+
+# 系统杂项
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>问长生 · 可交互原型（V1）</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --gold: #e8b96a;
+    --gold-l: #ffe3a8;
+    --jade: #7fd6a8;
+    --fail: #ff8f7d;
+    --warn: #ffae8c;
+    --text: #efe9dd;
+    --dim: #a49c92;
+    --line: rgba(232,185,106,0.20);
+    --plate: rgba(18,15,24,0.78);
+    --serif: "KaiTi", "STKaiti", "Microsoft YaHei", serif;
+    --sans: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+    --mono: "Cascadia Mono", Consolas, monospace;
+  }
+
+  html, body { width: 100%; min-height: 100%; }
+  body {
+    background:
+      radial-gradient(1100px 760px at 72% 18%, rgba(232,185,106,0.05), transparent 62%),
+      radial-gradient(900px 680px at 18% 82%, rgba(127,214,168,0.045), transparent 62%),
+      #0B0A0F;
+    color: var(--text);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 999; pointer-events: none;
+    opacity: 0.03;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 512px 512px;
+    mix-blend-mode: overlay;
+  }
+
+  button { font-family: inherit; }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .stage {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 22px;
+    padding: 44px 20px 120px;
+  }
+
+  .stage-head { text-align: center; }
+  .stage-head h1 {
+    font-family: var(--serif);
+    font-size: 23px; font-weight: 700; letter-spacing: 0.12em;
+    color: var(--gold-l);
+  }
+  .stage-head p { margin-top: 7px; font-size: 12.5px; color: var(--dim); letter-spacing: 0.03em; }
+
+  /* ══ 小窗（复刻 420×320 实机形态） ══ */
+  .widget-wrap { transform-origin: top center; }
+  .widget {
+    position: relative;
+    width: 420px; height: 320px;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .figure-layer { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
+  .figure-layer svg { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); }
+  .aura {
+    position: absolute; left: 50%; top: 38%;
+    width: 210px; height: 210px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(232,185,106,0.20) 0%, rgba(232,185,106,0.08) 42%, transparent 70%);
+    animation: aura 2.4s ease-in-out infinite;
+  }
+  @keyframes aura {
+    0%, 100% { opacity: 0.62; transform: translate(-50%,-50%) scale(1); }
+    50% { opacity: 1; transform: translate(-50%,-50%) scale(1.09); }
+  }
+  .breathe { animation: breathe 1.9s ease-in-out infinite; transform-origin: 60px 90px; }
+  @keyframes breathe {
+    0%, 100% { transform: scale(1) translateY(0); }
+    50% { transform: scale(1.035, 0.965) translateY(-2px); }
+  }
+  .spark {
+    position: absolute; width: 3px; height: 3px; border-radius: 50%;
+    background: #ffe3a8; opacity: 0;
+    animation: rise linear infinite;
+  }
+  @keyframes rise {
+    0% { opacity: 0; transform: translateY(6px); }
+    22% { opacity: 0.9; }
+    100% { opacity: 0; transform: translateY(-64px); }
+  }
+
+  .ui-layer {
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column; gap: 6px;
+    height: 100%; padding: 8px;
+  }
+  .plate {
+    background: var(--plate);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+  }
+  #topPanel { padding: 7px 9px 8px; }
+  #midZone { flex: 1; min-height: 40px; cursor: grab; }
+  #midZone:active { cursor: grabbing; }
+  #actionPanel { padding: 7px 9px 6px; }
+  #logPanel { padding: 6px 9px 7px; }
+
+  .topbar { display: flex; align-items: center; gap: 8px; height: 20px; cursor: grab; }
+  .topbar:active { cursor: grabbing; }
+  .realm {
+    font-family: var(--serif);
+    font-size: 14px; font-weight: 700;
+    color: var(--gold-l); letter-spacing: 0.06em;
+    text-shadow: 0 0 10px rgba(232,185,106,0.45);
+  }
+  .spacer { flex: 1; }
+  .stone-wrap { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dim); }
+  .stone-icon {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, var(--gold-l), var(--gold));
+    box-shadow: 0 0 7px rgba(232,185,106,0.85);
+  }
+  #stoneText { color: var(--gold-l); font-variant-numeric: tabular-nums; }
+  #btnHide {
+    width: 18px; height: 18px; line-height: 16px;
+    border-radius: 50%; border: 1px solid rgba(232,185,106,0.35);
+    background: rgba(232,185,106,0.10); color: var(--gold-l);
+    font-size: 12px; cursor: pointer; transition: background 0.15s ease;
+  }
+  #btnHide:hover { background: rgba(232,185,106,0.30); }
+  #btnHide:active { transform: translateY(1px); }
+
+  .qi-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 5px; font-size: 11.5px; }
+  #qiRate { font-size: 10.5px; color: var(--jade); font-variant-numeric: tabular-nums; }
+  #qiRate.low { color: var(--warn); }
+
+  .track {
+    position: relative; margin-top: 5px; height: 9px; border-radius: 5px;
+    background: rgba(0,0,0,0.45); border: 1px solid rgba(232,185,106,0.16);
+    overflow: hidden;
+  }
+  #progressBar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #c98f3c, var(--gold), var(--gold-l));
+    box-shadow: 0 0 10px rgba(232,185,106,0.6);
+    transition: width 120ms linear;
+  }
+  .ticks { position: absolute; inset: 0; pointer-events: none; }
+  .ticks i { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(239,233,221,0.28); }
+  .ticks i.key { background: rgba(255,143,125,0.6); }
+  /* ══ 突破按钮 ══ */
+  #btnBreak {
+    width: 100%; height: 30px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(232,185,106,0.45);
+    background: linear-gradient(180deg, rgba(232,185,106,0.24), rgba(232,185,106,0.09));
+    color: var(--gold-l); font-size: 12.5px; letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.1s ease;
+  }
+  #btnBreak:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(232,185,106,0.38), rgba(232,185,106,0.16));
+    box-shadow: 0 0 15px rgba(232,185,106,0.35);
+  }
+  #btnBreak:active:not(:disabled) { transform: translateY(1px) scale(0.995); }
+  #btnBreak:disabled {
+    cursor: default; color: #9c948a;
+    border-color: rgba(150,145,140,0.22);
+    background: rgba(38,34,46,0.55); box-shadow: none;
+  }
+  #btnBreak.trial {
+    color: #ffd7c4; border-color: rgba(255,143,125,0.6);
+    background: linear-gradient(180deg, rgba(255,120,90,0.30), rgba(255,120,90,0.10));
+    box-shadow: 0 0 16px rgba(255,120,90,0.28);
+  }
+  #btnBreak.trial:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(255,120,90,0.44), rgba(255,120,90,0.18));
+  }
+  .badge { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,0.32); font-variant-numeric: tabular-nums; }
+  #btnBadge[hidden] { display: none; }
+
+  #buffLine { height: 13px; margin-top: 4px; font-size: 10.5px; color: var(--warn); opacity: 0; transition: opacity 0.25s ease; }
+  #buffLine.show { opacity: 1; }
+
+  /* ══ 日志 ══ */
+  .log-head { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: var(--dim); letter-spacing: 1px; margin-bottom: 3px; }
+  #btnReset { border: none; background: none; color: rgba(164,156,146,0.75); font-size: 10px; cursor: pointer; }
+  #btnReset:hover { color: var(--fail); }
+  #logList { height: 52px; overflow-y: auto; font-size: 10.5px; line-height: 1.5; scrollbar-width: thin; }
+  #logList::-webkit-scrollbar { width: 4px; }
+  #logList::-webkit-scrollbar-thumb { background: rgba(232,185,106,0.25); border-radius: 2px; }
+  .log-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .log-time { color: #6f6a63; margin-right: 5px; font-size: 9.5px; }
+  .log-info { color: #c9c2b8; }
+  .log-sys { color: #9fd6ff; }
+  .log-ok { color: var(--gold-l); }
+  .log-fail { color: var(--fail); }
+  .log-offline { color: var(--jade); }
+
+  /* ══ 飘字 / 粒子 / 确认浮层 / 归来卡 ══ */
+  .float-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+  .float {
+    position: absolute; left: 50%; transform: translateX(-50%);
+    font-weight: 700; font-size: 16px; color: #ffd98a;
+    text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+    white-space: nowrap;
+    animation: floatUp 1.5s cubic-bezier(0.33, 1, 0.68, 1) forwards;
+  }
+  .float.fail { color: var(--fail); }
+  .float.offline { color: #8fe3b6; }
+  .float.sub { font-size: 13px; color: var(--gold-l); }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translate(-50%, 8px); }
+    18% { opacity: 1; }
+    100% { opacity: 0; transform: translate(-50%, -42px); }
+  }
+  .burst-dot {
+    position: absolute; width: 4px; height: 4px; border-radius: 50%;
+    background: #ffe3a8; pointer-events: none;
+    animation: burst 0.9s ease-out forwards;
+  }
+  .burst-dot.trial { background: #ffd08a; }
+  .burst-dot.offline { background: #8fe3b6; }
+  @keyframes burst {
+    0% { opacity: 1; transform: translate(0, 0) scale(1); }
+    100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0.2); }
+  }
+  .shake { animation: shake 0.32s ease-in-out; }
+  @keyframes shake {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(-3px, 1px); }
+    50% { transform: translate(3px, -1px); }
+    75% { transform: translate(-2px, 1px); }
+  }
+
+  #confirmBubble {
+    position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%);
+    width: 232px; z-index: 4;
+    background: rgba(34,28,38,0.96);
+    border: 1px solid rgba(255,143,125,0.55);
+    border-radius: 10px; padding: 10px 12px;
+    font-size: 11px; color: #ffd7c4; text-align: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    animation: popIn 0.18s ease-out;
+  }
+  @keyframes popIn { from { opacity: 0; transform: translateX(-50%) translateY(6px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  #confirmBubble .row { display: flex; gap: 8px; margin-top: 9px; }
+  #confirmBubble button {
+    flex: 1; height: 26px; border-radius: 6px; font-size: 11.5px; cursor: pointer;
+    border: 1px solid rgba(255,143,125,0.55); background: rgba(255,120,90,0.18); color: #ffd7c4;
+    transition: background 0.15s ease;
+  }
+  #confirmBubble button:hover { background: rgba(255,120,90,0.32); }
+  #confirmBubble button.ghost { border-color: rgba(150,145,140,0.35); background: transparent; color: var(--dim); }
+  #confirmBubble button.ghost:hover { background: rgba(255,255,255,0.05); }
+
+  #returnCard {
+    position: absolute; left: 50%; top: 46px; transform: translateX(-50%);
+    width: 268px; z-index: 4; cursor: pointer;
+    background: rgba(18,32,27,0.95);
+    border: 1px solid rgba(127,214,168,0.5);
+    border-radius: 10px; padding: 9px 12px;
+    font-size: 11px; color: #bfebd4;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    animation: popIn 0.22s ease-out;
+  }
+  #returnCard b { color: #8fe3b6; }
+  #returnCard .hint { display: block; margin-top: 3px; font-size: 9.5px; color: rgba(191,235,212,0.55); }
+  #returnCard:hover { border-color: rgba(127,214,168,0.85); }
+
+  /* ══ 演示控制台 ══ */
+  .controls {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap; justify-content: center;
+    max-width: min(94vw, 860px);
+    background: rgba(17,16,22,0.92);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 9px 13px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    z-index: 50;
+  }
+  .controls .cap { font-size: 11px; color: var(--dim); letter-spacing: 0.06em; margin-right: 2px; }
+  .controls button {
+    height: 26px; padding: 0 10px; border-radius: 7px;
+    border: 1px solid rgba(232,185,106,0.28); background: rgba(232,185,106,0.08);
+    color: var(--gold-l); font-size: 11.5px; cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .controls button:hover { background: rgba(232,185,106,0.2); border-color: rgba(232,185,106,0.5); }
+  .controls button:active { transform: translateY(1px); }
+  .controls button.on { background: rgba(232,185,106,0.32); border-color: var(--gold); color: #fff3d8; }
+  .controls .sep { width: 1px; height: 18px; background: rgba(255,255,255,0.1); margin: 0 2px; }
+
+  .caption { text-align: center; font-size: 12px; color: var(--dim); max-width: 640px; line-height: 1.8; }
+  .caption b { color: var(--gold-l); font-weight: 600; }
+
+  @media (max-width: 560px) {
+    .stage { padding-top: 28px; }
+    .stage-head h1 { font-size: 19px; }
+    .caption { font-size: 11.5px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .aura, .breathe, .spark, .float, .burst-dot, .shake { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; }
+    * { transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <header class="stage-head">
+    <h1>问长生 · 可交互原型</h1>
+    <p>桌面常驻挂机修仙小窗 ｜ UI 交互稿 V1 ｜ 演示已加速，数值逻辑与实机一致</p>
+  </header>
+
+  <div class="widget-wrap" id="widgetWrap">
+    <div class="widget" id="widget">
+      <div class="figure-layer" aria-hidden="true">
+        <div class="aura"></div>
+        <svg width="150" height="150" viewBox="0 0 120 120">
+          <g class="breathe">
+            <circle cx="60" cy="58" r="46" fill="none" stroke="#7FD6A8" stroke-opacity="0.22" stroke-width="2"></circle>
+            <ellipse cx="60" cy="88" rx="42" ry="10" fill="#2B2118" stroke="#E8B96A" stroke-opacity="0.3"></ellipse>
+            <rect x="38" y="44" width="44" height="42" rx="12" fill="#3B4A63"></rect>
+            <rect x="52" y="42" width="12" height="38" rx="6" fill="#55688A"></rect>
+            <rect x="26" y="46" width="12" height="28" rx="6" fill="#33415A"></rect>
+            <rect x="82" y="46" width="12" height="28" rx="6" fill="#33415A"></rect>
+            <rect x="55" y="30" width="10" height="14" rx="4" fill="#E8C9A0"></rect>
+            <circle cx="60" cy="24" r="11" fill="#F0D3AB"></circle>
+            <ellipse cx="60" cy="14" rx="12" ry="7" fill="#2A2320"></ellipse>
+            <circle cx="60" cy="9" r="5" fill="#2A2320"></circle>
+            <circle cx="60" cy="19" r="2" fill="#E8B96A"></circle>
+          </g>
+        </svg>
+      </div>
+
+      <div class="ui-layer">
+        <div class="plate" id="topPanel">
+          <div class="topbar">
+            <span class="realm" id="realmName">炼气一重</span>
+            <span class="spacer"></span>
+            <span class="stone-wrap"><i class="stone-icon"></i><span id="stoneText">0</span></span>
+            <button id="btnHide" aria-label="隐藏到托盘（演示）">×</button>
+          </div>
+          <div class="qi-row"><span id="qiText">修为 0 / 0</span><span id="qiRate">+1.00/秒</span></div>
+          <div class="track"><div id="progressBar"></div><div class="ticks" id="ticks"></div></div>
+        </div>
+
+        <div id="midZone" title="打坐区：实机中透明并与桌面融合，可拖拽窗口"></div>
+
+        <div class="plate" id="actionPanel">
+          <button id="btnBreak"><span id="btnLabel">修为不足</span><span class="badge" id="btnBadge" hidden></span></button>
+          <div id="buffLine"></div>
+        </div>
+
+        <div class="plate" id="logPanel">
+          <div class="log-head"><span>修行日志</span><button id="btnReset">重置演示</button></div>
+          <div id="logList" aria-live="polite"></div>
+        </div>
+      </div>
+
+      <div class="float-layer" id="floatLayer"></div>
+
+      <div id="confirmBubble" hidden>
+        <div>三道天雷 · 过二即成｜当前成率 <b id="bubbleRate">--%</b></div>
+        <div class="row"><button id="btnStrike">引雷</button><button class="ghost" id="btnWait">再等等</button></div>
+      </div>
+
+      <div id="returnCard" hidden>
+        闭关归来 · 离开 <b id="rcAway">--</b>　修为 <b id="rcGain">--</b>
+        <span class="hint">点击关闭（模拟回到小窗时的结算提示）</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls" role="group" aria-label="演示控制">
+    <span class="cap">演示控制</span>
+    <button data-scene="idle">常态挂机</button>
+    <button data-scene="ready">突破就绪</button>
+    <button data-scene="bottleneck">小瓶颈</button>
+    <button data-scene="trial">渡劫关口</button>
+    <button data-scene="success">成功演出</button>
+    <button data-scene="fail">失败 + 道伤</button>
+    <button data-scene="offline">闭关归来</button>
+    <button data-scene="ascended">已飞升</button>
+    <span class="sep"></span>
+    <button id="btnSpeed">演示速度 ×10</button>
+    <button id="btnAuto">自动突破：关</button>
+  </div>
+
+  <p class="caption" id="caption">场景：<b>常态挂机</b>。修为随时间增长、满格后按钮点亮；「渡劫关口」点击后会弹出新增的「引雷确认」；「闭关归来」展示新增的结算卡。实机中窗口可拖拽、可缩放、可隐藏到托盘。</p>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+
+  const realmNames = ['炼气', '筑基', '金丹', '元婴', '化神', '炼虚', '合体', '大乘'];
+  const stageCN = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  const FKn = [1.25, 1.35, 1.45, 1.60, 1.75, 1.90, 2.10, 2.50];
+
+  const need = (L) => 30 * Math.pow(1.55, L - 1);
+  const rateOf = (L) => Math.pow(1.30, L - 1);
+  const stoneReward = (L) => Math.round(10 * Math.pow(1.12, L - 1));
+  const levelName = (L) => realmNames[Math.floor((L - 1) / 9)] + stageCN[(L - 1) % 9] + '重';
+
+  const fmt = (n) => {
+    if (!Number.isFinite(n)) return '∞';
+    const a = Math.abs(n);
+    if (a < 1e4) return String(Math.floor(n));
+    if (a < 1e8) return (n / 1e4).toFixed(2) + '万';
+    if (a < 1e12) return (n / 1e8).toFixed(2) + '亿';
+    return (n / 1e12).toFixed(2) + '万亿';
+  };
+  const fmtRate = (n) => (Math.abs(n) < 100 ? n.toFixed(2) : fmt(n));
+  const fmtDur = (ms) => {
+    const t = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    if (h > 0) return h + '小时' + m + '分';
+    if (m > 0) return m + '分' + s + '秒';
+    return s + '秒';
+  };
+  const fmtClock = (ts) => {
+    const d = new Date(ts), p = (v) => String(v).padStart(2, '0');
+    return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+  };
+
+  const S = {
+    level: 1, qi: 0, stones: 0,
+    cooldownUntil: 0, daoshangUntil: 0,
+    consecutiveFails: 0, firstTrialDone: false, ascended: false,
+    log: [], speed: 10, auto: false, lastTick: Date.now(),
+  };
+
+  function nextPlan() {
+    if (S.level >= 72) return { type: 'ascension', label: '飞升', targetName: '仙界（二期内容）', costQi: need(72) * 10, node: 7 };
+    const L = S.level + 1;
+    const stage = ((L - 1) % 9) + 1;
+    let type = 'minor', node = -1;
+    if (stage === 1) { type = 'tribulation'; node = Math.floor((L - 1) / 9) - 1; }
+    else if (stage === 3 || stage === 6) type = 'bottleneck';
+    return { type, label: type === 'tribulation' ? '渡劫' : (type === 'bottleneck' ? '破境' : '突破'), targetLevel: L, targetName: levelName(L), costQi: need(L), node };
+  }
+
+  function trialChance(node, fails) {
+    const fk = FKn[Math.max(0, Math.min(node, FKn.length - 1))];
+    const rAdj = 1 / fk;
+    let p = Math.min(Math.max(0.35 + 0.30 * rAdj, 0.10), 0.90);
+    if (fails >= 3) p = Math.max(p, 0.85);
+    else p += Math.min(fails * 0.08, 0.32);
+    p = Math.min(Math.max(p, 0.05), 0.95);
+    const pAll = Math.pow(p, 3) + 3 * Math.pow(p, 2) * (1 - p);
+    return { p, pAll };
+  }
+
+  const daoActive = (now = Date.now()) => S.daoshangUntil > now;
+  const cdRemain = (now) => Math.max(0, Math.ceil((S.cooldownUntil - now) / 1000));
+
+  function effRate(now = Date.now()) {
+    const base = rateOf(S.level);
+    const mul = daoActive(now) ? 0.70 : 1;
+    return { base, mul, eff: base * mul };
+  }
+
+  function preview(now = Date.now()) {
+    const plan = nextPlan();
+    const isTrial = plan.type === 'tribulation' || plan.type === 'ascension';
+    let probability = 0.92, trial = null;
+    if (plan.type === 'bottleneck') probability = 0.70;
+    if (isTrial) { trial = trialChance(plan.node, S.consecutiveFails); probability = trial.pAll; }
+    const cd = cdRemain(now);
+    const enough = S.qi >= plan.costQi;
+    let blocked = null;
+    if (S.ascended) blocked = '已飞升';
+    else if (cd > 0) blocked = '调息中';
+    else if (!enough) blocked = '修为不足';
+    return { plan, isTrial, trial, probability, cd, enough, blocked, ready: !blocked };
+  }
+
+  function pushLog(text, kind = 'info') {
+    S.log.push({ at: Date.now(), kind, text });
+    if (S.log.length > 30) S.log = S.log.slice(-30);
+    renderLog();
+  }
+
+  function renderLog() {
+    const frag = document.createDocumentFragment();
+    for (const e of S.log.slice(-20)) {
+      const line = document.createElement('div');
+      line.className = 'log-line log-' + (e.kind || 'info');
+      const t = document.createElement('span');
+      t.className = 'log-time';
+      t.textContent = fmtClock(e.at);
+      const b = document.createElement('span');
+      b.textContent = e.text;
+      line.append(t, b);
+      frag.appendChild(line);
+    }
+    const list = $('logList');
+    list.replaceChildren(frag);
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function render(now = Date.now()) {
+    const p = preview(now);
+    $('realmName').textContent = levelName(S.level);
+    $('stoneText').textContent = fmt(S.stones);
+    const qiNeed = p.plan.costQi;
+    $('qiText').textContent = '修为 ' + fmt(S.qi) + ' / ' + (Number.isFinite(qiNeed) ? fmt(qiNeed) : '∞');
+    const r = effRate(now);
+    $('qiRate').textContent = '+' + fmtRate(r.eff) + '/秒' + (r.mul !== 1 ? '（×' + r.mul.toFixed(2) + '）' : '');
+    $('qiRate').classList.toggle('low', r.mul < 1);
+    $('progressBar').style.width = Math.min(100, qiNeed ? (S.qi / qiNeed * 100) : 100).toFixed(1) + '%';
+
+    const bl = $('buffLine');
+    if (daoActive(now)) {
+      bl.textContent = '道伤：产出 −30%（剩余 ' + fmtDur(S.daoshangUntil - now) + '）';
+      bl.classList.add('show');
+    } else {
+      bl.textContent = '';
+      bl.classList.remove('show');
+    }
+
+    const btn = $('btnBreak'), label = $('btnLabel'), badge = $('btnBadge');
+    let text = '', badgeText = '', disabled = true;
+    if (p.blocked === '已飞升') text = '已飞升 · 静待二期';
+    else if (p.cd > 0) text = '调息中 · ' + p.cd + 's';
+    else if (!p.enough) text = '修为不足 · 还需 ' + fmt(p.plan.costQi - S.qi);
+    else {
+      disabled = false;
+      const tag = p.plan.type === 'bottleneck' ? '（小瓶颈）' : '';
+      text = p.plan.label + ' → ' + p.plan.targetName + tag;
+      badgeText = (p.probability * 100).toFixed(p.isTrial ? 1 : 0) + '%';
+    }
+    label.textContent = text;
+    badge.textContent = badgeText;
+    badge.hidden = !badgeText;
+    btn.disabled = disabled;
+    btn.classList.toggle('trial', !disabled && p.isTrial);
+  }
+  /* ── 飘字 / 粒子 / 震屏 ─────────────────────────────── */
+  function float(text, kind = 'ok', sub = false, offsetY = 0) {
+    const el = document.createElement('div');
+    el.className = 'float' + (kind === 'fail' ? ' fail' : kind === 'offline' ? ' offline' : '') + (sub ? ' sub' : '');
+    el.textContent = text;
+    el.style.top = (114 + offsetY) + 'px';
+    $('floatLayer').appendChild(el);
+    setTimeout(() => el.remove(), 1600);
+  }
+
+  function burst(kind = 'normal') {
+    const layer = $('floatLayer');
+    const cx = 210, cy = 122;
+    const n = kind === 'trial' ? 36 : 26;
+    for (let i = 0; i < n; i++) {
+      const d = document.createElement('span');
+      d.className = 'burst-dot' + (kind === 'trial' ? ' trial' : kind === 'offline' ? ' offline' : '');
+      const ang = Math.random() * Math.PI * 2;
+      const dist = 40 + Math.random() * 90;
+      d.style.left = cx + 'px';
+      d.style.top = cy + 'px';
+      d.style.setProperty('--dx', (Math.cos(ang) * dist).toFixed(1) + 'px');
+      d.style.setProperty('--dy', (Math.sin(ang) * dist - 12).toFixed(1) + 'px');
+      layer.appendChild(d);
+      setTimeout(() => d.remove(), 1000);
+    }
+    if (kind === 'trial') {
+      const w = $('widget');
+      w.classList.add('shake');
+      setTimeout(() => w.classList.remove('shake'), 340);
+    }
+  }
+
+  /* ── 渡劫确认（新增交互）────────────────────────────── */
+  function showBubble(p) {
+    $('bubbleRate').textContent = (p.probability * 100).toFixed(1) + '%';
+    $('confirmBubble').hidden = false;
+  }
+  function hideBubble() { $('confirmBubble').hidden = true; }
+
+  /* ── 归来结算卡（新增交互）──────────────────────────── */
+  function showReturnCard(away, gain) {
+    $('rcAway').textContent = away;
+    $('rcGain').textContent = gain;
+    $('returnCard').hidden = false;
+  }
+
+  /* ── 突破执行 ───────────────────────────────────────── */
+  function execute(opts = {}) {
+    const now = Date.now();
+    const p = preview(now);
+    if (!p.ready) { render(); return; }
+    if (p.isTrial && !opts.skipConfirm) { showBubble(p); return; }
+
+    const from = levelName(S.level);
+    const teaching = p.isTrial && !S.firstTrialDone;
+    const success = opts.forceSuccess ? true : opts.forceFail ? false : (teaching || Math.random() < p.probability);
+
+    S.qi = Math.max(0, S.qi - p.plan.costQi);
+
+    if (success) {
+      if (p.plan.type === 'ascension') {
+        S.ascended = true;
+        S.cooldownUntil = now + 120 * 1000;
+        pushLog('羽化飞升！' + from + ' 已是圆满，仙界之门暂封（二期内容）。', 'ok');
+        float('羽化飞升！', 'ok');
+        burst('trial');
+      } else {
+        S.level += 1;
+        const to = levelName(S.level);
+        const st = stoneReward(S.level);
+        S.stones += st;
+        if (p.isTrial) {
+          S.consecutiveFails = 0;
+          S.firstTrialDone = true;
+          pushLog('天劫已渡！' + from + ' → ' + to + '（三道天雷·过二即成，成功率 ' + (p.probability * 100).toFixed(1) + '%' + (teaching ? '，教学局保底' : '') + '）', 'ok');
+          float('天劫已渡！', 'ok');
+          float(to, 'ok', true, 26);
+          burst('trial');
+        } else {
+          pushLog('突破成功：' + from + ' → ' + to + '（成功率 ' + (p.probability * 100).toFixed(0) + '%），灵石 +' + st, 'ok');
+          float('突破成功', 'ok');
+          float(to, 'ok', true, 26);
+          burst('normal');
+        }
+      }
+    } else {
+      const lossPct = p.plan.type === 'minor' ? 0.20 : 0.30;
+      const lost = S.qi * lossPct;
+      S.qi = Math.max(0, S.qi - lost);
+      if (p.isTrial) {
+        S.consecutiveFails += 1;
+        S.cooldownUntil = now + 120 * 1000;
+        S.daoshangUntil = now + 3600 * 1000;
+        pushLog('渡劫失败：三道天雷未能过二（成功率 ' + (p.probability * 100).toFixed(1) + '%），损耗修为 ' + fmt(lost) + '，道伤加身（产出 −30%，持续 60 分钟）', 'fail');
+        float('天雷难渡…', 'fail');
+        burst('trial');
+      } else {
+        S.cooldownUntil = now + (p.plan.type === 'bottleneck' ? 8 : 3) * 1000;
+        pushLog(p.plan.label + '失败：' + p.plan.targetName + ' 关卡未过（成功率 ' + (p.probability * 100).toFixed(0) + '%），损耗修为 ' + fmt(lost), 'fail');
+        float('突破失败', 'fail');
+      }
+    }
+    hideBubble();
+    render();
+  }
+
+  /* ── 场景切换 ───────────────────────────────────────── */
+  function resetTo(o) {
+    S.level = o.level || 1;
+    S.qi = o.qi || 0;
+    S.stones = o.stones || 0;
+    S.cooldownUntil = 0;
+    S.daoshangUntil = 0;
+    S.consecutiveFails = 0;
+    S.ascended = !!o.ascended;
+    if ((o.level || 1) <= 9) S.firstTrialDone = false;
+    hideBubble();
+    $('returnCard').hidden = true;
+    render();
+  }
+
+  function setCaption(text) {
+    $('caption').innerHTML = '场景：<b>' + text + '</b>。演示已加速，数值逻辑与实机一致；「渡劫关口」可体验新增的引雷确认，「闭关归来」可体验结算卡。';
+  }
+
+  const scenes = {
+    idle() { resetTo({ level: 1, qi: rateOf(1) * 8 }); pushLog('问长生 · 开局（炼气一重）修为开始自动增长。', 'sys'); pushLog('打坐中：灵气缓慢汇入丹田。', 'info'); setCaption('常态挂机'); },
+    ready() { resetTo({ level: 2, qi: need(3) - 4 }); pushLog('修为已满，可冲击炼气三重。', 'sys'); setCaption('突破就绪'); },
+    bottleneck() { resetTo({ level: 11, qi: need(12) - 1, stones: 36 }); pushLog('此关为小瓶颈，成功率略低（70%），建议焚香静心。', 'info'); setCaption('小瓶颈（第 3 / 6 重）'); },
+    trial() { resetTo({ level: 9, qi: need(10) - 3 }); pushLog('炼气圆满，天劫将至。', 'info'); setCaption('渡劫关口：点击按钮弹出「引雷确认」（新增）'); },
+    success() { resetTo({ level: 4, qi: need(5) }); execute({ skipConfirm: true, forceSuccess: true }); setCaption('突破成功演出'); },
+    fail() { resetTo({ level: 9, qi: need(10) - 3 }); execute({ skipConfirm: true, forceFail: true }); setCaption('渡劫失败：道伤与调息'); },
+    offline() {
+      resetTo({ level: 10, qi: 0, stones: 36 });
+      pushLog('闭关归来：离开 8小时12分，修为 +12,345', 'offline');
+      float('闭关归来 +12,345', 'offline');
+      burst('offline');
+      showReturnCard('8小时12分', '+12,345');
+      setCaption('闭关归来：结算卡（新增）');
+    },
+    ascended() {
+      resetTo({ level: 72, qi: need(72) * 10, stones: 99990000, ascended: true });
+      pushLog('羽化飞升！大乘九重 已是圆满，仙界之门暂封（二期内容）。', 'ok');
+      float('羽化飞升！', 'ok');
+      setCaption('已飞升（二期占位）');
+    },
+  };
+
+  /* ── 事件绑定 ───────────────────────────────────────── */
+  document.querySelectorAll('.controls button[data-scene]').forEach((btn) => {
+    btn.addEventListener('click', () => { const s = scenes[btn.dataset.scene]; if (s) s(); });
+  });
+  $('btnSpeed').addEventListener('click', () => {
+    S.speed = S.speed === 10 ? 50 : S.speed === 50 ? 200 : 10;
+    $('btnSpeed').textContent = '演示速度 ×' + S.speed;
+  });
+  $('btnAuto').addEventListener('click', () => {
+    S.auto = !S.auto;
+    $('btnAuto').textContent = '自动突破：' + (S.auto ? '开' : '关');
+    $('btnAuto').classList.toggle('on', S.auto);
+  });
+  $('btnBreak').addEventListener('click', () => {
+    const p = preview();
+    if (!p.ready) { render(); return; }
+    if (p.isTrial) { showBubble(p); return; }
+    execute();
+  });
+  $('btnStrike').addEventListener('click', () => execute({ skipConfirm: true }));
+  $('btnWait').addEventListener('click', () => { hideBubble(); pushLog('先稳一手：再等等。', 'info'); });
+  $('returnCard').addEventListener('click', () => { $('returnCard').hidden = true; });
+  $('btnHide').addEventListener('click', () => { pushLog('已隐藏到托盘（演示）。修行继续，窗口可从托盘唤回。', 'info'); });
+  $('btnReset').addEventListener('click', () => {
+    S.log = []; S.speed = 10; S.auto = false;
+    $('btnSpeed').textContent = '演示速度 ×10';
+    $('btnAuto').textContent = '自动突破：关';
+    $('btnAuto').classList.remove('on');
+    scenes.idle();
+  });
+
+  /* ── 主循环 ─────────────────────────────────────────── */
+  setInterval(() => {
+    const now = Date.now();
+    const dt = Math.min(5, (now - S.lastTick) / 1000);
+    S.lastTick = now;
+    S.qi += effRate(now).eff * dt * S.speed;
+    if (S.daoshangUntil && S.daoshangUntil <= now) { S.daoshangUntil = 0; pushLog('道伤已愈，产出恢复。', 'ok'); }
+    const p = preview(now);
+    if (S.auto && p.ready && !p.isTrial) execute({ skipConfirm: true });
+    render(now);
+  }, 100);
+
+  /* ── 小屏适配 ───────────────────────────────────────── */
+  function fitWidget() {
+    const wrap = $('widgetWrap');
+    const avail = Math.min(document.documentElement.clientWidth - 32, 420);
+    const scale = Math.min(1, avail / 420);
+    wrap.style.transform = 'scale(' + scale + ')';
+    wrap.style.height = (320 * scale) + 'px';
+    wrap.style.marginBottom = (-320 * (1 - scale)).toFixed(0) + 'px';
+  }
+  window.addEventListener('resize', fitWidget);
+  fitWidget();
+
+  /* ── 初始化 ─────────────────────────────────────────── */
+  scenes.idle();
+  render();
+})();
+</script>
+</body>
+</html>
