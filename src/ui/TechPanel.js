@@ -92,7 +92,7 @@ function render () {
 
     const sn = document.createElement('span')
     sn.className = 'sn'
-    sn.style.color = H.tierColor(s.tech.tier)
+    sn.style.color = tierColor(s.tech.tier)
     sn.textContent = s.tech.name
 
     const sl = document.createElement('span')
@@ -141,12 +141,12 @@ function render () {
 
     const tn = document.createElement('span')
     tn.className = 'tn'
-    tn.style.color = H.tierColor(c.tech.tier)
+    tn.style.color = tierColor(c.tech.tier)
     tn.textContent = c.tech.name
 
     const tg = document.createElement('span')
     tg.className = 'tg'
-    tg.textContent = `${c.tierLabel} · ${H.slotKindText(c.slotKinds)}`
+    tg.textContent = `${c.tierLabel} · ${slotKindText(c.slotKinds)}`
 
     const tl = document.createElement('span')
     tl.className = 'tl'
@@ -200,7 +200,7 @@ function render () {
 
     const tg = document.createElement('span')
     tg.className = 'tg'
-    tg.textContent = `${c.tierLabel} · ${H.slotKindText(c.slotKinds)}`
+    tg.textContent = `${c.tierLabel} · ${slotKindText(c.slotKinds)}`
 
     const ta = document.createElement('span')
     ta.className = 'ta'

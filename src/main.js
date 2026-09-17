@@ -2009,6 +2009,8 @@ function closeAlchemy () { if (alchemyPanel) alchemyPanel.close() }
 function toggleAlchemy () { if (alchemyPanel) alchemyPanel.toggle() }
 function renderAlchemy () { if (alchemyPanel) alchemyPanel.render() }
 
+let lastAlchemyRender = 0 // 丹房面板轻刷节拍（V3.5.2：时间驱动；拆分后声明回归装配层）
+
 // ── 功法面板（2.1）：主修 / 辅修 · 装备 · 升级 ────────────────────────────
 
 // ── 功法面板（2.1）：主修 / 辅修 · 装备 · 升级 ────────────────────────────
@@ -2020,12 +2022,16 @@ function closeTech () { if (techPanel) techPanel.close() }
 function toggleTech () { if (techPanel) techPanel.toggle() }
 function renderTech () { if (techPanel) techPanel.render() }
 
+let lastTechRender = 0   // 功法面板轻刷节拍（V3.5.2：时间驱动；拆分后声明回归装配层）
+
 // ── 宗门面板（2.4）：V3.5.6 拆分——本体迁至 src/ui/SectPanel.js；只留「薄委托」。
 
 function openSect () { if (sectPanel) sectPanel.open() }
 function closeSect () { if (sectPanel) sectPanel.close() }
 function toggleSect () { if (sectPanel) sectPanel.toggle() }
 function renderSect () { if (sectPanel) sectPanel.render() }
+
+let lastSectRender = 0   // 宗门面板轻刷节拍（V3.5.2：时间驱动；拆分后声明回归装配层）
 
 // 剩余时长文案：一律走游戏历（主人 2026-09-17：界面时间用游戏时间，不用现实时分）
 const fmtHoursLeft = (ms) => fmtGameDuration(ms)
@@ -3525,7 +3531,7 @@ async function boot () {
     state,
     sect,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitBurst, emitFloat, fmt, fmtGameDuration, fmtTaskLeft, fmtHoursLeft, fmtRealSpan, gameClockOf, fmtGameStamp }
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitBurst, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh, fmtHoursLeft, fmtRealSpan, gameClockOf, fmtGameStamp }
   })
   // V3.5.6 拆分：行囊面板（src/ui/BagPanel.js）
   bagPanel = createBagPanel({
@@ -3539,7 +3545,7 @@ async function boot () {
     alchemy,
     cult,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, onPress, renderBag: () => renderBag() }
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, onPress, render: () => render(), renderBag: () => renderBag() }
   })
   // V3.5.5 拆分：灵兽面板（src/ui/BeastPanel.js）
   beastPanel = createBeastPanel({

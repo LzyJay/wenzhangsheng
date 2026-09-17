@@ -149,7 +149,7 @@ function render () {
       tp.className = 'tp' + (t.state === 'running' && !t.done ? ' dim' : '')
       // 任务时长与倒计时：限时＝游戏时辰，倒计时另附现实秒（短活计只有十几秒）
       if (t.state === 'open') tp.textContent = `${t.def.hours} 时辰`
-      else if (t.state === 'running') tp.textContent = t.done ? '已到点' : `还差 ${H.fmtTaskLeft(t.autoInMs)}`
+      else if (t.state === 'running') tp.textContent = t.done ? '已到点' : `还差 ${fmtTaskLeft(t.autoInMs)}`
       else tp.textContent = '本轮已交'
 
       const btn = document.createElement('button')
@@ -252,7 +252,7 @@ function render () {
 
   if (dom.sectNote) {
     dom.sectNote.textContent = info.joined
-      ? `任务板${info.refreshText || H.fmtRefreshPeriod()}刷新一次（交完本轮转空 · 距下一轮 ${H.fmtTaskLeft(info.nextRefreshInMs || H.msToNextRefresh(Date.now()))}）；` +
+      ? `任务板${info.refreshText || H.fmtRefreshPeriod()}刷新一次（交完本轮转空 · 距下一轮 ${fmtTaskLeft(info.nextRefreshInMs || H.msToNextRefresh(Date.now()))}）；` +
         '任务按境界出题、悬赏随境界递增（每晋一大境界 +60%）；' +
         '限时按**游戏时辰**计（如巡山两个时辰），**时辰一到自动交差入账**，中途也可手动提前交差（按已办妥比例折算）；' +
         '战力校验类的定标以「基准战力 × 系数」为准：**战力已达标者接取即办妥**，未达标则到时按概率判定、失败贡献减半。' +
