@@ -3,9 +3,13 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * 边界（项目文件结构 §三）：禁止 import Phaser、禁止操作 DOM；只读写 state 与存储介质。
  *
- * 存储（阶段一 1.2 加固后的口径）：
+ * 存储（阶段一 1.2 加固 + V3.5.2 存档加固后的口径）：
  *   ① 唯一真源：`%APPDATA%\问长生\save.json` —— 由主进程原子写（.tmp → rename），
- *      写前把旧档转存 `save.bak`（滚动保留最近一份）。
+ *      写前把旧档按环形规则转存（save.bak → .bak.2 → … → .bak.5，10 分钟一轮转，
+ *      兼防"30 秒一档把所有备份挤进最近两分钟"）。
+ *   ①b 校验和：serialize 对除自身外的整包算 FNV-1a 写入 checksum 字段；parse 复核，
+ *      不符即按坏档处理（防传输截断 / 磁盘坏块 / 随手改档；非加密，档仍为明文 JSON）。
+ *   ①c 自愈：真源与热备都坏时，load 会从环形备份逐格找可复核的档恢复（reason=recover）。
  *   ② 热备：同一份 JSON 同时镜像到 localStorage —— 仅当 save.json 缺失/损坏时才会被采用。
  *   ③ 浏览器开发模式（无 Electron）：只走 localStorage。
  * 结构：schemaVersion + 迁移函数链；字段新增由 mergeDefaults 自动兜底，不必升版；
@@ -18,11 +22,25 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '3.5.1'                // V3.5.1（主人七条体验修订：灵根浮层三栏+混沌灵根彩蛋 · 洗髓按钮防闪烁 · 拖拽区收窄 · 功法主辅徽记+藏经阁扩 · 宗门商店/物品库扩 · 灵兽自动成长 · 事件并入纪事+关键事件强制亲断+互动概率+10）；与 package.json 同步
+const APP_VERSION = '3.5.2'                // V3.5.2（工程加固：存档环形备份+校验和 · 数值对账脚本 · 主循环渲染节流；对照两参考项目提炼）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
 const hasLocalStorage = typeof localStorage !== 'undefined'
+
+// ── 存档校验和（V3.5.2 存档加固）──────────────────────────────────────────
+// FNV-1a 32 位：同步、零依赖、毫秒级。目的＝**完整性**（传输截断 / 磁盘坏块 /
+// 随手改档），不是加密——防君子不防 decryption 专家（存档明文 JSON 的口径不变）。
+// 序列化时把 checksum 作为最后一个字段写入；校验时把该字段摘掉后重新序列化比对，
+// 键序与写入时逐位一致（JSON.stringify 保持插入序），结果可复现。
+function fnv1a (str) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0
+  }
+  return h.toString(16).padStart(8, '0')
+}
 
 /**
  * 迁移函数链：键 = 起始版本号。示例（本次无结构变更，仅留框架）：
@@ -132,7 +150,7 @@ class SaveSystem {
   // ── 读 ──────────────────────────────────────────────────────────────────
 
   /**
-   * 读档：文件真源 → localStorage 热备 → 新档
+   * 读档：文件真源 → localStorage 热备 → 环形备份逐格自愈 → 新档
    * @returns {Promise<object>} state
    */
   async load () {
@@ -168,12 +186,32 @@ class SaveSystem {
       }
     }
 
-    // ③ 全新
+    // ③ 环形备份自愈（V3.5.2）：真源与热备都坏时，从最新格起逐格试；
+    //    候选由主进程按 JSON 可解析性预筛，这里再做校验和/迁移级复核
+    if (this.bridge && typeof this.bridge.restoreBackup === 'function') {
+      try {
+        const res = await this.bridge.restoreBackup()
+        const candidates = (res && res.ok && res.candidates) || []
+        for (const c of candidates) {
+          const parsed = this.parse(c.data)
+          if (parsed) {
+            console.warn(`[存档] 已从环形备份 ${c.name} 恢复（真源与热备均不可用）`)
+            this.lastSource = 'backup'
+            await this.save(parsed, 'recover')
+            return parsed
+          }
+        }
+      } catch (err) {
+        console.warn('[存档] 环形备份自愈失败：', err)
+      }
+    }
+
+    // ④ 全新
     this.lastSource = 'default'
     return this.createDefaultState()
   }
 
-  /** JSON 文本 → state（迁移 + 默认值补全）；失败返回 null */
+  /** JSON 文本 → state（校验和 → 迁移 + 默认值补全）；失败/校验不符返回 null */
   parse (raw) {
     let obj = null
     try {
@@ -183,7 +221,19 @@ class SaveSystem {
       return null
     }
     if (!obj || typeof obj !== 'object') return null
+    if (!this._verifyChecksum(obj)) {
+      console.warn('[存档] 校验和不符（内容被改动或损坏），按坏档处理')
+      return null
+    }
     return this.mergeDefaults(this.migrate(obj), this.createDefaultState())
+  }
+
+  /** 校验和复核：带 checksum 的档必须逐位对上；老档（无 checksum 字段）放行 */
+  _verifyChecksum (obj) {
+    if (typeof obj.checksum !== 'string') return true
+    const body = { ...obj }
+    delete body.checksum
+    return fnv1a(JSON.stringify(body)) === obj.checksum
   }
 
   /** 迁移链：逐级升级（当前仅 v1；结构未变时靠 mergeDefaults 补字段） */
@@ -221,12 +271,15 @@ class SaveSystem {
 
   serialize (state) {
     const out = { ...state }
+    delete out.checksum
     out.schemaVersion = SCHEMA_VERSION
     out.savedAt = Date.now()
     // appVersion / gameVersion 记「最后写入的版本」（meta.createdAt 才是"建档时间"）；
     // 否则 v0.1.0 建的档会永远把 0.1.0 带下去，看日志时无法判断实际跑的是哪版
     out.meta = { ...(out.meta || {}), appVersion: APP_VERSION, gameVersion: APP_VERSION }
     if (Array.isArray(out.log) && out.log.length > LOG_MAX) out.log = out.log.slice(-LOG_MAX)
+    // 校验和（V3.5.2）：对除自身外的整包算 FNV-1a，作为最后一个字段写入
+    out.checksum = fnv1a(JSON.stringify(out))
     return JSON.stringify(out)
   }
 

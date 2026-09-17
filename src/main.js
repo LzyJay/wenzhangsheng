@@ -50,6 +50,13 @@ import { VOLUME_NAMES, nextTier, gainOfTier, DEFAULT_TIER } from './data/sfx.js'
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
+// V3.5.2 渲染节流（对照参考项目提炼）：数值结算仍每 100ms 一拍，DOM 面板刷新降频——
+//   render() 是每拍最重的一段（整包 HUD + 浮层 + 各面板查询），250ms 的刷新间隔
+//   肉眼无感，长挂（P4.4 的 72h 验收）时 DOM 压力降为 1/2.5。事件触发的 render()
+//   调用不节流（改状态处仍即时刷新）。开着的遮罩面板轻刷改为时间驱动（PANEL_MS），
+//   不再随 render 拍数缩放。
+const RENDER_MS = 250          // 主循环里 DOM 面板刷新的最低间隔（肉眼光滑下限之内）
+const PANEL_MS = 1000          // 开着的遮罩面板轻刷节拍（原「每 10 拍 ≈ 1 秒」改时间驱动）
 const STARTUP_DELAY = 900      // 等场景订阅完成后再补发启动演出
 const TRIBULATION_FX_MS = 1560 // 三道天雷演出时长（3×460ms 劈落 + 收势），飘字与结算余韵在此之后
 const RETURN_CARD_MS = 5000    // 闭关归来结算卡自动收起时长
@@ -1164,34 +1171,34 @@ function render () {
   refreshTip()        // 钉住的明细浮层跟着面板一起刷新（数字永不与画面脱节）
   syncDragRegions()   // 兜底：任何浮层开着就取消拖拽区（改这里最省心）
   // 功法面板开着时每 ~1 秒轻刷一次（升级按钮的"付不付得起"要跟着灵气走）
-  if (dom.techOverlay.classList.contains('show')) {
-    techTick = (techTick + 1) % 10
-    if (techTick === 0) renderTech()
+  if (dom.techOverlay.classList.contains('show') && now - lastTechRender >= PANEL_MS) {
+    lastTechRender = now
+    renderTech()
   }
   // 宗门面板同理：任务倒计时与"换不换得起"每 ~1 秒跟一拍
-  if (dom.sectOverlay.classList.contains('show')) {
-    sectTick = (sectTick + 1) % 10
-    if (sectTick === 0) renderSect()
+  if (dom.sectOverlay.classList.contains('show') && now - lastSectRender >= PANEL_MS) {
+    lastSectRender = now
+    renderSect()
   }
   // 秘境面板同理：派遣倒计时每 ~1 秒跟一拍
-  if (dom.dungeonOverlay.classList.contains('show')) {
-    dungeonTick = (dungeonTick + 1) % 10
-    if (dungeonTick === 0) renderDungeon()
+  if (dom.dungeonOverlay.classList.contains('show') && now - lastDungeonRender >= PANEL_MS) {
+    lastDungeonRender = now
+    renderDungeon()
   }
   // 灵兽面板同理：派遣/孵化倒计时每 ~1 秒跟一拍
-  if (dom.beastOverlay.classList.contains('show')) {
-    beastTick = (beastTick + 1) % 10
-    if (beastTick === 0) renderBeast()
+  if (dom.beastOverlay.classList.contains('show') && now - lastBeastRender >= PANEL_MS) {
+    lastBeastRender = now
+    renderBeast()
   }
   // 坊市（2.6）：每日刷新由 ensureDaily 幂等处理；面板开着时每 ~1 秒轻刷一次
-  if (dom.marketOverlay.classList.contains('show')) {
-    marketTick = (marketTick + 1) % 10
-    if (marketTick === 0) renderMarket()
+  if (dom.marketOverlay.classList.contains('show') && now - lastMarketRender >= PANEL_MS) {
+    lastMarketRender = now
+    renderMarket()
   }
   // 渡劫面板（2.5）：成率与可备状态每 ~1 秒跟一拍
-  if (dom.trialOverlay.classList.contains('show')) {
-    trialTick = (trialTick + 1) % 10
-    if (trialTick === 0) renderTrial()
+  if (dom.trialOverlay.classList.contains('show') && now - lastTrialRender >= PANEL_MS) {
+    lastTrialRender = now
+    renderTrial()
   }
   // 渡劫快捷条：站在关口且尚未备妥时点亮，提醒"这里还能再添一把火"
   if (dom.btnTrial) {
@@ -1220,18 +1227,18 @@ function render () {
         : '成就与称号（成就墙 · 称号佩戴）'
     }
   }
-  if (dom.chronicleOverlay.classList.contains('show')) {
-    chrTick = (chrTick + 1) % 10
-    if (chrTick === 0) renderChronicle()
+  if (dom.chronicleOverlay.classList.contains('show') && now - lastChrRender >= PANEL_MS) {
+    lastChrRender = now
+    renderChronicle()
   }
-  if (dom.achvOverlay && dom.achvOverlay.classList.contains('show')) {
-    achvPaneTick = (achvPaneTick + 1) % 10
-    if (achvPaneTick === 0) renderAchv()
+  if (dom.achvOverlay && dom.achvOverlay.classList.contains('show') && now - lastAchvPaneRender >= PANEL_MS) {
+    lastAchvPaneRender = now
+    renderAchv()
   }
   // 丹房：面板开着时每 ~1 秒轻刷一次（材料到手后按钮应自己点亮）
-  if (dom.alchemyOverlay && dom.alchemyOverlay.classList.contains('show')) {
-    alchemyTick = (alchemyTick + 1) % 10
-    if (alchemyTick === 0) renderAlchemy()
+  if (dom.alchemyOverlay && dom.alchemyOverlay.classList.contains('show') && now - lastAlchemyRender >= PANEL_MS) {
+    lastAlchemyRender = now
+    renderAlchemy()
   }
   renderTitleChip()
 }
@@ -2187,8 +2194,8 @@ function toggleTech () {
 
 /** 槽位短名（按钮文案用） */
 const SLOT_LABEL = { main: '主修', side0: '辅修一', side1: '辅修二' }
-let techTick = 0   // 功法面板的节流计数（每 10 拍 ≈ 1 秒刷一次）
-let sectTick = 0   // 宗门面板的节流计数（同上）
+let lastTechRender = 0 // 功法面板轻刷节拍（V3.5.2：时间驱动，见 PANEL_MS）
+let lastSectRender = 0 // 宗门面板轻刷节拍（V3.5.2：时间驱动）
 
 /** 品阶名带的颜色（品质语汇：灰→金→玉→紫→青） */
 function tierColor (tier) {
@@ -2723,7 +2730,7 @@ dom.sectOverlay.addEventListener('click', (e) => {
 // 接线内容：秘境遮罩（#dungeon-overlay）· 试炼塔挑战 · 资源秘境首通/派遣 ·
 //           分身召回 · 主循环到期结算（真实时间驱动，离线照算）· 周扫荡
 
-let dungeonTick = 0   // 秘境面板的节流计数（每 10 拍 ≈ 1 秒刷一次，倒计时跟拍）
+let lastDungeonRender = 0 // 秘境面板轻刷节拍（V3.5.2：时间驱动，倒计时跟拍）
 
 function openDungeon () {
   if (!state) return
@@ -2949,7 +2956,7 @@ onPress(dom.dungeonOverlay, (e) => {
 //           灵兽园喂养/出战 · 主循环被动产出随秒入账（离线不发）
 // 渡劫助战 / 宗门战力加成不在此接：经 boot 注入由 CultivationSystem / SectSystem 自取。
 
-let beastTick = 0   // 灵兽面板的节流计数（每 10 拍 ≈ 1 秒刷一次，倒计时跟拍）
+let lastBeastRender = 0 // 灵兽面板轻刷节拍（V3.5.2：时间驱动，倒计时跟拍）
 
 function openBeast () {
   if (!state) return
@@ -3198,7 +3205,7 @@ dom.beastOverlay.addEventListener('click', (e) => {
 // 产出换算：events.tick/settleOffline 需要的"有效产出/灵石时薪"在此现算传入
 //          （13.1②：System 间不横向 import，经装配层中转）。
 
-let trialTick = 0  // 渡劫面板的节流计数（每 10 拍 ≈ 1 秒刷一次）
+let lastTrialRender = 0 // 渡劫面板轻刷节拍（V3.5.2：时间驱动）
 
 /** 打开「事件与纪事」册（原独立事件簿入口的等价入口；2026-09-19 起不再有"事件页"这个切页动作） */
 function openEvents () {
@@ -3287,7 +3294,7 @@ function renderEvents () {
 // 接线：坊市遮罩（#market-overlay）· 三页签（折扣店 / 回收 / 拍卖行）· 每日刷新
 // 口径：买/卖/拍只搬动「灵石」与「道具」，不产修为、不晋境界（§七 占比护栏）
 
-let marketTick = 0   // 坊市面板的节流计数（每 10 拍 ≈ 1 秒刷一次）
+let lastMarketRender = 0 // 坊市面板轻刷节拍（V3.5.2：时间驱动）
 let marketTab = 'shop' // 当前页签：shop | recycle | auction
 
 function openMarket () {
@@ -3489,8 +3496,9 @@ function reportOfflineEvents (results) {
 // （13.1②：System 间不横向 import；奖励发放经 grant 回调落到 resources / inventory）。
 
 let achvTick = 0        // 每秒一判 + 纪事批次（节流计数，与 2.3 同理）
-let chrTick = 0         // 「事件与纪事」面板的节流计数（同上）
-let achvPaneTick = 0    // 「成就与称号」面板的节流计数
+let lastLoopRender = 0  // V3.5.2 渲染节流：主循环上次 render 的时刻（事件触发的 render 不受此限）
+let lastChrRender = 0    // 「事件与纪事」面板轻刷节拍（V3.5.2：时间驱动）
+let lastAchvPaneRender = 0 // 「成就与称号」面板轻刷节拍（V3.5.2：时间驱动）
 let chrFilter = 'all'   // 纪事频道筛选
 let achvTab = 'wall'    // 成就册页签：wall 成就墙 / title 称号
 let achvToastTimer = 0
@@ -4143,7 +4151,7 @@ function renderBag () {
  * 丹房：丹方列表 + 炼制 / 自动炼制（主人 2026-09-17：背包与丹房分离；缺丹时自动开炉）
  * 「当前所需」＝当下真正卡关的丹药（突破缺的破境丹、渡劫缺的护劫丹）。
  */
-let alchemyTick = 0   // 丹房面板的节流计数（每 10 拍 ≈ 1 秒刷一次）
+let lastAlchemyRender = 0 // 丹房面板轻刷节拍（V3.5.2：时间驱动）
 
 // ── 凝神丹（V3.5.1 新增可用丹药）：限时产出增益，走 state.buffs 公共乘区 ──
 const NINGSHEN = { itemId: 'pill_ningshen', buffId: 'buff_ningshen', pct: 0.15, durSec: 600 }
@@ -5200,7 +5208,9 @@ async function boot () {
     achvTick = (achvTick + 1) % 10
     if (achvTick === 0) runAchvCheck(Date.now())
     notifyMatDrops()
-    render()
+    // V3.5.2 渲染节流：结算每拍照跑，render 最低间隔 RENDER_MS（事件触发处仍即时）
+    const loopNow = Date.now()
+    if (loopNow - lastLoopRender >= RENDER_MS) { lastLoopRender = loopNow; render() }
     refreshAmbient()   // 3.5：环境音自愈（暂停挂机 / 灵根刚测完 / 窗口可见性变化都会被纠回）
   }, TICK_MS)
 

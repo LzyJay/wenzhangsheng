@@ -13,7 +13,7 @@
  *   · 托盘菜单：显示/隐藏小窗、回到右下角、显示存档文件夹、三态勾选、退出
  *   · 单实例锁：重复启动只唤起已有小窗
  *   · 隐藏/显示/退出前后，向渲染层发送时间点事件，用于离线收益结算
- *   · 存档落盘：userData/save.json（原子写 + .bak 滚动备份）+ 导出/导入对话框
+ *   · 存档落盘：userData/save.json（原子写 + 环形备份 save.bak~save.bak.5，10 分钟一轮转）+ 导出/导入对话框
  *
  * 兼容开关：启动加 --no-gpu 可禁用硬件加速（个别 Windows 环境透明窗口发黑时的兜底方案）。
  * ═══════════════════════════════════════════════════════════════════════════
@@ -176,6 +176,39 @@ function backupFilePath () {
   return path.join(app.getPath('userData'), 'save.bak')
 }
 
+// ── 环形备份（V3.5.2 存档加固）────────────────────────────────────────────
+// 旧口径只有一份 .bak（= 上一次写档前的档），自动存档 30s 一轮意味着 .bak 永远
+// 只比真源旧 30 秒——真源坏了它大概率也"继承"了坏数据。环形备份把旧档按时间
+// 排开成 5 格，且**只在最新一格足够旧（ROTATE_MS）时才轮转**，避免 30s 一档把
+// 5 格全部挤进最近两分钟。结果：.bak ≈ 最近 10 分钟内、.bak.2 ≈ 10~20 分钟前…
+// .bak.5 最远可到 ~50 分钟前，慢发性损坏（写坏几分钟后才发现）也有档可回退。
+const BACKUP_KEEP = 5               // 环形格数（含 save.bak 本格）
+const BACKUP_ROTATE_MS = 10 * 60 * 1000  // 轮转间隔：最新备份至少 10 分钟才往前推一格
+
+function backupSlotPath (i) {
+  // i = 0 → save.bak；i = 1 → save.bak.2 …（文件名从 2 起与"第 2 份"直觉一致）
+  return i === 0 ? backupFilePath() : `${backupFilePath()}.${i + 1}`
+}
+
+/** 轮转：把 save.bak → .bak.2 → … → .bak.N 各往后推一格，最旧一格被顶掉 */
+function rotateBackups () {
+  for (let i = BACKUP_KEEP - 1; i >= 1; i--) {
+    const from = backupSlotPath(i - 1)
+    const to = backupSlotPath(i)
+    try {
+      if (fs.existsSync(from)) fs.copyFileSync(from, to)
+      else try { fs.unlinkSync(to) } catch (_) {}
+    } catch (_) { /* 单格轮转失败不影响写档主流程 */ }
+  }
+}
+
+/** 最新一格备份是否该往前轮转：不存在（首档）或已超过 ROTATE_MS */
+function shouldRotateBackups () {
+  const bak = backupFilePath()
+  if (!fs.existsSync(bak)) return true
+  try { return Date.now() - fs.statSync(bak).mtimeMs >= BACKUP_ROTATE_MS } catch (_) { return false }
+}
+
 function readSave () {
   const target = saveFilePath()
   try {
@@ -186,13 +219,14 @@ function readSave () {
   }
 }
 
-/** 写档：先把现有档转存 .bak，再写 .tmp 后 rename（原子写，断电也不会留下半截文件） */
+/** 写档：先把现有档按环形规则转存备份，再写 .tmp 后 rename（原子写，断电也不会留下半截文件） */
 function writeSave (json) {
   const target = saveFilePath()
   const tmp = target + '.tmp'
   try {
     fs.mkdirSync(path.dirname(target), { recursive: true })
-    if (fs.existsSync(target)) {
+    if (fs.existsSync(target) && shouldRotateBackups()) {
+      rotateBackups()
       try { fs.copyFileSync(target, backupFilePath()) } catch (_) { /* 备份失败不阻塞写档 */ }
     }
     fs.writeFileSync(tmp, json, 'utf8')
@@ -208,7 +242,14 @@ function saveInfo () {
   const target = saveFilePath()
   const bak = backupFilePath()
   const stat = (p) => { try { return { exists: true, size: fs.statSync(p).size, mtime: fs.statSync(p).mtimeMs } } catch (_) { return { exists: false } } }
-  return { dir: path.dirname(target), path: target, backupPath: bak, save: stat(target), backup: stat(bak) }
+  // 环形备份清单（V3.5.2）：backups[0] = save.bak（最新）… backups[N-1] 最旧
+  const backups = []
+  for (let i = 0; i < BACKUP_KEEP; i++) {
+    const p = backupSlotPath(i)
+    const s = stat(p)
+    backups.push({ slot: i, name: path.basename(p), path: p, ...s })
+  }
+  return { dir: path.dirname(target), path: target, backupPath: bak, save: stat(target), backup: stat(bak), backups }
 }
 
 function stamp () {
@@ -250,20 +291,31 @@ async function importSave () {
   }
 }
 
-/** 从 save.bak 恢复（当前进度先另存 .before-restore，避免"恢复"变成"数据丢掉"） */
+/**
+ * 从环形备份恢复（V3.5.2）：从最新格起逐格找**第一份能解析的 JSON**；
+ * 当前进度先另存 .before-restore，避免"恢复"变成"数据丢掉"。
+ * 返回里带 candidates（全部可解析的备份，新→旧），渲染层可逐份做校验和复核。
+ */
 function restoreSaveBackup () {
-  const bak = backupFilePath()
-  if (!fs.existsSync(bak)) return { ok: false, error: '尚无备份档（写档一次后才会产生）' }
+  const candidates = []
+  for (let i = 0; i < BACKUP_KEEP; i++) {
+    const p = backupSlotPath(i)
+    if (!fs.existsSync(p)) continue
+    try {
+      const data = fs.readFileSync(p, 'utf8')
+      JSON.parse(data) // 备份也要先验
+      candidates.push({ slot: i, name: path.basename(p), data })
+    } catch (_) { /* 这一格坏了，看下一格 */ }
+  }
+  if (!candidates.length) return { ok: false, error: '尚无可用的备份档（写档一次后才会产生）' }
   try {
-    const data = fs.readFileSync(bak, 'utf8')
-    JSON.parse(data) // 备份也要先验
     const cur = saveFilePath()
     if (fs.existsSync(cur)) {
       try { fs.copyFileSync(cur, cur + '.before-restore') } catch (_) { /* 留痕失败不阻塞 */ }
     }
-    const res = writeSave(data)
+    const res = writeSave(candidates[0].data)
     if (!res.ok) return res
-    return { ok: true, data, from: bak }
+    return { ok: true, data: candidates[0].data, from: candidates[0].name, candidates }
   } catch (err) {
     return { ok: false, error: String(err && err.message || err) }
   }

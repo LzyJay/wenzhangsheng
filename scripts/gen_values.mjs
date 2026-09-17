@@ -23,7 +23,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, '..')
@@ -360,23 +360,36 @@ export default {
 }
 `
 
-fs.writeFileSync(OUT, out, 'utf8')
+// ── 落盘与自检（只在直接运行本脚本时执行；被 audit_values.mjs import 时不写盘）──
+// V3.5.2 起导出 composeSource()：audit_values.mjs 用同一份组合逻辑比对磁盘上的
+// realms.js 是否与 CSV 重生成结果逐位一致（防手改生成物），两边永不漂。
+const isDirectRun = (() => {
+  try { return process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href } catch (_) { return false }
+})()
 
-// ── 自检：与公式对齐度 + 节点清单 ─────────────────────────────────────────
-const drift = levels.map((l) => {
-  const formulaCost = 30 * Math.pow(1.55, l.level - 1)
-  return Math.abs(l.breakthrough.costQi - formulaCost) / formulaCost
-})
-const maxDrift = Math.max(...drift)
-const nodes = levels
-  .filter((l) => l.breakthrough.type !== 'minor')
-  .map((l) => `${l.displayName}:${l.breakthrough.type}`)
+function composeSource () { return out }
 
-console.log(`[gen:values] 已生成 ${path.relative(ROOT, OUT)}`)
-console.log(`  源 CSV      ：data-source/72级数值表.csv（${fs.statSync(CSV).size} 字节）`)
-console.log(`  级别数      ：${levels.length}｜大境界：${realms.join('/')}`)
-console.log(`  与公式最大偏差：${(maxDrift * 100).toFixed(2)}%（CSV 为取整后的口径，属预期）`)
-console.log(`  关口清单    ：${nodes.length} 个 → ${nodes.join('  ')}`)
-const trialSum = TRIAL_PREPS.reduce((s, p) => s + p.bonusPct, 0)
-console.log(`  渡劫八关口  ：${TRIAL_NODE_META.map((m, i) => `${i + 1}.${m.name}`).join(' ')}`)
-console.log(`  准备项合计  ：+${(trialSum * 100).toFixed(0)}%（上限 +${(TRIAL_PREP_CAP * 100).toFixed(0)}%）`)
+if (isDirectRun) {
+  fs.writeFileSync(OUT, composeSource(), 'utf8')
+
+  // ── 自检：与公式对齐度 + 节点清单 ─────────────────────────────────────────
+  const drift = levels.map((l) => {
+    const formulaCost = 30 * Math.pow(1.55, l.level - 1)
+    return Math.abs(l.breakthrough.costQi - formulaCost) / formulaCost
+  })
+  const maxDrift = Math.max(...drift)
+  const nodes = levels
+    .filter((l) => l.breakthrough.type !== 'minor')
+    .map((l) => `${l.displayName}:${l.breakthrough.type}`)
+
+  console.log(`[gen:values] 已生成 ${path.relative(ROOT, OUT)}`)
+  console.log(`  源 CSV      ：data-source/72级数值表.csv（${fs.statSync(CSV).size} 字节）`)
+  console.log(`  级别数      ：${levels.length}｜大境界：${realms.join('/')}`)
+  console.log(`  与公式最大偏差：${(maxDrift * 100).toFixed(2)}%（CSV 为取整后的口径，属预期）`)
+  console.log(`  关口清单    ：${nodes.length} 个 → ${nodes.join('  ')}`)
+  const trialSum = TRIAL_PREPS.reduce((s, p) => s + p.bonusPct, 0)
+  console.log(`  渡劫八关口  ：${TRIAL_NODE_META.map((m, i) => `${i + 1}.${m.name}`).join(' ')}`)
+  console.log(`  准备项合计  ：+${(trialSum * 100).toFixed(0)}%（上限 +${(TRIAL_PREP_CAP * 100).toFixed(0)}%）`)
+}
+
+export { build, composeSource }
