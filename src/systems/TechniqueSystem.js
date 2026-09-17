@@ -157,6 +157,19 @@ class TechniqueSystem {
     return sum
   }
 
+  /**
+   * 统一加成接口（V3.5.3）：本系统提供的加成行（只读，无副作用）。
+   * 两条链各一行（加法叠加的 pct 型，≠0 才给行）：产出 ratePct() / 战力 combatPct()。
+   */
+  bonusView () {
+    const lines = []
+    const rate = this.ratePct()
+    if (rate) lines.push({ kind: 'rate', label: '功法·产出加成', pct: rate, note: '已装备三槽合计（每级 +N% 修为）' })
+    const power = this.combatPct()
+    if (power) lines.push({ kind: 'power', label: '功法·战力加成', pct: power, note: '已装备三槽合计（每级 +N% 战力）' })
+    return lines
+  }
+
   // ── 装备 / 卸下 ─────────────────────────────────────────────────────────
 
   /** 该功法能否装进指定槽位 */

@@ -176,6 +176,19 @@ class LifespanSystem {
     return this.fitTier.trialPct
   }
 
+  /**
+   * 统一加成接口（V3.5.3）：本系统提供的加成行（只读，无副作用）。
+   * 产出乘区 = 天道契合 fitRateMul——独立乘法因子，恒给行（凡常 ×1 也是口径的一部分）。
+   */
+  bonusView () {
+    return [{
+      kind: 'rate',
+      label: `契合·${this.fitTier.name}`,
+      mul: this.fitRateMul,
+      note: '顺天值六档同时修正产出与渡劫（2.11）'
+    }]
+  }
+
   /** 契合总览（UI 只读此结果） */
   fitView () {
     const fit = this.fit

@@ -36,6 +36,20 @@ class RootSystem {
     return t ? { ...t.mods } : { rateMul: 1, costMul: 1 }
   }
 
+  /**
+   * 统一加成接口（V3.5.3）：本系统提供的加成行（只读，无副作用）。
+   * 产出乘区 = 灵根 rateMul——独立乘法因子，恒给行（未测灵根也要有 ×1 中性行）。
+   */
+  bonusView () {
+    const t = this.tier
+    return [{
+      kind: 'rate',
+      label: `灵根·${t ? t.name : '未测'}`,
+      mul: this.mods.rateMul,
+      note: t ? '资质决定基础吐纳速率' : '测出灵根前不产出（先测灵根再打坐）'
+    }]
+  }
+
   get attrs () {
     return this.state.player.root.attrs || []
   }

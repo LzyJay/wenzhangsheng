@@ -112,6 +112,24 @@ class WorldSystem {
     return w ? w.trialMul : 1
   }
 
+  /**
+   * 统一加成接口（V3.5.3）：本系统提供的加成行（只读，无副作用）。
+   * 产出乘区 = rateMul（含轮回熟练度）——独立乘法因子，恒给行（未抽界也要有 ×1 中性行）。
+   * 注意：只读 this.state.world 直读，**不经 this.s 的懒建兜底**——查询不该长出子树。
+   */
+  bonusView () {
+    const w = this.state.world
+    if (!w || !w.worldId) {
+      return [{ kind: 'rate', label: '世界·尚未抽定', mul: 1, note: '开局抽世界后生效（含轮回熟练度）' }]
+    }
+    let name = '未知世界'
+    try {
+      const meta = getWorld(w.worldId)
+      if (meta && meta.name) name = meta.name
+    } catch (_) { /* 展示名取不到就用兜底 */ }
+    return [{ kind: 'rate', label: `世界·${name}`, mul: this.rateMul, note: '世界修正含轮回熟练度加成' }]
+  }
+
   /** 灵根突破成本修正（青岚界伪灵根 ×1.10）；未抽世界/未登记档位 = 中性 1 */
   rootCostMul (rarity) {
     const w = this.world

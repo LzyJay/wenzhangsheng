@@ -47,6 +47,7 @@ import {
 } from './data/motion.js'                             // 3.4 UI 动效与主题（动效纪律）
 import SfxEngine from './audio/SfxEngine.js'          // 3.5 音效与音乐（程序化合成引擎）
 import { VOLUME_NAMES, nextTier, gainOfTier, DEFAULT_TIER } from './data/sfx.js'
+import { collectBonusLines, recomposeBonus } from './systems/BonusLedger.js' // V3.5.3 统一加成接口（聚合账本，纯逻辑）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
@@ -425,6 +426,32 @@ function powerMulClosure () {
 }
 
 /**
+ * 统一加成接口（V3.5.3）：把各提供方 bonusView() 的加成行收拢成一份账本。
+ *   ① 这是跨系统加成明细的**唯一汇聚点**（提供方实例由装配层注入，§13.1② 合法通道）；
+ *   ② buff 公共乘区归装配层所有，经 buffs 参数入账；
+ *   ③ recompose 重算结果必须与 cult.getEffRate / powerBreakdown 逐位一致
+ *     （V3.5.3-自测的 recomposition 断言即防漂对账器）——改乘区公式时两处一起改。
+ */
+function bonusLines (now = Date.now()) {
+  return collectBonusLines(
+    [
+      world && { id: 'world', bonusView: () => world.bonusView() },
+      roots && { id: 'roots', bonusView: () => roots.bonusView() },
+      tech && { id: 'tech', bonusView: () => tech.bonusView() },
+      beasts && { id: 'beasts', bonusView: () => beasts.bonusView() },
+      life && { id: 'life', bonusView: () => life.bonusView() }
+    ].filter(Boolean),
+    state ? state.buffs : [],
+    now
+  )
+}
+
+/** 账本重算（调试出口 / 浮层展示用）：返回 { rateMul, powerMul, … } */
+function bonusRecompose (now = Date.now()) {
+  return recomposeBonus(bonusLines(now))
+}
+
+/**
  * 离线台账（主人 2026-09-19）：
  *   顶栏只显示「累计离线多久」；上次离线的时长 / 收益 / 占挂机收益百分比
  *   全部收进 #log-offline 的交互浮层（TIP_BUILDERS.offline）。
@@ -594,6 +621,8 @@ const TIP_BUILDERS = {
     const rate = cult.getEffRate(now)
     const finite = Number.isFinite(preview.need)
     const missing = finite ? Math.max(0, preview.need - state.resources.qi) : 0
+    // V3.5.3 统一加成接口：世界乘区从账本行取（此前修为浮层看不到世界的贡献）
+    const worldLine = bonusLines(now).find((l) => l.from === 'world')
     // 主人 2026-09-18：古宝残片等限时增益的「栏位」取消 —— 明细直接列在修为浮层里
     const buffRows = (state.buffs || [])
       .filter((b) => (b.endsAt || Infinity) > now && ((b.mods && b.mods.qiRatePct) || 0) !== 0)
@@ -609,6 +638,7 @@ const TIP_BUILDERS = {
       tipRow('本级进度', pct1(preview.progress)) +
       tipRow('修为积累加成', `+${(preview.surplus.bonus * 100).toFixed(1)}%（富余 ×${preview.surplus.overflow.toFixed(2)}，境界衰减 ×${preview.surplus.decay.toFixed(2)}）`, 'gold') +
       tipRow('基础产出', `${fmtRate(rate.base)} /秒`) +
+      (worldLine ? tipRow('世界倍率', `×${worldLine.mul.toFixed(2)}（${worldLine.label}）`, 'violet') : '') +
       tipRow('灵根倍率', `×${rate.rootMul.toFixed(2)}`, 'violet') +
       tipRow('功法加成', `+${(rate.techPct * 100).toFixed(0)}%（×${(1 + rate.techPct).toFixed(2)}）`, 'gold') +
       tipRow('契合加成', `×${rate.parts.fit.toFixed(2)}（${life ? life.fitTier.name : '凡常'}）`, 'gold') +
@@ -5233,7 +5263,7 @@ async function boot () {
   }
 
   // 调试入口（正式包无副作用，仅挂在 window 上便于开发期在 DevTools 里查状态）
-  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, events, dungeon, market, achv, save, audio: sfxEngine }
+  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose } }
 }
 
 boot().catch((err) => {
