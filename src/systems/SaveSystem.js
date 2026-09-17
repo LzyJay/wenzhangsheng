@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '3.5.3'                // V3.5.3（工程加固：统一加成接口 BonusLedger + 各提供方 bonusView + 修为浮层世界行；对照两参考项目提炼）；与 package.json 同步
+const APP_VERSION = '3.5.4'                // V3.5.4（工程加固：单日收益归因台账 EconLedger——§七 占比护栏校验工具；对照两参考项目提炼）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
@@ -105,6 +105,7 @@ class SaveSystem {
         ownedTechniques: {}
       },
       eventState: { pending: [], book: [], dedupe: {} },
+      econ: null,              // V3.5.4 单日收益归因台账（EconLedger 懒建兜底；null＝老档未建）
       world: null,             // 2.9 世界卡池：null＝尚未抽世界（WorldSystem 懒建兜底）
       sect: null,
       beast: null,             // 2.8 灵兽：null＝尚无灵兽资产（BeastSystem 懒建兜底）

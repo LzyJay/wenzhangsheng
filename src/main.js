@@ -48,6 +48,7 @@ import {
 import SfxEngine from './audio/SfxEngine.js'          // 3.5 音效与音乐（程序化合成引擎）
 import { VOLUME_NAMES, nextTier, gainOfTier, DEFAULT_TIER } from './data/sfx.js'
 import { collectBonusLines, recomposeBonus } from './systems/BonusLedger.js' // V3.5.3 统一加成接口（聚合账本，纯逻辑）
+import { noteGain, econView } from './systems/EconLedger.js'                 // V3.5.4 单日收益归因台账（纯逻辑，读写 state.econ）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
@@ -201,6 +202,8 @@ const dom = {
   tgSkin: el('tg-skin'),                 // 3.4 皮肤：鎏金 / 朱砂 / 玄墨 / 月白 / 随世界
   tgVolSfx: el('tg-vol-sfx'),            // 3.5 音效音量：低 / 中 / 高
   tgVolBgm: el('tg-vol-bgm'),            // 3.5 音乐音量：低 / 中 / 高
+  vEconDay: el('v-econ-day'),            // V3.5.4 今日收益归因：日键
+  vEcon: el('v-econ'),                   // V3.5.4 今日收益归因：分线净额与占比
   vSavePath: el('v-savepath'),
   vSavePath2: el('v-savepath2'),
   vSaveMeta: el('v-save-meta'),
@@ -449,6 +452,23 @@ function bonusLines (now = Date.now()) {
 /** 账本重算（调试出口 / 浮层展示用）：返回 { rateMul, powerMul, … } */
 function bonusRecompose (now = Date.now()) {
   return recomposeBonus(bonusLines(now))
+}
+
+// ── V3.5.4 单日收益归因（§七 护栏校验工具；账本见 systems/EconLedger.js）──────
+// 记账方式＝**段间快照差值**：主循环里各产线结算段前后拍 resources 快照，差值即该线
+// 净入账。不改任何 system（§13.1②），负净额（事件代价 / 突破失败扣修为）照记——
+// 归因要的是事实，不是好看。
+function snapRes () {
+  return { q: state.resources.qi, s: state.resources.stones }
+}
+function noteRes (line, a, b) {
+  const qi = b.q - a.q
+  const stones = b.s - a.s
+  if (qi || stones) noteGain(state, line, { qi, stones }, Date.now())
+}
+/** 今日归因视图（设置面板「今日收益归因」用） */
+function econToday () {
+  return econView(state, Date.now())
 }
 
 /**
@@ -1270,6 +1290,11 @@ function render () {
     lastAlchemyRender = now
     renderAlchemy()
   }
+  // 设置面板开着时归因视图每秒跟拍（V3.5.4）
+  if (dom.panelOverlay.classList.contains('show') && now - lastEconSync >= PANEL_MS) {
+    lastEconSync = now
+    syncEconUI()
+  }
   renderTitleChip()
 }
 
@@ -1532,6 +1557,7 @@ function leaveOffline () {
   cult.lastTickAt = now // 关键：重置在线结算基线，避免离线时长被重复计入
 
   if (report.ok) {
+    noteGain(state, 'offline', { qi: report.gainQi })   // V3.5.4 归因：离线折算单列，不稀释在线打坐占比
     tickLifespan(report.awaySec) // 寿元是实时时钟：离线同样流逝
     pushLog(`闭关归来：离开 ${fmtDuration(report.awayMs)}${report.capped ? `（超出上限 ${fmtGameDuration(report.capHours * 3600 * 1000)}，按上限结算）` : ''}，修为 +${fmt(report.gainQi)}`, 'offline')
     emitFloat({ text: `闭关归来 +${fmt(report.gainQi)}`, kind: 'offline' }, 200)
@@ -1773,7 +1799,9 @@ function onBreakthrough () {
  */
 function doBreakthrough (auto = false) {
   hideBubble()
+  const _ec = snapRes()   // V3.5.4 归因：突破段净额（成功灵石奖励 / 失败扣修为）记 breakthrough 线
   const result = cult.attemptBreakthrough(Date.now())
+  noteRes('breakthrough', _ec, snapRes())
 
   if (!result.ok) {
     pushLog(result.message, 'info')
@@ -3527,6 +3555,7 @@ function reportOfflineEvents (results) {
 
 let achvTick = 0        // 每秒一判 + 纪事批次（节流计数，与 2.3 同理）
 let lastLoopRender = 0  // V3.5.2 渲染节流：主循环上次 render 的时刻（事件触发的 render 不受此限）
+let lastEconSync = 0    // V3.5.4 设置面板归因视图的轻刷节拍
 let lastChrRender = 0    // 「事件与纪事」面板轻刷节拍（V3.5.2：时间驱动）
 let lastAchvPaneRender = 0 // 「成就与称号」面板轻刷节拍（V3.5.2：时间驱动）
 let chrFilter = 'all'   // 纪事频道筛选
@@ -4079,6 +4108,25 @@ function switchTab (name) {
   for (const p of dom.panes) p.hidden = p.dataset.pane !== name
 }
 
+// V3.5.4 今日收益归因视图（设置面板；账本见 systems/EconLedger.js）
+const ECON_LABELS = { cult: '打坐', offline: '离线', sect: '宗门', dungeon: '秘境', beast: '灵兽', event: '事件', breakthrough: '突破奖', other: '其他' }
+function syncEconUI () {
+  if (!state || !dom.vEcon) return
+  const v = econToday()
+  if (dom.vEconDay) dom.vEconDay.textContent = `${v.dayKey} · 已记 ${fmtRealSpan(v.spanMs)}`
+  const name = (l) => ECON_LABELS[l] || l
+  const list = (key, pctKey, unit) => v.rows
+    .filter((r) => r[key])
+    .map((r) => `${name(r.line)} ${r[key] > 0 ? '+' : '−'}${fmt(Math.abs(r[key]))}${unit}（${Math.round(r[pctKey] * 100)}%）`)
+    .join(' ｜ ')
+  const qiLine = list('qi', 'qiPct', '')
+  const stoneLine = list('stones', 'stonesPct', '')
+  dom.vEcon.innerHTML =
+    `修为：${qiLine || '今日尚无入账'}<br />` +
+    (stoneLine ? `灵石：${stoneLine}` : '') +
+    (v.totals.qi < 0 ? '<br /><span style="color:var(--warn)">⚠ 修为净额为负（失败 / 代价超过产出，属异常信号）</span>' : '')
+}
+
 async function renderPanel () {
   if (!state) return
   const s = state.settings
@@ -4096,6 +4144,7 @@ async function renderPanel () {
   syncSkinUI()       // 3.4 皮肤：色板名与循环顺序
   syncMotionUI()     // 3.4 动效：总档与系统实测值
   syncAudioUI()      // 3.5 音效：音量两行
+  syncEconUI()       // V3.5.4 今日收益归因
 
   // ② 存档
   const info = await save.info()
@@ -5045,6 +5094,7 @@ async function boot () {
     pushLog('检测到旧版 localStorage 存档，已迁移到文件存档（save.json）。', 'sys')
   }
   if (bootReport.ok) {
+    noteGain(state, 'offline', { qi: bootReport.gainQi })   // V3.5.4 归因：开机补结算同入离线线
     tickLifespan(bootReport.awaySec) // 离线同样流逝（寿元是实时时钟）
     pushLog(`闭关归来：离开 ${fmtDuration(bootReport.awayMs)}${bootReport.capped ? `（超出上限 ${fmtGameDuration(bootReport.capHours * 3600 * 1000)}，按上限结算）` : ''}，修为 +${fmt(bootReport.gainQi)}`, 'offline')
     emitFloat({ text: `闭关归来 +${fmt(bootReport.gainQi)}`, kind: 'offline' }, STARTUP_DELAY)
@@ -5159,13 +5209,18 @@ async function boot () {
   // ⑤ 挂机主循环：每 100ms 结算一次（速率即"每秒增加修为"），并刷新面板
   //    注意：测出灵根前不产出（对齐设计库《新手前 30 分钟体验脚本》：先测灵根再打坐）
   setInterval(() => {
+    // V3.5.4 归因·打坐段：只圈 cult.tick 本身（自动突破的灵石/扣修为在 doBreakthrough 段记）
+    const _qa = snapRes()
     const dt = offlineMode || !state.player.flags.rootDrawn ? 0 : cult.tick(Date.now())
+    noteRes('cult', _qa, snapRes())
     if (dt > 0) tickLifespan(dt)
     // 自动突破（主人 2026-09-18，默认开）：修为够了自动冲关（含瓶颈）；渡劫不自动
     if (dt > 0 && state.settings.autoBreak !== false) autoBreakTick()
     // 宗门：俸禄随在线时间入账 + 任务板换轮 + **限时任务到点自动交差**（主人 2026-09-19）
     if (sect) {
+      const _sa = snapRes()
       const st = sect.tick(Date.now(), dt)
+      noteRes('sect', _sa, snapRes())
       const claims = (st && st.claims) || []
       for (const c of claims) {
         pushLog(c.message, c.success ? 'ok' : 'fail')
@@ -5197,7 +5252,9 @@ async function boot () {
       }
     }
     if (beasts) {
+      const _va = snapRes()
       beasts.tick(Date.now(), dt)   // 灵兽（2.8）：出战被动产出随在线秒入账（离线不发）
+      noteRes('beast', _va, snapRes())
       // 自动成长（V3.5.1）：攒满一级的灵兽在此打日志
       for (const msg of beasts.drainGrew()) pushLog(msg, 'ok')
     }
@@ -5213,6 +5270,7 @@ async function boot () {
     if (market) market.ensureDaily(Date.now())  // 坊市（2.6）：每日 5 点刷新货品/拍卖（同日幂等）
     // 秘境（2.7）：派遣到期结算（真实时间驱动，离线照算）+ 每周一自动扫荡
     if (dungeon) {
+      const _da = snapRes()
       const dgNow = Date.now()
       for (const r of dungeon.tick(dgNow)) {
         pushLog(r.message, 'ok')
@@ -5223,9 +5281,11 @@ async function boot () {
         pushLog(weekly.message, 'ok')
         emitFloat({ text: `试炼塔周扫荡 +${fmt(weekly.stones)} 灵石`, kind: 'info' })
       }
+      noteRes('dungeon', _da, snapRes())
     }
     // 事件（2.3）：在线滚动触发 + 恩怨挂账到期兑现（暂停/离线时不触发新事件，挂账照兑）
     if (events) {
+      const _ea = snapRes()
       const evNow = Date.now()
       for (const r of events.tick(evNow, cult.getEffRate(evNow).eff, stoneHourly(state.player.realm.level), dt > 0)) {
         pushLog(r.message, r.good ? 'ok' : 'fail')
@@ -5233,6 +5293,7 @@ async function boot () {
         if (achv) achv.note(r.kind === 'repay' ? 'repay' : (r.good ? 'eventGood' : 'eventBad'))
       }
       drainFitDelta()   // 2.11：事件果报（契合 ±N）在此入账顺天值
+      noteRes('event', _ea, snapRes())
     }
     // 成就与纪事（2.10）：每秒一判；纪事按真实时间到点汇总一批（离线也照算）
     achvTick = (achvTick + 1) % 10
@@ -5263,7 +5324,7 @@ async function boot () {
   }
 
   // 调试入口（正式包无副作用，仅挂在 window 上便于开发期在 DevTools 里查状态）
-  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose } }
+  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) } }
 }
 
 boot().catch((err) => {
