@@ -71,7 +71,7 @@ console.log('\n【基线：版本与运行状态】')
   // meta.appVersion 在内存里保持"最后一次读档"的版本；落档版本以强制写档后的文件为准
   await evaluate(`__wcs.save.save(__wcs.state, 'verify')`)
   const fileVer = await evaluate(`window.desktop.save.read().then((r) => (JSON.parse(r.data).meta || {}).appVersion)`)
-  ok('实机写档版本 3.5.4', fileVer === '3.5.4', fileVer)
+  ok('实机写档版本 3.5.5', fileVer === '3.5.5', fileVer)
   const errs = await evaluate(`window.__wcsErrors ? window.__wcsErrors.length : 0`)
   ok('渲染层零未捕获异常', errs === 0, `${errs} 个`)
 }

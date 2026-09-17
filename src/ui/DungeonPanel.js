@@ -7,6 +7,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+import { getTechnique } from '../data/techniques.js'   // 纯数据访问器（ui 层允许 import data/）
+
 export function createDungeonPanel (ctx) {
   const dom = ctx.dom
   const getState = ctx.state
@@ -167,7 +169,7 @@ let lastDungeonRender = 0 // 秘境面板轻刷节拍（V3.5.2：时间驱动，
     dd.textContent = `${run.depthName} · ${run.hours}h · ★${run.stars} · 每趟结算：灵石 +${H.fmt(run.stones)}、${run.matName} +${run.mats}`
     const ds = document.createElement('span')
     ds.className = 'ds'
-    ds.textContent = run.done ? '结算中…' : `还差 ${fmtHoursLeft(run.remainingMs)}`
+    ds.textContent = run.done ? '结算中…' : `还差 ${H.fmtHoursLeft(run.remainingMs)}`
     const btn = document.createElement('button')
     btn.className = 'd-btn'
     btn.textContent = '召回'

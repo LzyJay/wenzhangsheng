@@ -63,7 +63,7 @@ let lastBeastRender = 0 // 灵兽面板轻刷节拍（V3.5.2：时间驱动，�
     dom.beastDispatch.innerHTML = '<div class="bag-empty">金丹期解锁</div>'
   } else {
     const dv = system.dispatchView(now)
-    const autoEggOn = state.settings.autoEgg !== false
+    const autoEggOn = getState().settings.autoEgg !== false
     const row = document.createElement('div')
     row.className = 'sect-row'
     const tn = document.createElement('span')

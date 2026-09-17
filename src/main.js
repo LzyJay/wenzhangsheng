@@ -4485,14 +4485,14 @@ async function boot () {
     state: () => state,
     system: () => beasts,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh }
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh, onPress }
   })
   // V3.5.5 拆分：秘境面板（src/ui/DungeonPanel.js）
   dungeonPanel = createDungeonPanel({
     state: () => state,
     system: () => dungeon,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod }
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, fmtHoursLeft, onPress }
   })
   achv = new AchievementSystem(state, { grant: grantAchvReward })  // 2.10：奖励发放经装配层回调落到 resources / inventory
   achv.ensure()            // 老档补字段 + 新档播种纪事 + 凡档称号入袋
