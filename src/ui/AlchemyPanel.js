@@ -1,0 +1,165 @@
+/**
+ * AlchemyPanel.js —— 丹房面板（#alchemy-overlay：丹方 / 炼制 / 自动炼制）
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 边界（src/ui/ 层 · V3.5.6 拆分 main.js 第二批）：只碰本面板自己的 DOM；
+ *   systems（alchemy / cult）与装配层工具经 createAlchemyPanel(ctx) 注入，禁止 import systems。
+ * 「当前所需」＝当下真正卡关的丹药（突破缺的破境丹、渡劫缺的护劫丹），判定归各系统。
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+export function createAlchemyPanel (ctx) {
+  const dom = ctx.dom
+  const state = ctx.state
+  const alchemy = ctx.alchemy
+  const cult = ctx.cult
+  const H = ctx.helpers
+  if (!dom.alchemyOverlay) return null
+
+  /** 当下"正缺"的丹药清单（纯读；判定归各系统，此处只做汇总） */
+  function neededPills () {
+    const out = []
+    try {
+      const pv = cult.getBreakthroughPreview(Date.now())
+      if (pv.pillRequired && pv.pillMissing && pv.plan && pv.plan.pill) out.push(pv.plan.pill)
+      if (pv.isTrial && pv.trial && Array.isArray(pv.trial.preps.views)) {
+        for (const v of pv.trial.preps.views) {
+          if (v.kind === 'consume' && v.itemId && v.state !== 'active' && (v.count | 0) <= 0) out.push(v.itemId)
+        }
+      }
+    } catch (_) { /* 预览不可得时不标"所需"，不影响面板 */ }
+    return out
+  }
+
+  function render () {
+    if (!alchemy) return
+    const needed = neededPills()
+    const views = alchemy.recipesView({ needed })
+
+    // 材料摘要（一眼看清手上有什么）
+    if (dom.alchemyMats) {
+      const inv = (state.inventory && state.inventory.items) || {}
+      dom.alchemyMats.innerHTML =
+        `材料：<b>灵草 ${inv.mat_lingcao | 0}</b> ｜ <b>玄铁矿 ${inv.mat_kuang | 0}</b> ｜ <b>妖丹 ${inv.mat_yaodan | 0}</b>` +
+        ` ｜ <b>清灵草 ${inv.mat_qinglingcao | 0}</b> ｜ <b>妖兽精血 ${inv.mat_yaohu | 0}</b> ｜ <b>千年灵乳 ${inv.mat_wannianru | 0}</b>` +
+        `　·　打坐偶得 + 宗门任务 / 商店 / 秘境（离线不掉）`
+    }
+
+    dom.brewNote.textContent =
+      '材料齐即可开炉；炼失败不白烧，收回一半材料。' +
+      '标「当前所需」的是眼下卡关的那味丹：点「自动炼制」会一直开炉到成丹或材料耗尽（成丹率不足 100%，可能连炼数炉）。' +
+      '突破 / 渡劫时若发现缺丹，丹房也会自动开炉一次。'
+
+    const QUALITY_COLOR = { fan: '#b9b3a8', liang: '#e8b96a', zhen: '#7fd6a8', jue: '#b98cff', xian: '#9fd6ff' }
+    const frag = document.createDocumentFragment()
+    for (const r of views) {
+      const row = document.createElement('div')
+      row.className = 'brew-row' + (r.needed ? ' needed' : '')
+
+      const bn = document.createElement('span')
+      bn.className = 'bn'
+      bn.textContent = r.name
+      bn.style.color = QUALITY_COLOR[r.quality] || '#e8b96a'
+      bn.title = `${r.qualityName} · 成丹率 ${Math.round(r.rate * 100)}% —— ${r.desc}`
+      if (r.needed) {
+        const mark = document.createElement('span')
+        mark.className = 'brew-mark'
+        mark.textContent = '当前所需'
+        bn.appendChild(mark)
+      }
+      const have = document.createElement('span')
+      have.className = 'brew-have'
+      have.textContent = `存 ${r.have | 0}`
+      have.title = `囊中现有${r.name} ${r.have | 0} 枚`
+      bn.appendChild(have)
+
+      const bi = document.createElement('span')
+      bi.className = 'bi'
+      for (let i = 0; i < r.inputsView.length; i++) {
+        const iv = r.inputsView[i]
+        const chip = document.createElement('span')
+        chip.textContent = `${iv.name} ${iv.have}/${iv.n}`
+        if (!iv.enough) {
+          chip.className = 'lack'
+          chip.title = `还差 ${iv.n - iv.have} 份`
+        }
+        bi.appendChild(chip)
+        if (i < r.inputsView.length - 1) bi.append(' · ')
+      }
+      bi.appendChild(document.createElement('br'))
+      const rate = document.createElement('span')
+      rate.className = 'rate'
+      rate.textContent = `${r.qualityName} ｜ 成丹率 ${Math.round(r.rate * 100)}%`
+      bi.appendChild(rate)
+
+      const btn = document.createElement('button')
+      btn.className = 'mini'
+      btn.textContent = '炼制'
+      btn.dataset.brew = r.id
+      btn.disabled = !r.canBrew
+      btn.title = r.canBrew ? `开炉炼制${r.name}（1 炉）` : `材料不足：${r.missing.join('、')}`
+
+      const auto = document.createElement('button')
+      auto.className = 'mini'
+      auto.textContent = '自动炼制'
+      auto.dataset.autobrew = r.pillId
+      auto.disabled = !r.canBrew
+      auto.title = r.canBrew
+        ? `自动开炉，直到炼出${r.name}或材料耗尽`
+        : `材料不足：${r.missing.join('、')}`
+
+      row.append(bn, bi, btn, auto)
+      frag.appendChild(row)
+    }
+    dom.brewList.replaceChildren(frag)
+  }
+
+  // ── 界面事件绑定 ──────────────────────────────────────────────────────────
+
+  // 坊市页签监听已随面板迁入 src/ui/MarketPanel.js（V3.5.5）
+  // 丹房：炼制 / 自动炼制（事件委托：面板每次重绘，避免丢监听）
+  H.onPress(dom.alchemyOverlay, (e) => {
+    const b = e.target.closest('[data-brew]')
+    if (b && !b.disabled) {
+      const res = alchemy.brew(b.dataset.brew)
+      H.pushLog(res.message, res.ok && res.success ? 'ok' : 'fail')
+      if (res.ok) {
+        H.persist('alchemy-brew')
+        render()
+      }
+      return
+    }
+    const auto = e.target.closest('[data-autobrew]')
+    if (auto && !auto.disabled) {
+      const ab = alchemy.autoBrewFor(auto.dataset.autobrew)
+      H.pushLog(ab.message, ab.success ? 'ok' : 'fail')
+      for (const d of ab.details) H.pushLog(d, 'info')
+      if (ab.attempts > 0) H.persist('alchemy-autobrew')
+      render()
+      H.render()
+    }
+  })
+
+
+  function open () {
+    if (!state) return
+    H.closeTip()
+    H.closeAllOverlays('alchemy')
+    render()
+    H.ovShow(dom.alchemyOverlay)
+    dom.btnAlchemy.classList.add('on')
+    H.syncDragRegions()
+  }
+
+  function close () {
+    H.ovHide(dom.alchemyOverlay)
+    dom.btnAlchemy.classList.remove('on')
+    H.syncDragRegions()
+  }
+
+  function toggle () {
+    if (dom.alchemyOverlay.classList.contains('show')) close()
+    else open()
+  }
+
+  return { open, close, toggle, render }
+}

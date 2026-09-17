@@ -51,6 +51,11 @@ import { noteGain, econView } from './systems/EconLedger.js'                 // 
 import { createMarketPanel } from './ui/MarketPanel.js'                      // V3.5.5 拆分：坊市面板（src/ui/ 新层）
 import { createBeastPanel } from './ui/BeastPanel.js'                       // V3.5.5 拆分：灵兽面板（src/ui/ 新层）
 import { createDungeonPanel } from './ui/DungeonPanel.js'                   // V3.5.5 拆分：秘境面板（src/ui/ 新层）
+import { createTrialPanel } from './ui/TrialPanel.js'                       // V3.5.6 拆分：渡劫面板（src/ui/ 新层）
+import { createTechPanel } from './ui/TechPanel.js'                         // V3.5.6 拆分：功法面板（src/ui/ 新层）
+import { createSectPanel } from './ui/SectPanel.js'                         // V3.5.6 拆分：宗门面板（src/ui/ 新层）
+import { createBagPanel } from './ui/BagPanel.js'                           // V3.5.6 拆分：行囊面板（src/ui/ 新层）
+import { createAlchemyPanel } from './ui/AlchemyPanel.js'                   // V3.5.6 拆分：丹房面板（src/ui/ 新层）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
@@ -90,6 +95,11 @@ let market = null
 let marketPanel = null   // V3.5.5 拆分：坊市面板实例（boot 创建）
 let beastPanel = null    // V3.5.5 拆分：灵兽面板实例（boot 创建）
 let dungeonPanel = null  // V3.5.5 拆分：秘境面板实例（boot 创建）
+let trialPanel = null    // V3.5.6 拆分：渡劫面板实例（boot 创建）
+let techPanel = null     // V3.5.6 拆分：功法面板实例（boot 创建）
+let sectPanel = null     // V3.5.6 拆分：宗门面板实例（boot 创建）
+let bagPanel = null      // V3.5.6 拆分：行囊面板实例（boot 创建）
+let alchemyPanel = null  // V3.5.6 拆分：丹房面板实例（boot 创建）
 let achv = null
 let life = null
 let game = null
@@ -1895,215 +1905,13 @@ function autoBreakTick () {
 // 宿主：渡劫遮罩 #trial-overlay（八关口全览 / 准备加成 / 静养）+ 既有引雷气泡。
 // 本区块只做「读系统 → 渲染 → 把点击交回系统」，不藏任何规则。
 
-function openTrial () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('trial')
-  renderTrial()
-  ovShow(dom.trialOverlay)
-  dom.btnTrial.classList.add('on')
-  syncDragRegions()
-}
+// V3.5.6 拆分：渡劫面板本体迁至 src/ui/TrialPanel.js；只留「薄委托」。
 
-function closeTrial () {
-  ovHide(dom.trialOverlay)
-  dom.btnTrial.classList.remove('on')
-  syncDragRegions()
-}
-
-function toggleTrial () {
-  if (dom.trialOverlay.classList.contains('show')) closeTrial()
-  else openTrial()
-}
-
-/** 该准备项所需的丹，丹房能否现炼（材料够了就允许"炼丹服下"一键走完） */
-function canAutoBrew (v) {
-  if (!v || !v.itemId || !alchemy) return false
-  const rec = alchemy.recipeForPill(v.itemId)
-  return !!(rec && alchemy.canBrew(rec.id).ok)
-}
-
-/** 引雷气泡上的「已备 +N%」——让玩家在按下引雷前最后一眼确认自己备了什么 */
-function renderBubblePrep (preview) {
-  const pct = (preview && preview.trial && preview.trial.preps) ? preview.trial.preps.pct : 0
-  dom.bubblePrep.textContent = pct > 0 ? ` ｜ 已备 +${Math.round(pct * 100)}%` : ''
-}
-
-function renderTrial () {
-  if (!state || !cult) return
-  const preview = cult.getBreakthroughPreview(Date.now())
-  const nodes = cult.nodesView()
-  const cur = cult.trialNode
-  const idx = cur >= 0 ? cur : Math.min(cult.trialCleared, nodes.length - 1)
-  const node = nodes[idx]
-  const preps = cult.prepSummary(idx)
-  const fails = (state.trialState.consecutiveFails | 0)
-
-  // ① 当前关口
-  let head = ''
-  if (preview.ascended) {
-    head = '<div class="tn-name">已飞升 · 静待二期</div>' +
-      `<div class="tn-line">八道天关皆已渡过，仙界之门暂封。</div>`
-  } else {
-    const failBonus = Math.min(fails * TRIBULATION.failBonus.per, TRIBULATION.failBonus.cap)
-    const pityNext = fails + 1 >= TRIBULATION.pity.fails
-    let rateLine = `<div class="tn-line">尚未行至此关：眼下是「${preview.plan.label} → ${preview.plan.targetName}」。</div>`
-    if (preview.trial) {
-      const t = preview.trial
-      const fitPct = t.fitPct || 0
-      // 裸口径 = 修为积累 + 契合（不含准备）；与最终 P 的差值拆成「准备」「契合」两段展示
-      const naked = cult.getTrialChance(idx, t.fails, t.surplusBonus + fitPct)
-      const mods = []
-      if (preps.pct > 0) mods.push(`准备 <span class="jade">+${Math.round(preps.pct * 100)}%</span>`)
-      if (fitPct !== 0) {
-        mods.push(fitPct > 0
-          ? `契合 <span class="jade">+${Math.round(fitPct * 100)}%</span>`
-          : `契合 <span class="red">−${Math.round(-fitPct * 100)}%</span>`)
-      }
-      rateLine =
-        `<div class="tn-line">单道天雷 <b>${(naked.p * 100).toFixed(1)}%</b>` +
-        (mods.length ? ` → <b class="jade">${(t.p * 100).toFixed(1)}%</b>（${mods.join('｜')}）` : '') +
-        ` ｜ 三道过二 <b>${(preview.probability * 100).toFixed(1)}%</b></div>`
-    }
-    head =
-      `<div class="tn-name">${node.name}（第 ${node.index + 1} / ${node.total} 关${cur >= 0 ? ' · 已在关口' : ' · 尚未行至'}）</div>` +
-      `<div class="tn-line">${node.fromRealm} → ${node.toRealm} ｜ 关口需求战力 <b>${fmt(node.trialReq)}</b>（第 ${node.index + 1} 关系数 ${node.fk}）</div>` +
-      rateLine +
-      `<div class="tn-line">本关战绩：<b>${node.tries}</b> 试 <b>${node.passes}</b> 成 ｜ 垫劫补正 <b>+${Math.round(failBonus * 100)}%</b>（连败 ${fails} 次${pityNext ? '，第 4 次起按保底计' : ''}）</div>` +
-      `<div class="tn-desc">${node.desc}</div>`
-  }
-  dom.trialNode.innerHTML = head + '<div class="tr-gates" id="trial-gates"></div>'
-
-  // ② 八关口格子
-  const gateBox = document.getElementById('trial-gates')
-  if (gateBox) {
-    const frag = document.createDocumentFragment()
-    for (const n of nodes) {
-      const box = document.createElement('div')
-      box.className = 'tr-gate' + (n.passed ? ' passed' : '') + (n.current ? ' cur' : '')
-      const nm = document.createElement('span')
-      nm.textContent = n.name.replace(/劫$/, '')
-      box.appendChild(nm)
-      const sub = document.createElement('i')
-      sub.textContent = n.passed ? `已渡${n.passes ? '·' + n.passes + '成' : ''}` : (n.current ? '在此' : '未至')
-      box.appendChild(sub)
-      box.title = `第 ${n.index + 1} 关 · ${n.name}：${n.fromRealm} → ${n.toRealm}\n关口需求战力 ${fmt(n.trialReq)}（系数 ${n.fk}）\n战绩 ${n.tries} 试 ${n.passes} 成`
-      frag.appendChild(box)
-    }
-    gateBox.replaceChildren(frag)
-  }
-
-  // ③ 准备项
-  const fragp = document.createDocumentFragment()
-  for (const v of preps.views) {
-    const row = document.createElement('div')
-    row.className = 'tr-row' + (v.active ? '' : (v.state === 'ready' ? '' : ' locked'))
-
-    const pn = document.createElement('span')
-    pn.className = 'pn'
-    pn.textContent = v.name
-    pn.title = `${v.from}`
-
-    const pd = document.createElement('span')
-    pd.className = 'pd'
-    pd.textContent = v.message + (v.active ? '' : `　${v.note}`)
-
-    const pb = document.createElement('span')
-    pb.className = 'pb'
-    pb.textContent = `+${Math.round(v.bonusPct * 100)}%`
-
-    const btn = document.createElement('button')
-    btn.className = 'mini' + (v.active ? ' on' : '')
-    const lacked = v.kind === 'consume' && v.state === 'lack' && canAutoBrew(v)
-    if (v.active) {
-      btn.textContent = '已备'
-      btn.disabled = true
-      btn.title = '这一回天雷已经带上它了'
-    } else if (cur >= 0 && (v.state === 'ready' || lacked)) {
-      btn.textContent = lacked
-        ? '炼 丹 服 下'
-        : (v.kind === 'consume' ? '服下' : (v.kind === 'contrib' ? '请援' : '备妥'))
-      btn.dataset.prep = v.id
-      btn.title = lacked
-        ? '囊中无此丹、但材料充足：点一下即由丹房自动开炉，炼成随即服下'
-        : (v.kind === 'consume' ? '服下即刻生效；成败皆不退还' : '花贡献请同门结阵护法')
-    } else {
-      btn.textContent = '—'
-      btn.disabled = true
-      btn.title = cur >= 0 ? v.note : '需站在第九重关口上才可准备'
-    }
-
-    row.append(pn, pd, pb, btn)
-    fragp.appendChild(row)
-  }
-  dom.trialPreps.replaceChildren(fragp)
-
-  // ④ 静养按钮（有道伤才出现）
-  const ds = state.buffs.find((b) => b.id === TRIBULATION.daoShang.id)
-  dom.btnTrialCure.hidden = !ds
-  if (ds) {
-    const cost = cult.cureCost()
-    const lack = (state.resources.stones | 0) < cost
-    dom.btnTrialCure.textContent = `静养疗伤 · ${cost} 灵石`
-    dom.btnTrialCure.disabled = lack
-    dom.btnTrialCure.title = lack
-      ? `灵石不足（需 ${cost}）`
-      : `道伤：产出 −30%，剩余 ${fmtDuration(ds.endsAt - Date.now())}；花 ${cost} 灵石静养即可尽去`
-  }
-
-  // 前往引雷：条件不足时说清楚缺什么
-  const goBtn = dom.btnTrialGo
-  goBtn.disabled = !preview.ready
-  goBtn.title = preview.ready
-    ? '关闭本面板，去主界面引雷（三道天雷 · 过二即成）'
-    : `尚不可冲击：${preview.blocked || '条件不足'}`
-
-  const capPct = Math.round(preps.cap * 100)
-  dom.trialNote.textContent =
-    `八道天关（炼气→筑基 · … · 大乘→飞升）每境第九重开启；三道天雷过二即成，` +
-    `准备加成合计上限 +${capPct}%（破例项见 item 表：护劫丹 +10% · 镇雷法宝 +8% · 灵兽助战 +7% · 道行天赋 +5% · 宗门援助 +5%）。` +
-    `准备只对这一回天雷负责：引雷之后不论成败，服下的丹与请来的援都不留存。渡劫失败损失 30% 修为并落下道伤（可静养或等待消散），不掉级、不遗失宝物。`
-}
-
-// 渡劫面板交互（事件委托：面板每次重绘，避免丢监听）
-dom.trialPreps.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-prep]')
-  if (!b || b.disabled) return
-  let res = cult.prepare(b.dataset.prep)
-  // 护劫丹见底而材料充足 → 丹房自动开炉，炼成随即服下（主人 2026-09-17 口径）
-  if (!res.ok) {
-    const v = cult.prepViews().find((x) => x.id === b.dataset.prep)
-    if (v && v.itemId && /囊中没有/.test(res.message || '')) {
-      const ab = alchemy.autoBrewFor(v.itemId)
-      if (ab.attempts > 0) {
-        pushLog(ab.message, ab.success ? 'ok' : 'fail')
-        persist('alchemy-autobrew')
-        if (ab.success) res = cult.prepare(b.dataset.prep)
-      }
-    }
-  }
-  pushLog(res.message, res.ok ? 'ok' : 'info')
-  if (res.ok) {
-    persist('trial-prep')
-    renderTrial()
-    render()
-  }
-})
-
-dom.btnTrialCure.addEventListener('click', () => {
-  const res = cult.cureDaoShang(Date.now())
-  pushLog(res.message, res.ok ? 'ok' : 'info')
-  if (res.ok) {
-    persist('trial-cure')
-    renderTrial()
-    render()
-  }
-})
-
-dom.btnTrialGo.addEventListener('click', () => {
-  closeTrial()
-  onBreakthrough()
-})
+function openTrial () { if (trialPanel) trialPanel.open() }
+function closeTrial () { if (trialPanel) trialPanel.close() }
+function toggleTrial () { if (trialPanel) trialPanel.toggle() }
+function renderTrial () { if (trialPanel) trialPanel.render() }
+function renderBubblePrep (preview) { if (trialPanel) trialPanel.renderBubblePrep(preview) }
 
 // ── 设置 / 存档 / 背包 面板（1.8a 设置 · 1.8b 背包 · 1.8c 存档）────────────
 
@@ -2189,605 +1997,38 @@ function ovHide (el) {
 }
 
 // 背包：独立遮罩（只装行囊；丹房已独立成 #alchemy-overlay）
-function openBag () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('bag')
-  renderBag()
-  ovShow(dom.bagOverlay)
-  dom.btnBag.classList.add('on')
-  syncDragRegions()
-}
+// V3.5.6 拆分：行囊 / 丹房面板本体迁至 src/ui/BagPanel.js / AlchemyPanel.js；只留「薄委托」。
 
-function closeBag () {
-  ovHide(dom.bagOverlay)
-  dom.btnBag.classList.remove('on')
-  syncDragRegions()
-}
+function openBag () { if (bagPanel) bagPanel.open() }
+function closeBag () { if (bagPanel) bagPanel.close() }
+function toggleBag () { if (bagPanel) bagPanel.toggle() }
+function renderBag () { if (bagPanel) bagPanel.render() }
 
-// 丹房：独立遮罩（主人 2026-09-17：背包与丹房界面分离）
-function openAlchemy () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('alchemy')
-  renderAlchemy()
-  ovShow(dom.alchemyOverlay)
-  dom.btnAlchemy.classList.add('on')
-  syncDragRegions()
-}
-
-function closeAlchemy () {
-  ovHide(dom.alchemyOverlay)
-  dom.btnAlchemy.classList.remove('on')
-  syncDragRegions()
-}
-
-function toggleAlchemy () {
-  if (dom.alchemyOverlay.classList.contains('show')) closeAlchemy()
-  else openAlchemy()
-}
-
-function toggleBag () {
-  if (dom.bagOverlay.classList.contains('show')) closeBag()
-  else openBag()
-}
+function openAlchemy () { if (alchemyPanel) alchemyPanel.open() }
+function closeAlchemy () { if (alchemyPanel) alchemyPanel.close() }
+function toggleAlchemy () { if (alchemyPanel) alchemyPanel.toggle() }
+function renderAlchemy () { if (alchemyPanel) alchemyPanel.render() }
 
 // ── 功法面板（2.1）：主修 / 辅修 · 装备 · 升级 ────────────────────────────
 
-function openTech () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('tech')
-  renderTech()
-  ovShow(dom.techOverlay)
-  dom.btnTech.classList.add('on')
-  syncDragRegions()
-}
+// ── 功法面板（2.1）：主修 / 辅修 · 装备 · 升级 ────────────────────────────
 
-function closeTech () {
-  ovHide(dom.techOverlay)
-  dom.btnTech.classList.remove('on')
-  syncDragRegions()
-}
+// V3.5.6 拆分：功法面板本体迁至 src/ui/TechPanel.js；只留「薄委托」。
 
-function toggleTech () {
-  if (dom.techOverlay.classList.contains('show')) closeTech()
-  else openTech()
-}
+function openTech () { if (techPanel) techPanel.open() }
+function closeTech () { if (techPanel) techPanel.close() }
+function toggleTech () { if (techPanel) techPanel.toggle() }
+function renderTech () { if (techPanel) techPanel.render() }
 
-/** 槽位短名（按钮文案用） */
-const SLOT_LABEL = { main: '主修', side0: '辅修一', side1: '辅修二' }
-let lastTechRender = 0 // 功法面板轻刷节拍（V3.5.2：时间驱动，见 PANEL_MS）
-let lastSectRender = 0 // 宗门面板轻刷节拍（V3.5.2：时间驱动）
+// ── 宗门面板（2.4）：V3.5.6 拆分——本体迁至 src/ui/SectPanel.js；只留「薄委托」。
 
-/** 品阶名带的颜色（品质语汇：灰→金→玉→紫→青） */
-function tierColor (tier) {
-  const m = TIER_MAP[tier]
-  return m ? m.color : 'var(--ash)'
-}
+function openSect () { if (sectPanel) sectPanel.open() }
+function closeSect () { if (sectPanel) sectPanel.close() }
+function toggleSect () { if (sectPanel) sectPanel.toggle() }
+function renderSect () { if (sectPanel) sectPanel.render() }
 
-/** 主辅修徽记文案（V3.5.1 主人：一眼要分清这本功法是主修还是辅修） */
-function slotKindText (slotKinds) {
-  const kinds = slotKinds || []
-  if (kinds.includes('main') && kinds.includes('side')) return '主辅皆可'
-  if (kinds.includes('main')) return '主修'
-  if (kinds.includes('side')) return '辅修'
-  return '—'
-}
-
-function renderTech () {
-  if (!state || !tech) return
-  const sm = tech.summary()
-
-  // ① 槽位
-  const slotFrag = document.createDocumentFragment()
-  for (const s of tech.slotList()) {
-    const row = document.createElement('div')
-    row.className = 'slot' + (s.id ? '' : ' empty')
-
-    const sk = document.createElement('span')
-    sk.className = 'sk'
-    sk.textContent = s.label
-
-    if (!s.unlocked) {
-      const sp = document.createElement('span')
-      sp.className = 'sp'
-      sp.textContent = `未开启 · 需 ${s.unlockName} 期`
-      row.append(sk, sp)
-      slotFrag.appendChild(row)
-      continue
-    }
-
-    if (!s.id) {
-      const sp = document.createElement('span')
-      sp.className = 'sp'
-      sp.textContent = s.kind === 'main' ? '空 · 从下方「已习得」中入主修' : '空 · 可从下方「已习得」中入辅修'
-      row.append(sk, sp)
-      slotFrag.appendChild(row)
-      continue
-    }
-
-    const sn = document.createElement('span')
-    sn.className = 'sn'
-    sn.style.color = tierColor(s.tech.tier)
-    sn.textContent = s.tech.name
-
-    const sl = document.createElement('span')
-    sl.className = 'sl'
-    const tr = s.train
-    const trText = tr ? (tr.maxed ? '· 圆满' : `· 参悟 ${Math.round(tr.pct * 100)}%`) : ''
-    sl.textContent = `${s.level}级 修为+${(s.pct * 100).toFixed(0)}% 战力+${(s.combatPct * 100).toFixed(1)}% ${trText}`
-    sl.title = tr
-      ? (tr.maxed
-          ? '已至圆满：修为与战力加成都吃满'
-          : `长期参悟：还差约 ${fmtRealSpan(tr.remainSec * 1000)}（在线挂机）自行精进 1 级，不耗灵气与灵石`)
-      : ''
-
-    const sp = document.createElement('span')
-    sp.className = 'sp'
-    sp.textContent = s.label2
-
-    const up = document.createElement('button')
-    up.className = 'mini'
-    up.dataset.up = s.id
-    const info = tech.upgradeInfo(s.id)
-    up.textContent = info.maxed ? '圆满' : `升级 ${fmt(info.cost.qi)}`
-    up.title = info.maxed
-      ? '已至圆满'
-      : `消耗 ${fmt(info.cost.qi)} 灵气 + ${fmt(info.cost.stone)} 灵石（${info.blocker || '可升级'}）\n` +
-        `升级后：修为 +${(info.nextPct * 100).toFixed(0)}%，战力 +${(info.nextCombatPct * 100).toFixed(1)}%`
-    up.disabled = info.maxed || !info.affordable
-
-    const off = document.createElement('button')
-    off.className = 'mini'
-    off.dataset.unequip = s.kind
-    off.textContent = '卸下'
-
-    row.append(sk, sn, sl, sp, up, off)
-    slotFrag.appendChild(row)
-  }
-  dom.techSlots.replaceChildren(slotFrag)
-
-  // ② 已习得
-  const cat = tech.catalog()
-  const ownedRows = cat.filter((c) => c.owned)
-  const ownedFrag = document.createDocumentFragment()
-  for (const c of ownedRows) {
-    const row = document.createElement('div')
-    row.className = 'tech-row'
-
-    const tn = document.createElement('span')
-    tn.className = 'tn'
-    tn.style.color = tierColor(c.tech.tier)
-    tn.textContent = c.tech.name
-
-    const tg = document.createElement('span')
-    tg.className = 'tg'
-    tg.textContent = `${c.tierLabel} · ${slotKindText(c.slotKinds)}`
-
-    const tl = document.createElement('span')
-    tl.className = 'tl'
-    tl.textContent = `${c.level}/${c.tech.maxLevel}级`
-
-    const tp = document.createElement('span')
-    tp.className = 'tp'
-    tp.textContent = `修为+${(c.pct * 100).toFixed(0)}% 战力+${(c.combatPct * 100).toFixed(1)}%`
-    tp.title = c.train
-      ? (c.train.maxed
-          ? '已至圆满'
-          : `参悟进度 ${Math.round(c.train.pct * 100)}%（还差约 ${fmtRealSpan(c.train.remainSec * 1000)} 自行精进，仅在线计）`)
-      : ''
-
-    const ta = document.createElement('span')
-    ta.className = 'ta'
-    const matchText = c.match === 'any' ? '通用' : (c.match === 'yes' ? '与灵根同源' : (c.match === 'no' ? '异于灵根' : '—'))
-    ta.textContent = c.equippedLabel ? `${c.equippedLabel} · ${matchText}` : matchText
-
-    row.append(tn, tg, tl, tp, ta)
-
-    if (!c.equipped) {
-      const kinds = c.slotKinds
-      const slots = tech.slotList()
-      const tryKinds = (kinds.includes('main') ? ['main'] : []).concat(kinds.includes('side') ? ['side0', 'side1'] : [])
-      for (const kind of tryKinds) {
-        const slot = slots.find((s) => s.kind === kind)
-        const locked = !slot.unlocked
-        const btn = document.createElement('button')
-        btn.className = 'mini'
-        btn.dataset.equip = `${c.tech.id}|${kind}`
-        btn.textContent = locked ? `${SLOT_LABEL[kind]}锁` : `入${SLOT_LABEL[kind]}`
-        btn.disabled = locked
-        if (locked) btn.title = `${SLOT_LABEL[kind]}需 ${slot.unlockName} 期开启`
-        row.appendChild(btn)
-      }
-    }
-    ownedFrag.appendChild(row)
-  }
-  dom.techOwned.replaceChildren(ownedFrag)
-
-  // ③ 图鉴（未习得：只露名字/品阶/来源，作为内容预告）
-  const catFrag = document.createDocumentFragment()
-  for (const c of cat.filter((x) => !x.owned)) {
-    const row = document.createElement('div')
-    row.className = 'tech-row locked'
-
-    const tn = document.createElement('span')
-    tn.className = 'tn'
-    tn.textContent = c.tech.name
-
-    const tg = document.createElement('span')
-    tg.className = 'tg'
-    tg.textContent = `${c.tierLabel} · ${slotKindText(c.slotKinds)}`
-
-    const ta = document.createElement('span')
-    ta.className = 'ta'
-    ta.textContent = `${c.tech.source.label} · 满级 修为+${(maxRatePct(c.tech) * 100).toFixed(0)}% 战力+${(maxCombatPct(c.tech) * 100).toFixed(1)}%`
-
-    row.append(tn, tg, ta)
-    catFrag.appendChild(row)
-  }
-  dom.techCatalog.replaceChildren(catFrag)
-
-  // ④ 脚注
-  if (dom.techNote) {
-    dom.techNote.textContent =
-      `已装备功法合计：修为 ×${(1 + sm.pct).toFixed(2)}（+${(sm.pct * 100).toFixed(0)}%），战力 +${(sm.combatPct * 100).toFixed(1)}%。` +
-      `两条升级路：① 花灵气 + 灵石即刻参悟（灵气与境界推进共用同一池）；② 装备中的功法随时间自行精进（在线挂机才计，免费但更慢）。` +
-      `品阶越高，每一级给的修为与战力都越多 —— 玄阶每级 +17% 修为，天阶每级 +40%。未习得的功法见「图鉴 · 来源」`
-  }
-}
-
-// 功法面板内的动作：事件委托（面板每次重绘，避免丢监听）
-onPress(dom.techOverlay, (e) => {
-  const up = e.target.closest('[data-up]')
-  if (up && !up.disabled) {
-    const id = up.dataset.up
-    const res = tech.upgrade(id)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) {
-      persist('technique-upgrade')
-      renderTech()
-      render()          // 产出乘区变了 → 立即刷新面板数字
-    }
-    return
-  }
-  const eq = e.target.closest('[data-equip]')
-  if (eq && !eq.disabled) {
-    const [id, kind] = eq.dataset.equip.split('|')
-    const res = tech.equip(id, kind)
-    pushLog(res.message, res.ok ? 'root' : 'info')
-    if (res.ok) {
-      persist('technique-equip')
-      renderTech()
-      render()
-      emit('cult:burst', { kind: 'breakthrough' })
-    }
-    return
-  }
-  const un = e.target.closest('[data-unequip]')
-  if (un) {
-    const res = tech.unequip(un.dataset.unequip)
-    pushLog(res.message, res.ok ? 'info' : 'info')
-    if (res.ok) {
-      persist('technique-unequip')
-      renderTech()
-      render()
-    }
-  }
-})
-
-// ── 宗门面板（2.4）：信息 / 任务板 / 藏经阁 / 商店 ─────────────────────────
-
-function openSect () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('sect')
-  renderSect()
-  ovShow(dom.sectOverlay)
-  dom.btnSect.classList.add('on')
-  syncDragRegions()
-}
-
-function closeSect () {
-  ovHide(dom.sectOverlay)
-  dom.btnSect.classList.remove('on')
-  syncDragRegions()
-}
-
-function toggleSect () {
-  if (dom.sectOverlay.classList.contains('show')) closeSect()
-  else openSect()
-}
-
-/** 剩余时长文案：一律走游戏历（主人 2026-09-17：界面时间用游戏时间，不用现实时分） */
+// 剩余时长文案：一律走游戏历（主人 2026-09-17：界面时间用游戏时间，不用现实时分）
 const fmtHoursLeft = (ms) => fmtGameDuration(ms)
-
-/**
- * 宗门任务倒计时（主人 2026-09-19：任务限时按**游戏时辰**计）
- *   一条活计只有几个时辰 ≈ 现实十几秒，光看"2 时辰"不直观 → 游戏时辰 + 现实秒并列。
- */
-function fmtTaskLeft (ms) {
-  const sec = Math.max(0, Math.ceil((Number(ms) || 0) / 1000))
-  if (sec <= 0) return '已到点'
-  return `${fmtGameDuration(ms)}（现实 ${sec} 秒）`
-}
-
-function renderSect () {
-  if (!state || !sect) return
-  const info = sect.infoView()
-
-  // ① 宗门信息（未入宗给「拜入」入口）
-  let infoHtml = ''
-  if (!info.joined) {
-    infoHtml =
-      `<div class="si-name">${info.sect.name}</div>` +
-      `<div class="si-line">${info.sect.intro}</div>` +
-      `<div class="si-line">道统：<span class="violet">${info.sect.daoTong.name}</span> —— ${info.sect.daoTong.desc}</div>` +
-      `<div class="si-line">入宗免费，列身外门：领宗门任务攒贡献，可在藏经阁借功法、商店换丹药材料。</div>` +
-      `<div class="si-btns"><button class="mini" data-join>拜 入 云 岚 宗</button></div>`
-  } else {
-    const r = info.rank
-    const p = info.promo
-    const promoLine = p.maxed
-      ? `职级：<b>${r.name}</b>（已至掌门）`
-      : `<b>${r.name}</b> → 下一职 ${p.next.name}（需 ${p.realmName}期 ／ 累计贡献 ${p.next.contrib}，现 ${info.totalContrib}）`
-    // V3.3.1：宗门按境界下发功法的进度（哪一档已领、哪一档待领）
-    const granted = (info.realmGrants || [])
-      .filter((g) => g.unlocked)
-      .map((g) => `${g.label}${g.techId && g.techId !== '—' ? `已授《${(getTechnique(g.techId) || {}).name || g.techId}》` : '已授'}`)
-      .join(' ｜ ')
-    const pendingGrant = (info.pendingGrants || []).length
-      ? `<div class="si-line">宗门授功：<span class="jade">${info.pendingGrants.join('、')}</span>档的普通功法即将下发（每晋一大境界补一本）</div>`
-      : ''
-    infoHtml =
-      `<div class="si-name">${info.sect.name}</div>` +
-      `<div class="si-line">道统：<span class="violet">${info.sect.daoTong.name}</span> —— ${info.sect.daoTong.desc}</div>` +
-      `<div class="si-line">职级：${promoLine}</div>` +
-      `<div class="si-line">境界：<b>${info.realmName}</b>期　任务板按此境界出题、悬赏随境界递增</div>` +
-      `<div class="si-line">贡献：<b>${info.contribution}</b>（累计 ${info.totalContrib}）　俸禄：${r.salaryHours} 时/日 ≈ <span class="jade">+${fmt(info.salaryPerDay)} 修为/日</span>（在线随秒入账）</div>` +
-      (granted ? `<div class="si-line">宗门授功：${granted}</div>` : '') +
-      pendingGrant +
-      (p.can ? `<div class="si-btns"><button class="mini" data-promote>晋 升 ${p.next.name}</button></div>` : '')
-  }
-  dom.sectInfo.innerHTML = infoHtml
-
-  // ② 任务板
-  if (!info.joined) {
-    dom.sectTasks.innerHTML = '<div class="bag-empty">入宗后开放</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const t of sect.tasksView()) {
-      if (t.broken) continue
-      const row = document.createElement('div')
-      row.className = 'sect-row' + (t.state === 'empty' ? ' locked' : '')
-
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = t.def.name
-
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.textContent = t.def.desc
-      // 悬赏：贡献 +（材料）——主人 2026-09-17 标清奖励；09-18 起随境界递增
-      const reward = document.createElement('div')
-      const mat = t.def.material ? ` · ${getItem(t.def.material.id).name} ×${t.def.material.min}~${t.def.material.max}` : ''
-      reward.textContent = `悬赏：贡献 +${t.contrib}${mat}${t.def.failHalf ? '（战力校验失败减半）' : ''}`
-      reward.style.color = 'rgba(232,185,106,0.78)'
-      td.appendChild(reward)
-      if (t.def.minRealm > 0) {
-        const tag = document.createElement('em')
-        tag.textContent = `${getRealmMeta(t.def.minRealm).name}期解锁 · 重赏`
-        tag.style.color = 'rgba(185,140,255,0.8)'
-        td.appendChild(tag)
-      }
-      // 战力类：达标提示（接取即办妥 / 达标必成）
-      if (t.def.kind === 'power' && t.state === 'open' && t.outmatched) {
-        const em = document.createElement('em')
-        em.textContent = '战力已过定标 · 接取即办妥'
-        em.style.color = 'rgba(127,214,168,0.85)'
-        td.appendChild(em)
-      }
-      if (t.state === 'running' && t.def.kind === 'power') {
-        const em = document.createElement('em')
-        em.textContent = `定标战力 ${fmt(t.req)} ｜ 当前成率 ${(t.liveRate * 100).toFixed(0)}%${t.outmatched ? ' · 达标必成' : ''}`
-        em.style.color = 'rgba(232,185,106,0.75)'
-        td.appendChild(em)
-      }
-      if (t.state === 'running') {
-        // 提前交差：看得见"现在交能拿多少"
-        const pre = document.createElement('em')
-        pre.textContent = t.done
-          ? '时辰已到 · 下一拍自动交差并结算'
-          : `已办妥 ${Math.round((t.ratio || 0) * 100)}% → 提前交差可得贡献 +${t.previewContrib}（到点自动满额结算）`
-        pre.style.color = 'rgba(127,214,168,0.8)'
-        td.appendChild(pre)
-      }
-
-      const tp = document.createElement('span')
-      tp.className = 'tp' + (t.state === 'running' && !t.done ? ' dim' : '')
-      // 任务时长与倒计时：限时＝游戏时辰，倒计时另附现实秒（短活计只有十几秒）
-      if (t.state === 'open') tp.textContent = `${t.def.hours} 时辰`
-      else if (t.state === 'running') tp.textContent = t.done ? '已到点' : `还差 ${fmtTaskLeft(t.autoInMs)}`
-      else tp.textContent = '本轮已交'
-
-      const btn = document.createElement('button')
-      btn.className = 'mini gap'
-      if (t.state === 'open') {
-        btn.textContent = '接取'
-        btn.dataset.taskStart = t.index
-        if (t.def.kind === 'power') {
-          btn.title = t.outmatched
-            ? '战力已过定标：接取当场办妥（贡献按满额算）'
-            : '战力未过定标：接取后到时按战力判定成败，也可提前交差'
-        }
-      } else if (t.state === 'running') {
-        // 接取后随时可交（门槛 min(10% 时长, 1 秒)）；到点则由主循环自动交差
-        btn.textContent = t.done ? '交差' : '提前交差'
-        btn.disabled = !t.claimable
-        btn.dataset.taskClaim = t.index
-        if (!t.claimable) {
-          const wait = Math.max(1, Math.ceil((t.gateMs - t.elapsedMs) / 1000))
-          btn.title = `才刚接手，至少办够 ${(t.gateMs / 1000).toFixed(1)} 秒才好交差（约 ${wait} 秒后）`
-        } else if (!t.done) {
-          btn.title = `提前交差：按已办妥 ${Math.round((t.ratio || 0) * 100)}% 折算（贡献 +${t.previewContrib}）；\n不点也行——到点会自动满额交差`
-        } else {
-          btn.title = '办妥交差，满额结算（到点也会自动交）'
-        }
-      } else {
-        btn.textContent = '—'
-        btn.disabled = true
-      }
-
-      row.append(tn, td, tp, btn)
-      frag.appendChild(row)
-    }
-    dom.sectTasks.replaceChildren(frag)
-  }
-
-  // ③ 藏经阁
-  if (!info.joined) {
-    dom.sectLibrary.innerHTML = '<div class="bag-empty">入宗后开放</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const e of sect.libraryView()) {
-      const row = document.createElement('div')
-      row.className = 'sect-row' + (e.rankLocked ? ' locked' : '')
-
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = e.name
-
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.textContent = `${e.tierLabel} ｜ ${e.rankLocked ? '需内门职级' : '可借阅'}`
-
-      const tp = document.createElement('span')
-      tp.className = 'tp dim'
-      tp.textContent = `${e.cost} 贡献`
-
-      const btn = document.createElement('button')
-      btn.className = 'mini gap'
-      if (e.owned) { btn.textContent = '已习得'; btn.disabled = true }
-      else { btn.textContent = '借阅'; btn.dataset.libBuy = e.id; btn.disabled = e.rankLocked }
-
-      row.append(tn, td, tp, btn)
-      frag.appendChild(row)
-    }
-    dom.sectLibrary.replaceChildren(frag)
-  }
-
-  // ④ 宗门商店
-  if (!info.joined) {
-    dom.sectShop.innerHTML = '<div class="bag-empty">入宗后开放</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const e of sect.shopView()) {
-      const row = document.createElement('div')
-      row.className = 'sect-row'
-
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = e.name
-
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.textContent = `${getItem(e.id).desc}`
-
-      const tp = document.createElement('span')
-      tp.className = 'tp dim'
-      tp.textContent = e.discounted ? `${e.cost}→${e.price} 贡献` : `${e.price} 贡献`
-
-      const btn = document.createElement('button')
-      btn.className = 'mini gap'
-      btn.textContent = '兑换'
-      btn.dataset.shopBuy = e.id
-
-      row.append(tn, td, tp, btn)
-      frag.appendChild(row)
-    }
-    dom.sectShop.replaceChildren(frag)
-  }
-
-  if (dom.sectNote) {
-    dom.sectNote.textContent = info.joined
-      ? `任务板${info.refreshText || fmtRefreshPeriod()}刷新一次（交完本轮转空 · 距下一轮 ${fmtTaskLeft(info.nextRefreshInMs || msToNextRefresh(Date.now()))}）；` +
-        '任务按境界出题、悬赏随境界递增（每晋一大境界 +60%）；' +
-        '限时按**游戏时辰**计（如巡山两个时辰），**时辰一到自动交差入账**，中途也可手动提前交差（按已办妥比例折算）；' +
-        '战力校验类的定标以「基准战力 × 系数」为准：**战力已达标者接取即办妥**，未达标则到时按概率判定、失败贡献减半。' +
-        '每晋一大境界，宗门还会下发一本该境界的普通功法（藏经阁高阶功法仍须贡献借阅）。' +
-        '俸禄只随在线时间发放，闭关（离线）不结俸。'
-      : '青岚界三宗：云岚宗（剑）｜丹霞谷（丹）｜磐石门（体）。本档开放云岚宗；名册随世界替换（2.9 世界卡池接入）。入宗即按当前境界下发普通功法，可在藏经阁以贡献借阅更多。'
-  }
-}
-
-// 宗门面板动作（事件委托：面板每次重绘不丢监听）
-dom.sectOverlay.addEventListener('click', (e) => {
-  const join = e.target.closest('[data-join]')
-  if (join) {
-    const res = sect.join()
-    pushLog(res.message, res.ok ? 'root' : 'info')
-    if (res.ok) {
-      // 入宗即按境界下发功法（主人 2026-09-18）
-      for (const g of (res.grants || [])) {
-        pushLog(`宗门授功：${g.realmName}期弟子当习《${g.name}》，已录入功法册（去「功法」装槽）。`, 'root')
-      }
-      persist('sect-join')
-      emitBurst({ kind: 'breakthrough' })
-    }
-    renderSect()
-    return
-  }
-  const promo = e.target.closest('[data-promote]')
-  if (promo) {
-    const res = sect.promote()
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) { persist('sect-promote'); emitBurst({ kind: 'breakthrough' }) }
-    renderSect()
-    return
-  }
-  const ts = e.target.closest('[data-task-start]')
-  if (ts && !ts.disabled) {
-    const res = sect.startTask(+ts.dataset.taskStart)
-    pushLog(res.message, res.ok ? (res.instant ? 'ok' : 'info') : 'info')
-    if (res.ok && res.instant) {
-      // 战力碾压：接取当场办妥（主人 2026-09-19）
-      persist('sect-task-instant')
-      emitFloat({ text: `贡献 +${res.contrib}`, kind: 'gold' })
-    }
-    renderSect()
-    return
-  }
-  const tc = e.target.closest('[data-task-claim]')
-  if (tc && !tc.disabled) {
-    const res = sect.claimTask(+tc.dataset.taskClaim)
-    pushLog(res.message, res.ok && res.success ? 'ok' : (res.ok ? 'fail' : 'info'))
-    if (res.ok) {
-      persist('sect-claim')
-      emitFloat({ text: `贡献 +${res.contrib}${res.early ? '（提前）' : ''}`, kind: 'info' })
-    } else {
-      // 提前交差被拒（还没过门槛）也要给回执，别让人以为按钮坏了
-      renderSect()
-      return
-    }
-    renderSect()
-    return
-  }
-  const lb = e.target.closest('[data-lib-buy]')
-  if (lb && !lb.disabled) {
-    const res = sect.buyLibrary(lb.dataset.libBuy)
-    pushLog(res.message, res.ok ? 'root' : 'info')
-    if (res.ok) { persist('sect-library'); emitBurst({ kind: 'breakthrough' }) }
-    renderSect()
-    return
-  }
-  const sb = e.target.closest('[data-shop-buy]')
-  if (sb && !sb.disabled) {
-    const res = sect.buyShop(sb.dataset.shopBuy)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) persist('sect-shop')
-    renderSect()
-  }
-})
 
 // ══ 2.7 秘境 装配区（改动仅限本区块 + 各互斥开关联动行 + 主循环一行）═════════
 // 接线内容：秘境遮罩（#dungeon-overlay）· 试炼塔挑战 · 资源秘境首通/派遣 ·
@@ -3577,201 +2818,6 @@ async function renderPanel () {
   dom.btnRestore.disabled = !(bridge && info.backup && info.backup.exists)
 }
 
-function renderBag () {
-  if (!state) return
-  const items = (state.inventory && state.inventory.items) || {}
-  const entries = Object.entries(items).filter(([, n]) => (n | 0) > 0)
-
-  if (dom.bagNote) {
-    dom.bagNote.textContent = '「持有 N 枚」＝背包里的实际数量；可「使用」的丹药右侧带按钮，点一下即消耗 1 枚。'
-  }
-
-  if (!entries.length) {
-    const empty = document.createElement('div')
-    empty.className = 'bag-empty'
-    empty.append('囊中空空')
-    empty.appendChild(document.createElement('br'))
-    empty.append('打坐时会偶得灵草 · 玄铁矿 · 妖丹，也可去「丹房」查看丹方')
-    dom.bagList.replaceChildren(empty)
-    return
-  }
-
-  const frag = document.createDocumentFragment()
-  for (const [id, count] of entries) {
-    const it = getItem(id)
-    const unit = getUnit(it)
-    const row = document.createElement('div')
-    row.className = 'bag-item'
-
-    const nm = document.createElement('span')
-    nm.className = 'nm'
-    nm.textContent = it.name
-
-    // 数量写成「持有 N 枚」——不再是一个孤零零的数字，避免看不懂
-    const qt = document.createElement('span')
-    qt.className = 'qt'
-    const num = document.createElement('b')
-    num.textContent = String(count)
-    qt.append('持有 ', num, ` ${unit}`)
-    qt.title = `${it.name}：持有 ${count} ${unit}`
-
-    const ds = document.createElement('span')
-    ds.className = 'ds'
-    ds.textContent = it.desc
-    ds.appendChild(document.createElement('br'))
-    const from = document.createElement('em')
-    from.textContent = it.from
-    ds.appendChild(from)
-
-    row.append(nm, qt, ds)
-
-    if (it.usable) {
-      const btn = document.createElement('button')
-      btn.className = 'mini'
-      btn.textContent = '使用'
-      btn.title = it.useHint || ''
-      btn.disabled = rootBusy
-      btn.addEventListener('click', () => {
-        if (it.id === 'pill_ningshen') { useNingshen(); renderBag(); return }
-        closeBag(); doReroll()
-      })
-      row.appendChild(btn)
-    }
-    frag.appendChild(row)
-  }
-  dom.bagList.replaceChildren(frag)
-}
-
-/**
- * 丹房：丹方列表 + 炼制 / 自动炼制（主人 2026-09-17：背包与丹房分离；缺丹时自动开炉）
- * 「当前所需」＝当下真正卡关的丹药（突破缺的破境丹、渡劫缺的护劫丹）。
- */
-let lastAlchemyRender = 0 // 丹房面板轻刷节拍（V3.5.2：时间驱动）
-
-// ── 凝神丹（V3.5.1 新增可用丹药）：限时产出增益，走 state.buffs 公共乘区 ──
-const NINGSHEN = { itemId: 'pill_ningshen', buffId: 'buff_ningshen', pct: 0.15, durSec: 600 }
-
-/** 服用凝神丹：现实 10 分钟修为产出 +15%（不叠加，再服只刷新时长） */
-function useNingshen () {
-  if (!state) return
-  const inv = state.inventory.items
-  const have = inv[NINGSHEN.itemId] | 0
-  if (have <= 0) { pushLog('凝神丹不足。', 'info'); return }
-  inv[NINGSHEN.itemId] = have - 1
-  const now = Date.now()
-  const i = (state.buffs || []).findIndex((b) => b.id === NINGSHEN.buffId)
-  if (i >= 0) state.buffs.splice(i, 1)
-  state.buffs.push({
-    id: NINGSHEN.buffId,
-    name: '凝神丹',
-    kind: 'buff',
-    mods: { qiRatePct: NINGSHEN.pct },
-    endsAt: now + NINGSHEN.durSec * 1000,
-    source: { type: 'pill', ref: NINGSHEN.itemId }
-  })
-  pushLog('凝神丹入腹，灵台一片清明——现实 10 分钟内修为产出 +15%。', 'ok')
-  persist('pill-ningshen')
-  render()
-}
-
-/** 当下"正缺"的丹药清单（纯读；判定归各系统，此处只做汇总） */
-function neededPills () {
-  const out = []
-  try {
-    const pv = cult.getBreakthroughPreview(Date.now())
-    if (pv.pillRequired && pv.pillMissing && pv.plan && pv.plan.pill) out.push(pv.plan.pill)
-    if (pv.isTrial && pv.trial && Array.isArray(pv.trial.preps.views)) {
-      for (const v of pv.trial.preps.views) {
-        if (v.kind === 'consume' && v.itemId && v.state !== 'active' && (v.count | 0) <= 0) out.push(v.itemId)
-      }
-    }
-  } catch (_) { /* 预览不可得时不标"所需"，不影响面板 */ }
-  return out
-}
-
-function renderAlchemy () {
-  if (!alchemy) return
-  const needed = neededPills()
-  const views = alchemy.recipesView({ needed })
-
-  // 材料摘要（一眼看清手上有什么）
-  if (dom.alchemyMats) {
-    const inv = (state.inventory && state.inventory.items) || {}
-    dom.alchemyMats.innerHTML =
-      `材料：<b>灵草 ${inv.mat_lingcao | 0}</b> ｜ <b>玄铁矿 ${inv.mat_kuang | 0}</b> ｜ <b>妖丹 ${inv.mat_yaodan | 0}</b>` +
-      ` ｜ <b>清灵草 ${inv.mat_qinglingcao | 0}</b> ｜ <b>妖兽精血 ${inv.mat_yaohu | 0}</b> ｜ <b>千年灵乳 ${inv.mat_wannianru | 0}</b>` +
-      `　·　打坐偶得 + 宗门任务 / 商店 / 秘境（离线不掉）`
-  }
-
-  dom.brewNote.textContent =
-    '材料齐即可开炉；炼失败不白烧，收回一半材料。' +
-    '标「当前所需」的是眼下卡关的那味丹：点「自动炼制」会一直开炉到成丹或材料耗尽（成丹率不足 100%，可能连炼数炉）。' +
-    '突破 / 渡劫时若发现缺丹，丹房也会自动开炉一次。'
-
-  const QUALITY_COLOR = { fan: '#b9b3a8', liang: '#e8b96a', zhen: '#7fd6a8', jue: '#b98cff', xian: '#9fd6ff' }
-  const frag = document.createDocumentFragment()
-  for (const r of views) {
-    const row = document.createElement('div')
-    row.className = 'brew-row' + (r.needed ? ' needed' : '')
-
-    const bn = document.createElement('span')
-    bn.className = 'bn'
-    bn.textContent = r.name
-    bn.style.color = QUALITY_COLOR[r.quality] || '#e8b96a'
-    bn.title = `${r.qualityName} · 成丹率 ${Math.round(r.rate * 100)}% —— ${r.desc}`
-    if (r.needed) {
-      const mark = document.createElement('span')
-      mark.className = 'brew-mark'
-      mark.textContent = '当前所需'
-      bn.appendChild(mark)
-    }
-    const have = document.createElement('span')
-    have.className = 'brew-have'
-    have.textContent = `存 ${r.have | 0}`
-    have.title = `囊中现有${r.name} ${r.have | 0} 枚`
-    bn.appendChild(have)
-
-    const bi = document.createElement('span')
-    bi.className = 'bi'
-    for (let i = 0; i < r.inputsView.length; i++) {
-      const iv = r.inputsView[i]
-      const chip = document.createElement('span')
-      chip.textContent = `${iv.name} ${iv.have}/${iv.n}`
-      if (!iv.enough) {
-        chip.className = 'lack'
-        chip.title = `还差 ${iv.n - iv.have} 份`
-      }
-      bi.appendChild(chip)
-      if (i < r.inputsView.length - 1) bi.append(' · ')
-    }
-    bi.appendChild(document.createElement('br'))
-    const rate = document.createElement('span')
-    rate.className = 'rate'
-    rate.textContent = `${r.qualityName} ｜ 成丹率 ${Math.round(r.rate * 100)}%`
-    bi.appendChild(rate)
-
-    const btn = document.createElement('button')
-    btn.className = 'mini'
-    btn.textContent = '炼制'
-    btn.dataset.brew = r.id
-    btn.disabled = !r.canBrew
-    btn.title = r.canBrew ? `开炉炼制${r.name}（1 炉）` : `材料不足：${r.missing.join('、')}`
-
-    const auto = document.createElement('button')
-    auto.className = 'mini'
-    auto.textContent = '自动炼制'
-    auto.dataset.autobrew = r.pillId
-    auto.disabled = !r.canBrew
-    auto.title = r.canBrew
-      ? `自动开炉，直到炼出${r.name}或材料耗尽`
-      : `材料不足：${r.missing.join('、')}`
-
-    row.append(bn, bi, btn, auto)
-    frag.appendChild(row)
-  }
-  dom.brewList.replaceChildren(frag)
-}
-
 // ── 界面事件绑定 ──────────────────────────────────────────────────────────
 dom.btn.addEventListener('click', onBreakthrough)
 dom.btnStrike.addEventListener('click', doBreakthrough)
@@ -3783,27 +2829,6 @@ dom.returnCard.addEventListener('click', () => hideReturnCard())
 
 // 坊市页签监听已随面板迁入 src/ui/MarketPanel.js（V3.5.5）
 // 丹房：炼制 / 自动炼制（事件委托：面板每次重绘，避免丢监听）
-onPress(dom.alchemyOverlay, (e) => {
-  const b = e.target.closest('[data-brew]')
-  if (b && !b.disabled) {
-    const res = alchemy.brew(b.dataset.brew)
-    pushLog(res.message, res.ok && res.success ? 'ok' : 'fail')
-    if (res.ok) {
-      persist('alchemy-brew')
-      renderAlchemy()
-    }
-    return
-  }
-  const auto = e.target.closest('[data-autobrew]')
-  if (auto && !auto.disabled) {
-    const ab = alchemy.autoBrewFor(auto.dataset.autobrew)
-    pushLog(ab.message, ab.success ? 'ok' : 'fail')
-    for (const d of ab.details) pushLog(d, 'info')
-    if (ab.attempts > 0) persist('alchemy-autobrew')
-    renderAlchemy()
-    render()
-  }
-})
 
 dom.btnDraw.addEventListener('click', startRootDraw)
 dom.btnRootOk.addEventListener('click', () => hideOverlay())
@@ -4479,6 +3504,42 @@ async function boot () {
     system: () => market,
     dom,
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmtRefreshPeriod, onPress }
+  })
+  // V3.5.6 拆分：渡劫面板（src/ui/TrialPanel.js）
+  trialPanel = createTrialPanel({
+    state,
+    cult,
+    alchemy,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, fmt, fmtDuration, render: () => render(), onBreakthrough }
+  })
+  // V3.5.6 拆分：功法面板（src/ui/TechPanel.js）
+  techPanel = createTechPanel({
+    state,
+    tech,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, fmt, fmtRefreshPeriod, fmtRealSpan, onPress, emit }
+  })
+  // V3.5.6 拆分：宗门面板（src/ui/SectPanel.js）
+  sectPanel = createSectPanel({
+    state,
+    sect,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitBurst, emitFloat, fmt, fmtGameDuration, fmtTaskLeft, fmtHoursLeft, fmtRealSpan, gameClockOf, fmtGameStamp }
+  })
+  // V3.5.6 拆分：行囊面板（src/ui/BagPanel.js）
+  bagPanel = createBagPanel({
+    state,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, render: () => render(), doReroll, rootBusy: () => rootBusy }
+  })
+  // V3.5.6 拆分：丹房面板（src/ui/AlchemyPanel.js）
+  alchemyPanel = createAlchemyPanel({
+    state,
+    alchemy,
+    cult,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, onPress, renderBag: () => renderBag() }
   })
   // V3.5.5 拆分：灵兽面板（src/ui/BeastPanel.js）
   beastPanel = createBeastPanel({
