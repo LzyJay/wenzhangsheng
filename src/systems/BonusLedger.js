@@ -12,15 +12,18 @@
  * 加成行形状（同签名 bonusView(now) 的返回约定，§13.2① view 形态）：
  *   { kind: 'rate' | 'power',   // 归属哪条乘区链
  *     label: string,            // 展示名（如「世界·青岚」「功法·产出加成」）
- *     mul?: number,             // 独立乘法因子（世界 ×1.10 / 灵根 ×2.00 / 契合 ×1.3 …）
- *     pct?: number,             // 组内加法叠加（功法 +N% / buff ±N% / 灵兽 +N% …）
+ *     mul: number,              // **本组折叠后的乘法因子**（世界 ×1.10 / 灵根 ×2.00 /
+ *                               //   功法 1+Σ槽位 / 灵兽 1+N% / 契合 ×1.3 …）
+ *     pct?: number,             // 展示用加成百分比（= mul−1；仅供 UI 显示，不参与重算）
  *     note?: string }           // 悬停说明（可空）
- *   约定：pct 行只在 ≠0 时给出（与既有 UI"零加成不显示"一致）；mul 行恒给（×1 中性行
- *   也是口径的一部分）。from 字段由 collect 自动补（提供方 id）。
+ *   ⚠ 契约修订（V3.5.4 真机点验抓到）：**每行 mul 是"组内已加法折叠"的独立乘法因子**，
+ *   重算 = Π(mul)。游戏的既有乘区是 (1+功法)×(1+buff) 各自成乘——若把 pct 全并成一个
+ *   (1+Σ) 会算小（真机 9.63 vs 12.945）。组内加法（功法三槽、多 buff 合计）由提供方在
+ *   自己内部完成；pct 字段仅作展示。from 字段由 collect 自动补（提供方 id）。
  *
  * 重算口径（与既有公式逐位一致，V3.5.3-自测的 recomposition 断言即防漂对账器）：
- *   rate  = clamp( Π(mul 行) × (1 + Σ rate.pct), 0.05, 100 )  —— getEffRate 同式同钳制
- *   power = 1 + Σ power.pct                                   —— powerBreakdown 同式
+ *   rate  = clamp( Π(mul), 0.05, 100 )   —— getEffRate 同式同钳制
+ *   power = Π(mul)                       —— powerBreakdown 同式 ((1+功法)×(1+灵兽))
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -28,6 +31,8 @@ const RATE_CLAMP = { min: 0.05, max: 100 }   // 与 CultivationSystem.getEffRate
 
 /**
  * 收拢各提供方的加成行 + buff 公共乘区（装配层调用，实例由 main.js 注入）
+ * buff 组（可能多条限时增益）在此**合计成一行**：mul = 1 + Σ qiRatePct——与 getEffRate
+ * 的 "(1+buffPct) 单一因子" 同式；逐条增益名目由修为浮层的「增益明细」自行列出。
  * @param {Array<{id:string, bonusView:(now:number)=>Array<object>}>} providers
  * @param {Array<object>} buffs 只读 state.buffs 快照（buff 公共乘区归装配层所有，经此处入账）
  * @param {number} now
@@ -40,16 +45,19 @@ export function collectBonusLines (providers = [], buffs = [], now = Date.now())
     const rows = p.bonusView(now) || []
     for (const r of rows) lines.push({ ...r, from: r.from || p.id })
   }
+  let buffPct = 0
   for (const b of Array.isArray(buffs) ? buffs : []) {
     if (!b || !b.mods || typeof b.mods.qiRatePct !== 'number') continue
     if ((b.endsAt || Infinity) <= now) continue              // 与 getEffRate 的过期判定同式
-    const pct = b.mods.qiRatePct
-    if (!pct) continue                                       // 零加成不出行（约定）
+    buffPct += b.mods.qiRatePct
+  }
+  if (buffPct) {
     lines.push({
       kind: 'rate',
-      label: b.name || b.id || '限时增益',
-      pct,
-      note: Number.isFinite(b.endsAt) ? '限时' : '常在',
+      label: `增益合计（${buffPct > 0 ? '+' : '−'}${Math.round(Math.abs(buffPct) * 100)}%）`,
+      mul: 1 + buffPct,
+      pct: buffPct,
+      note: '全部限时/常在增益的净合计（逐条名目见修为浮层）',
       from: 'buff'
     })
   }
@@ -59,22 +67,16 @@ export function collectBonusLines (providers = [], buffs = [], now = Date.now())
 /**
  * 重算两条乘区链（与既有公式逐位一致；只读不写）
  * @param {Array<object>} lines collectBonusLines 的产出（或任何同形状行）
- * @returns {{ rateMul:number, powerMul:number, ratePctSum:number, powerPctSum:number }}
+ * @returns {{ rateMul:number, powerMul:number }}
  */
 export function recomposeBonus (lines = []) {
   let rateMul = 1
-  let ratePctSum = 0
-  let powerPctSum = 0
+  let powerMul = 1
   for (const l of Array.isArray(lines) ? lines : []) {
-    if (!l) continue
-    if (l.kind === 'rate') {
-      if (typeof l.mul === 'number') rateMul *= l.mul
-      else if (typeof l.pct === 'number') ratePctSum += l.pct
-    } else if (l.kind === 'power' && typeof l.pct === 'number') {
-      powerPctSum += l.pct
-    }
+    if (!l || typeof l.mul !== 'number') continue
+    if (l.kind === 'rate') rateMul *= l.mul
+    else if (l.kind === 'power') powerMul *= l.mul
   }
-  rateMul *= 1 + ratePctSum
   rateMul = Math.min(RATE_CLAMP.max, Math.max(RATE_CLAMP.min, rateMul))
-  return { rateMul, powerMul: 1 + powerPctSum, ratePctSum, powerPctSum }
+  return { rateMul, powerMul }
 }

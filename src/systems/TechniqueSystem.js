@@ -159,14 +159,15 @@ class TechniqueSystem {
 
   /**
    * 统一加成接口（V3.5.3）：本系统提供的加成行（只读，无副作用）。
-   * 两条链各一行（加法叠加的 pct 型，≠0 才给行）：产出 ratePct() / 战力 combatPct()。
+   * 契约（V3.5.4 修订）：mul＝本组折叠后的乘法因子（三槽加成已在此加法合计），
+   * pct 仅作展示。两条链各一行，零加成不出行。
    */
   bonusView () {
     const lines = []
     const rate = this.ratePct()
-    if (rate) lines.push({ kind: 'rate', label: '功法·产出加成', pct: rate, note: '已装备三槽合计（每级 +N% 修为）' })
+    if (rate) lines.push({ kind: 'rate', label: '功法·产出加成', mul: 1 + rate, pct: rate, note: '已装备三槽合计（每级 +N% 修为）' })
     const power = this.combatPct()
-    if (power) lines.push({ kind: 'power', label: '功法·战力加成', pct: power, note: '已装备三槽合计（每级 +N% 战力）' })
+    if (power) lines.push({ kind: 'power', label: '功法·战力加成', mul: 1 + power, pct: power, note: '已装备三槽合计（每级 +N% 战力）' })
     return lines
   }
 

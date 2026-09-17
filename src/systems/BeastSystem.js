@@ -268,8 +268,8 @@ class BeastSystem {
 
   /**
    * 统一加成接口（V3.5.3）：本系统提供的加成行（只读，无副作用）。
-   * 战力链一行（加法叠加的 pct 型，无出战灵兽时不出行）。
-   * 注意：直读 this.state.beast，**不经 this.s 的懒建兜底**——查询不该长出子树。
+   * 契约（V3.5.4 修订）：mul＝折叠后的乘法因子（1+战力%），pct 仅作展示。
+   * 战力链一行，无出战灵兽时不出行。直读 this.state.beast，不经懒建兜底。
    */
   bonusView () {
     const b = this.state.beast
@@ -277,10 +277,12 @@ class BeastSystem {
       ? (b.pets.find((p) => p && p.uid === b.activeUid) || null)
       : null
     if (!pet) return []
+    const pct = getGrade(pet.grade).powerPct
     return [{
       kind: 'power',
       label: `灵兽·${this.petName(pet)}`,
-      pct: getGrade(pet.grade).powerPct,
+      mul: 1 + pct,
+      pct,
       note: '出战灵兽战力加成（皇品 +8%，其余 +4%）'
     }]
   }
