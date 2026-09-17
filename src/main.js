@@ -25,7 +25,6 @@ import EventSystem from './systems/EventSystem.js'
 import DungeonSystem from './systems/DungeonSystem.js'
 import MarketSystem from './systems/MarketSystem.js'
 import AchievementSystem from './systems/AchievementSystem.js'
-import { RECYCLE_RATE } from './data/market.js'
 import { getLevelInfo, getRealmMeta, getNextBreakthrough, REALM_META, TRIBULATION } from './data/realms.js'
 import { DRAW_ANIMATION, XISUI_DROP, REROLL_PITY, ROOT_TIERS, HIDDEN_ROOT, HIDDEN_CHANCE } from './data/roots.js'
 import { getItem, getUnit } from './data/items.js'
@@ -49,6 +48,9 @@ import SfxEngine from './audio/SfxEngine.js'          // 3.5 音效与音乐（�
 import { VOLUME_NAMES, nextTier, gainOfTier, DEFAULT_TIER } from './data/sfx.js'
 import { collectBonusLines, recomposeBonus } from './systems/BonusLedger.js' // V3.5.3 统一加成接口（聚合账本，纯逻辑）
 import { noteGain, econView } from './systems/EconLedger.js'                 // V3.5.4 单日收益归因台账（纯逻辑，读写 state.econ）
+import { createMarketPanel } from './ui/MarketPanel.js'                      // V3.5.5 拆分：坊市面板（src/ui/ 新层）
+import { createBeastPanel } from './ui/BeastPanel.js'                       // V3.5.5 拆分：灵兽面板（src/ui/ 新层）
+import { createDungeonPanel } from './ui/DungeonPanel.js'                   // V3.5.5 拆分：秘境面板（src/ui/ 新层）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
@@ -85,6 +87,9 @@ let world = null
 let events = null
 let dungeon = null
 let market = null
+let marketPanel = null   // V3.5.5 拆分：坊市面板实例（boot 创建）
+let beastPanel = null    // V3.5.5 拆分：灵兽面板实例（boot 创建）
+let dungeonPanel = null  // V3.5.5 拆分：秘境面板实例（boot 创建）
 let achv = null
 let life = null
 let game = null
@@ -2788,474 +2793,31 @@ dom.sectOverlay.addEventListener('click', (e) => {
 // 接线内容：秘境遮罩（#dungeon-overlay）· 试炼塔挑战 · 资源秘境首通/派遣 ·
 //           分身召回 · 主循环到期结算（真实时间驱动，离线照算）· 周扫荡
 
+// V3.5.5 拆分：面板本体迁至 src/ui/DungeonPanel.js，本区块只留「薄委托」；实例在 boot 创建。
+
 let lastDungeonRender = 0 // 秘境面板轻刷节拍（V3.5.2：时间驱动，倒计时跟拍）
 
-function openDungeon () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('dungeon')
-  renderDungeon()
-  ovShow(dom.dungeonOverlay)
-  dom.btnDungeon.classList.add('on')
-  syncDragRegions()
-}
-
-function closeDungeon () {
-  ovHide(dom.dungeonOverlay)
-  dom.btnDungeon.classList.remove('on')
-  syncDragRegions()
-}
-
-function toggleDungeon () {
-  if (dom.dungeonOverlay.classList.contains('show')) closeDungeon()
-  else openDungeon()
-}
-
-function renderDungeon () {
-  if (!state || !dungeon) return
-  const now = Date.now()
-
-  // ① 试炼塔（首通 + 里程碑的奖励内容都写出来）
-  const tv = dungeon.towerView()
-  let towerHtml
-  if (tv.next) {
-    const n = tv.next
-    towerHtml =
-      `<div class="dungeon-row">` +
-      `<span class="dn">试炼塔</span>` +
-      `<span class="dd">已通 <b>${tv.cleared}</b> / ${tv.floors} 层　当前战力 <b>${fmt(tv.power)}</b></span>` +
-      `<span class="ds">周扫荡 <b>+${fmt(tv.weekly.stones)}</b> 灵石<br>还差 ${fmtGameDuration(tv.weekly.nextInMs)}</span>` +
-      `</div>` +
-      `<div class="dungeon-row">` +
-      `<span class="dn">第 ${n.floor} 层</span>` +
-      `<span class="dd">推荐战力 <b>${fmt(n.needPower)}</b>　首通奖励：灵石 <b>+${fmt(n.stones)}</b>` +
-      (n.milestone ? `　里程碑：<b>${n.milestone}</b>（折算灵石 +${fmt(n.milestoneStones)}）` : '') +
-      `</span>` +
-      `<div class="dbtns"><button class="d-btn" data-tower-challenge${n.canChallenge ? '' : ' disabled'}>${n.canChallenge ? '挑 战' : '战力不足'}</button></div>` +
-      `</div>`
-  } else {
-    towerHtml =
-      `<div class="dungeon-row"><span class="dn">试炼塔</span><span class="dd">已通满 <b>${tv.floors}</b> 层，更高层随版本开放</span>` +
-      `<span class="ds">周扫荡 <b>+${fmt(tv.weekly.stones)}</b> 灵石<br>还差 ${fmtGameDuration(tv.weekly.nextInMs)}</span></div>`
-  }
-  dom.dungeonTower.innerHTML = towerHtml
-
-  // ② 资源秘境（首通/派遣的奖励内容逐项标注）
-  const resFrag = document.createDocumentFragment()
-  for (const r of dungeon.resourceView()) {
-    const row = document.createElement('div')
-    row.className = 'dungeon-row' + (r.unlocked ? '' : ' locked')
-    const dn = document.createElement('span')
-    dn.className = 'dn'
-    dn.textContent = r.name
-    const dd = document.createElement('span')
-    dd.className = 'dd'
-    if (!r.unlocked) {
-      dd.textContent = `需 ${r.unlockRealmName}期开放`
-    } else if (r.cleared >= 4) {
-      dd.innerHTML = `已通满 4 层 · 派遣收益 <b>+${r.stars * 10}%</b>（★${r.stars}）　材料：<b>${r.materialName}</b>`
-    } else {
-      // 主人 2026-09-18：只标基础奖励（首通给什么），不再替玩家逐档算派遣收益
-      const techLine = r.techId
-        ? ` · 功法《${(getTechnique(r.techId) || {}).name || r.techId}》`
-        : ''
-      dd.innerHTML = `已通 ${r.cleared}/4 层 ｜ 主题：${r.theme}<br>` +
-        `首通${r.nextName}（需战力 <b>${fmt(r.nextPower)}</b>）：灵石 <b>+${fmt(r.nextStones)}</b> · ${r.materialName} <b>+${r.nextMats}</b>${techLine}`
-    }
-    if (r.surprise) {
-      const sup = document.createElement('div')
-      sup.textContent = '此境最不可测：派遣归来或有〔机缘〕（遗藏 / 残卷），也可能〔触动禁制〕（所获寥寥）'
-      sup.style.color = 'rgba(185,140,255,0.85)'
-      dd.appendChild(sup)
-    }
-    if (r.canDispatch) {
-      // 基础收益/小时（时长自选，具体数字不再逐档罗列）
-      const line = document.createElement('div')
-      const b = r.dispatchBase
-      line.textContent =
-        `派遣基础（${b.depthName}·★${b.stars}）：灵石 +${fmt(b.stonesPerHour)}/小时 · ${b.matName} +${b.matsPerHour}/小时` +
-        `　·　每趟 ${Math.round(r.techDropPct * 100)}% 拾得功法残卷`
-      line.style.color = 'rgba(127,214,168,0.85)'
-      dd.appendChild(line)
-    }
-    const dbtns = document.createElement('div')
-    dbtns.className = 'dbtns'
-    if (r.unlocked && r.cleared < 4) {
-      const btn = document.createElement('button')
-      btn.className = 'd-btn'
-      btn.textContent = '首 通'
-      btn.dataset.resChallenge = `${r.id}|${r.nextDepth}`
-      btn.disabled = !r.canChallenge
-      btn.title = `首通奖励：灵石 +${fmt(r.nextStones)}、${r.materialName} +${r.nextMats}（按战力溢出评 1~3 星，星级永久提高派遣收益）`
-      dbtns.appendChild(btn)
-    }
-    if (r.canDispatch) {
-      for (const o of r.dispatchOptions) {
-        const b = document.createElement('button')
-        b.className = 'd-btn'
-        b.textContent = `派${o.hours}h`
-        b.dataset.resDispatch = `${r.id}|${r.cleared}|${o.hours}`
-        b.title = `派分身驻留 ${fmtGameDuration(o.hours * 3600 * 1000)}（游戏历）：预计灵石 +${fmt(o.stones)}、${o.matName} +${o.mats}（离线照算 · 自动续派）`
-        dbtns.appendChild(b)
-      }
-    }
-    row.append(dn, dd, dbtns)
-    resFrag.appendChild(row)
-  }
-  dom.dungeonRes.replaceChildren(resFrag)
-
-  // ③ 分身派遣（槽位随大境界递增，阶梯写清楚）
-  const dv = dungeon.dispatchView(now)
-  const dispatchFrag = document.createDocumentFragment()
-  const head = document.createElement('div')
-  head.className = 'dungeon-row'
-  head.innerHTML = `<span class="dn">分身槽</span><span class="dd">${dv.slots === 0 ? '金丹期解锁第一具分身' : `已用 <b>${dv.used}</b> / <b>${dv.slots}</b> 槽`}</span><span class="ds dim">离线照算 · 自动续派</span>`
-  dispatchFrag.appendChild(head)
-
-  const ladder = document.createElement('div')
-  ladder.className = 'dungeon-row'
-  ladder.innerHTML = '<span class="dn">槽位阶梯</span><span class="dd">' +
-    dv.ladder.map((k) => `${k.current ? '<b>' : ''}${k.realmName} ${k.slots} 槽${k.current ? '</b>' : ''}`).join(' → ') +
-    '　（每晋一大境界 +1 具，合体 5 槽封顶）</span>'
-  dispatchFrag.appendChild(ladder)
-
-  if (!dv.runs.length) {
-    const empty = document.createElement('div')
-    empty.className = 'bag-empty'
-    empty.textContent = dv.slots === 0 ? '金丹期方得第一具分身' : '尚无分身驻留 · 到「资源秘境」选秘境派出一具'
-    dispatchFrag.appendChild(empty)
-  }
-  for (const run of dv.runs) {
-    const row = document.createElement('div')
-    row.className = 'dungeon-row'
-    const dn = document.createElement('span')
-    dn.className = 'dn'
-    dn.textContent = run.dungeonName
-    const dd = document.createElement('span')
-    dd.className = 'dd'
-    dd.textContent = `${run.depthName} · ${run.hours}h · ★${run.stars} · 每趟结算：灵石 +${fmt(run.stones)}、${run.matName} +${run.mats}`
-    const ds = document.createElement('span')
-    ds.className = 'ds'
-    ds.textContent = run.done ? '结算中…' : `还差 ${fmtHoursLeft(run.remainingMs)}`
-    const btn = document.createElement('button')
-    btn.className = 'd-btn'
-    btn.textContent = '召回'
-    btn.dataset.recall = run.index
-    row.append(dn, dd, ds, btn)
-    dispatchFrag.appendChild(row)
-  }
-  dom.dungeonDispatch.replaceChildren(dispatchFrag)
-
-  if (dom.dungeonNote) {
-    dom.dungeonNote.textContent =
-      '秘境线以灵石、主题材料与功法残卷结算（不发境界）；当量 h 按灵石时薪折算，与随机事件同口径。' +
-      '首通某层必得该档功法一本（已收满则折灵石），派遣每趟另有概率拾得残卷；' +
-      '派遣收益随首通评星永久 +10%/星，周扫荡每周一自动入账；界面倒计时按游戏历显示（现实 2 小时 = 游戏 30 天）。'
-  }
-}
-
-// 秘境面板动作（事件委托：面板每次重绘不丢监听）
-onPress(dom.dungeonOverlay, (e) => {
-  const tc = e.target.closest('[data-tower-challenge]')
-  if (tc && !tc.disabled) {
-    const res = dungeon.challengeTower()
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) {
-      persist('dungeon-tower')
-      emitBurst({ kind: 'breakthrough' })
-      emitFloat({ text: `试炼塔第 ${res.floor} 层`, kind: 'info' })
-    }
-    renderDungeon()
-    return
-  }
-  const rc = e.target.closest('[data-res-challenge]')
-  if (rc && !rc.disabled) {
-    const [id, depth] = rc.dataset.resChallenge.split('|')
-    const res = dungeon.challengeResource(id, +depth)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) {
-      persist('dungeon-res')
-      emitBurst({ kind: 'breakthrough' })
-      emitFloat({ text: `首通 ${res.dungeon.name} · ${res.stars} 星`, kind: 'ok' })
-      if (res.techName) emitFloat({ text: `得功法《${res.techName}》`, kind: 'root' }, 260)
-    }
-    renderDungeon()
-    return
-  }
-  const rd = e.target.closest('[data-res-dispatch]')
-  if (rd && !rd.disabled) {
-    const [id, depth, hours] = rd.dataset.resDispatch.split('|')
-    const res = dungeon.dispatch(id, +depth, +hours)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) {
-      persist('dungeon-dispatch')
-      emitFloat({ text: `分身驻留 ${res.dungeonName || ''}`, kind: 'info' })
-    }
-    renderDungeon()
-    return
-  }
-  const rcl = e.target.closest('[data-recall]')
-  if (rcl && !rcl.disabled) {
-    const res = dungeon.recall(+rcl.dataset.recall)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) {
-      sfx('dungeon_clear', { throttleMs: 400 })   // 3.5 音效：分身召回结算
-      persist('dungeon-recall')
-      if (res.stones > 0) emitFloat({ text: `召回 +${fmt(res.stones)} 灵石`, kind: 'info' })
-      if (res.techName) emitFloat({ text: `残卷《${res.techName}》`, kind: 'root' }, 260)
-    }
-    renderDungeon()
-  }
-})
-// ══ 2.7 秘境 装配区结束 ═════════════════════════════════════════════════════
+function openDungeon () { if (dungeonPanel) dungeonPanel.open() }
+function closeDungeon () { if (dungeonPanel) dungeonPanel.close() }
+function toggleDungeon () { if (dungeonPanel) dungeonPanel.toggle() }
+function renderDungeon () { if (dungeonPanel) dungeonPanel.render() }
 
 // ══ 2.8 灵兽 装配区（改动仅限本区块 + 各互斥开关联动行 + 主循环一行）═══════
 // 接线内容：灵兽遮罩（#beast-overlay）· 万兽林派遣 · 孵化（妖丹催孵）·
 //           灵兽园喂养/出战 · 主循环被动产出随秒入账（离线不发）
 // 渡劫助战 / 宗门战力加成不在此接：经 boot 注入由 CultivationSystem / SectSystem 自取。
 
+// V3.5.5 拆分：面板本体迁至 src/ui/BeastPanel.js，本区块只留「薄委托」；实例在 boot 创建。
+// 渡劫助战 / 宗门战力加成不在此接：经 boot 注入由 CultivationSystem / SectSystem 自取。
+
 let lastBeastRender = 0 // 灵兽面板轻刷节拍（V3.5.2：时间驱动，倒计时跟拍）
 
-function openBeast () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('beast')
-  renderBeast()
-  ovShow(dom.beastOverlay)
-  dom.btnBeast.classList.add('on')
-  syncDragRegions()
-}
+function openBeast () { if (beastPanel) beastPanel.open() }
+function closeBeast () { if (beastPanel) beastPanel.close() }
+function toggleBeast () { if (beastPanel) beastPanel.toggle() }
+function renderBeast () { if (beastPanel) beastPanel.render() }
 
-function closeBeast () {
-  ovHide(dom.beastOverlay)
-  dom.btnBeast.classList.remove('on')
-  syncDragRegions()
-}
 
-function toggleBeast () {
-  if (dom.beastOverlay.classList.contains('show')) closeBeast()
-  else openBeast()
-}
-
-function renderBeast () {
-  if (!state || !beasts) return
-  const now = Date.now()
-  const ov = beasts.overviewView(now)
-
-  // ① 园况总览（主人 2026-09-18：文字精简，细则移进关键名词的悬停说明）
-  if (!ov.unlocked && !ov.pets) {
-    dom.beastInfo.innerHTML =
-      '<div class="si-name">灵兽 · 尚未开园</div>' +
-      '<div class="si-line">金丹期方可入万兽林寻蛋。</div>'
-  } else {
-    dom.beastInfo.innerHTML =
-      `<div class="si-name">灵兽园 ${ov.pets}/${ov.parkCap}${ov.eggs ? ` · 蛋 ${ov.eggs}` : ''}</div>` +
-      `<div class="si-line">出战：${ov.activeName ? `<b>${ov.activeName}</b>` : '<span style="color:#8f877c">空缺</span>'}` +
-      `　产出：${ov.productionHours > 0 ? `<span class="jade" title="被动产出＝基准产出 × 0.2 时/日 × 品级系数 × 等级系数（上限 0.6 时/日），随在线秒入账，离线不发">+${fmt(ov.productionPerDay)}/日</span>` : '—'}` +
-      `　战力 <span title="出战灵兽战力 +4%（皇品 +8%），计入宗门战力任务定标与秘境门槛">+${Math.round(ov.powerBonusPct * 100)}%</span>` +
-      `　渡劫 <span title="渡劫时出战灵兽替你挡一线雷威：单道天雷通过率 +7%（持有即生效，不必另备）">+${Math.round(ov.trialAidPct * 100)}%</span></div>`
-  }
-
-  // ② 万兽林派遣
-  if (!ov.unlocked) {
-    dom.beastDispatch.innerHTML = '<div class="bag-empty">金丹期解锁</div>'
-  } else {
-    const dv = beasts.dispatchView(now)
-    const autoEggOn = state.settings.autoEgg !== false
-    const row = document.createElement('div')
-    row.className = 'sect-row'
-    const tn = document.createElement('span')
-    tn.className = 'tn'
-    tn.textContent = '灵鹰寻蛋'
-    const td = document.createElement('span')
-    td.className = 'td'
-    td.textContent = `每轮 1 次 · 去 ${fmtGameDuration(dv.hours * 3600 * 1000)}`
-    td.title = `灵鹰入林一次带回一枚灵兽蛋，品级概率：凡 70% ｜ 灵 22% ｜ 王 7% ｜ 皇 1%\n` +
-      `一轮＝${fmtRefreshPeriod()}（距下一轮 ${fmtGameDuration(msToNextRefresh(now))}）` +
-      `${autoEggOn ? '\n已开「自动寻蛋」：灵鹰得空即入林，归巢自动收蛋（孵化与破壳仍由你决定）' : '\n当前为手动派遣（设置面板可开「自动寻蛋」）'}`
-    const tp = document.createElement('span')
-    tp.className = 'tp' + (dv.running && !dv.done ? ' dim' : '')
-    tp.textContent = dv.collected ? '已归巢' : (dv.running ? `还差 ${dv.leftText}` : '待派遣')
-    const btn = document.createElement('button')
-    btn.className = 'mini gap'
-    if (dv.collected) {
-      btn.textContent = '领蛋'
-      btn.dataset.dispatchCollect = '1'
-    } else if (dv.running) {
-      btn.textContent = '搜寻中'
-      btn.disabled = true
-    } else {
-      btn.textContent = '派遣'
-      btn.dataset.dispatch = '1'
-    }
-    row.append(tn, td, tp, btn)
-    dom.beastDispatch.replaceChildren(row)
-  }
-
-  // ③ 蛋与孵化位（单孵位：同时只孵一枚）
-  const eggs = beasts.eggsView(now)
-  if (!eggs.length) {
-    dom.beastEggs.innerHTML = '<div class="bag-empty">笼中无蛋 · 先派灵鹰入万兽林</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const e of eggs) {
-      const row = document.createElement('div')
-      row.className = 'sect-row'
-
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = `${e.gradeName}蛋`
-      tn.style.color = e.color
-      tn.title = `${e.gradeName}灵兽蛋 · 孵期 ${fmtGameDuration(e.hatchHours * 3600 * 1000)}（游戏历），1 枚妖丹可催短 ${fmtGameDuration(3600 * 1000)}`
-
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.textContent = e.hatching
-        ? `${Math.round(e.pct * 100)}% · 孵期 ${fmtGameDuration(e.hatchHours * 3600 * 1000)}`
-        : `待入孵 · ${fmtGameDuration(e.hatchHours * 3600 * 1000)}`
-
-      const tp = document.createElement('span')
-      tp.className = 'tp' + (e.hatching && !e.done ? ' dim' : '')
-      tp.textContent = e.hatching ? (e.done ? '可破壳' : `还差 ${e.leftText}`) : '—'
-
-      const btn = document.createElement('button')
-      btn.className = 'mini gap'
-      if (e.hatching && e.done) {
-        btn.textContent = '破壳'
-        btn.dataset.hatchClaim = '1'
-      } else if (e.hatching) {
-        btn.textContent = '催孵'
-        btn.dataset.hatchSpeed = '1'
-        btn.title = `消耗 1 枚妖丹，孵期缩短 ${fmtGameDuration(3600 * 1000)}（游戏历）`
-      } else if (e.isSlot === false && eggs.some((x) => x.hatching)) {
-        btn.textContent = '排队'
-        btn.disabled = true
-        btn.title = '孵化位只有一个，先孵完这枚'
-      } else {
-        btn.textContent = '入孵'
-        btn.dataset.hatch = e.uid
-      }
-      row.append(tn, td, tp, btn)
-      frag.appendChild(row)
-    }
-    dom.beastEggs.replaceChildren(frag)
-  }
-
-  // ④ 灵兽园（一兽一行：名字 + 等级 + 状态，细则进悬停）
-  const pets = beasts.petsView()
-  if (!pets.length) {
-    dom.beastPark.innerHTML = '<div class="bag-empty">园中空空 · 灵兽破壳后在此安家</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const p of pets) {
-      const row = document.createElement('div')
-      row.className = 'sect-row'
-
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = p.name
-      tn.style.color = p.color
-      tn.title = `${p.gradeName}「${p.name}」${p.desc ? `\n${p.desc}` : ''}\n品级系数 ×${p.grade === 'huang' ? '2.0' : p.grade === 'wang' ? '1.5' : p.grade === 'ling' ? '1.2' : '1.0'}`
-
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.textContent = p.level >= 9
-        ? `${p.gradeName} · Lv.${p.level}/9 · 圆满`
-        : `${p.gradeName} · Lv.${p.level}/9 · 成长 ${Math.round(p.growPct * 100)}%`
-      td.title = `等级系数 ×${p.levelCoef.toFixed(1)}（每级 +10%）· 产出 ${p.outputHours.toFixed(1)} 时/日 · 战力 +${Math.round(p.powerPct * 100)}%\n` +
-        `${p.growText} · 在线挂机自动累积\n喂养消耗 1 枚妖丹升 1 级（快路），8% 概率悟性爆发连升 2 级`
-
-      const tp = document.createElement('span')
-      tp.className = 'tp' + (p.active ? '' : ' dim')
-      tp.textContent = p.active ? '出战中' : '待命'
-
-      const feedBtn = document.createElement('button')
-      feedBtn.className = 'mini'
-      feedBtn.textContent = p.level >= 9 ? '圆满' : '喂养'
-      feedBtn.title = p.level >= 9 ? '已至 9 级圆满' : '消耗 1 枚妖丹升 1 级（8% 悟性爆发连升 2 级）'
-      feedBtn.disabled = p.level >= 9
-      feedBtn.dataset.feed = p.uid
-
-      const actBtn = document.createElement('button')
-      actBtn.className = 'mini gap'
-      if (p.active) { actBtn.textContent = '—'; actBtn.disabled = true }
-      else { actBtn.textContent = '出战'; actBtn.dataset.active = p.uid }
-
-      row.append(tn, td, tp, feedBtn, actBtn)
-      frag.appendChild(row)
-    }
-    dom.beastPark.replaceChildren(frag)
-  }
-
-  // ⑤ 脚注（只留一句口径；细则都在上面的悬停说明里）
-  if (dom.beastNote) {
-    dom.beastNote.textContent = ov.unlocked
-      ? '出战 1 只即生效（元婴起 2 只随版本 2 开放）；被动产出随在线秒入账、离线不发，上限 0.6 时/日。血脉觉醒 / 化形 / 代采随版本 2、3 开放。'
-      : '金丹期解锁万兽林；血脉觉醒 / 化形 / 灵兽园扩容 / 代采随版本 2、3 开放。'
-  }
-}
-
-// 灵兽面板动作（事件委托：面板每次重绘不丢监听）
-dom.beastOverlay.addEventListener('click', (e) => {
-  const dp = e.target.closest('[data-dispatch]')
-  if (dp && !dp.disabled) {
-    const res = beasts.dispatch()
-    pushLog(res.message, res.ok ? 'info' : 'info')
-    renderBeast()
-    return
-  }
-  const dc = e.target.closest('[data-dispatch-collect]')
-  if (dc && !dc.disabled) {
-    const res = beasts.collectDispatch()
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) { persist('beast-egg'); emitFloat({ text: `${res.grade === 'huang' ? '皇品蛋！' : '灵兽蛋 +1'}`, kind: 'ok' }) }
-    renderBeast()
-    return
-  }
-  const h = e.target.closest('[data-hatch]')
-  if (h && !h.disabled) {
-    const res = beasts.startHatch(+h.dataset.hatch)
-    pushLog(res.message, res.ok ? 'info' : 'info')
-    renderBeast()
-    return
-  }
-  const hs = e.target.closest('[data-hatch-speed]')
-  if (hs && !hs.disabled) {
-    const res = beasts.speedHatch(1)
-    pushLog(res.message, res.ok ? 'info' : 'info')
-    if (res.ok) persist('beast-hatch-speed')
-    renderBeast()
-    return
-  }
-  const hc = e.target.closest('[data-hatch-claim]')
-  if (hc && !hc.disabled) {
-    const res = beasts.claimHatch()
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) {
-      sfx('beast_hatch', { throttleMs: 400 })   // 3.5 音效：灵兽破壳
-      persist('beast-hatch')
-      emitBurst({ kind: 'breakthrough' })
-    }
-    renderBeast()
-    return
-  }
-  const fd = e.target.closest('[data-feed]')
-  if (fd && !fd.disabled) {
-    const res = beasts.feed(+fd.dataset.feed)
-    pushLog(res.message, res.ok ? (res.burst ? 'ok' : 'info') : 'info')
-    if (res.ok) persist('beast-feed')
-    renderBeast()
-    return
-  }
-  const ac = e.target.closest('[data-active]')
-  if (ac && !ac.disabled) {
-    const res = beasts.setActive(+ac.dataset.active)
-    pushLog(res.message, res.ok ? 'root' : 'info')
-    if (res.ok) persist('beast-active')
-    renderBeast()
-  }
-})
-// ══ 2.8 灵兽 装配区结束 ═════════════════════════════════════════════════════
 
 // ══ 2.3 事件气运 装配区（V3.3.1：事件簿已并入「纪事与事件」一册）═════════════
 // 宿主：原 #event-overlay 撤销，节点迁入 #chronicle-overlay 的「事件」页（#event-page）。
@@ -3349,162 +2911,16 @@ function renderEvents () {
 // ══ 2.3 事件气运 装配区结束 ═════════════════════════════════════════════════
 
 // ══ 2.6 坊市 装配区（改动仅限本区块 + 互斥开关联动行）══════════════════════
-// 接线：坊市遮罩（#market-overlay）· 三页签（折扣店 / 回收 / 拍卖行）· 每日刷新
-// 口径：买/卖/拍只搬动「灵石」与「道具」，不产修为、不晋境界（§七 占比护栏）
+// V3.5.5 拆分：面板本体（开合 / 页签 / 渲染 / 动作委托 / 页签监听）迁至 src/ui/MarketPanel.js，
+// 本区块只留「薄委托」（既有调用点全部不变）；面板实例在 boot 的 systems 就绪后创建。
+// 口径不变：买/卖/拍只搬动「灵石」与「道具」，不产修为、不晋境界（§七 占比护栏）。
 
-let lastMarketRender = 0 // 坊市面板轻刷节拍（V3.5.2：时间驱动）
-let marketTab = 'shop' // 当前页签：shop | recycle | auction
+let lastMarketRender = 0 // 坊市面板轻刷节拍（V3.5.2：时间驱动；主循环用）
 
-function openMarket () {
-  if (!state) return
-  closeTip()
-  closeAllOverlays('market')   // 与其余遮罩互斥（集中维护，见 closeAllOverlays）
-  renderMarket()
-  ovShow(dom.marketOverlay)
-  dom.btnMarket.classList.add('on')
-  syncDragRegions()
-}
-
-function closeMarket () {
-  ovHide(dom.marketOverlay)
-  dom.btnMarket.classList.remove('on')
-  syncDragRegions()
-}
-
-function toggleMarket () {
-  if (dom.marketOverlay.classList.contains('show')) closeMarket()
-  else openMarket()
-}
-
-function renderMarket () {
-  if (!state || !market) return
-  market.ensureDaily(Date.now())
-  if (marketTab === 'shop') renderMarketShop()
-  else if (marketTab === 'recycle') renderMarketRecycle()
-  else renderMarketAuction()
-}
-
-function renderMarketShop () {
-  const shop = market.shopView()
-  if (!shop.length) {
-    dom.marketShop.innerHTML = '<div class="bag-empty">今日货架空了，明日再来。</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const s of shop) {
-      const row = document.createElement('div')
-      row.className = 'sect-row'
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = s.name
-      const disc = document.createElement('span')
-      disc.className = 'm-disc'
-      disc.textContent = `${(s.discount * 10).toFixed(1)}折`
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.innerHTML = `<span class="m-old">${s.base}</span><span style="color:var(--gold-light)">${s.price}</span> 灵石`
-      const btn = document.createElement('button')
-      btn.className = 'mini'
-      btn.textContent = '购买'
-      btn.dataset.buy = String(s.index)
-      if (!s.affordable) btn.disabled = true
-      row.append(tn, disc, td, btn)
-      frag.appendChild(row)
-    }
-    dom.marketShop.replaceChildren(frag)
-  }
-  if (dom.marketNote) {
-    dom.marketNote.textContent = `折扣店${fmtRefreshPeriod()}刷新一次（同一轮内不变，下一轮换新）；灵石不足时按钮置灰。坊市只流通灵石与道具，不产修为、不晋境界。`
-  }
-}
-
-function renderMarketRecycle () {
-  const list = market.recycleView()
-  if (!list.length) {
-    dom.marketRecycle.innerHTML = '<div class="bag-empty">行囊里没有可卖之物。</div>'
-  } else {
-    const frag = document.createDocumentFragment()
-    for (const it of list) {
-      const row = document.createElement('div')
-      row.className = 'sect-row'
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = `${it.name} ×${it.count}`
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.innerHTML = `回收 <span style="color:var(--gold-light)">${it.price}</span>/${it.unit} → 共 <span style="color:var(--gold-light)">+${it.total}</span> 灵石`
-      const btn = document.createElement('button')
-      btn.className = 'mini'
-      btn.textContent = '售全'
-      btn.dataset.sell = it.id
-      row.append(tn, td, btn)
-      frag.appendChild(row)
-    }
-    dom.marketRecycle.replaceChildren(frag)
-  }
-  if (dom.marketNote) {
-    dom.marketNote.textContent = `回收价＝货值 × ${RECYCLE_RATE}（<1，买来再卖会亏，防刷灵石）。一键卖清整堆。`
-  }
-}
-
-function renderMarketAuction () {
-  const a = market.auctionView()
-  if (!a.open) {
-    const need = a.minRealm >= 3 ? '元婴' : '金丹'
-    dom.marketAuction.innerHTML = `<div class="bag-empty">拍卖行尚未开启。<br>需 ${need}期以上修士方可入拍。</div>`
-    if (dom.marketNote) dom.marketNote.textContent = '高境界拍卖行（简化）：每日 1 件稀有物，达标可拍下，每日限 1 次。'
-    return
-  }
-  const need = a.minRealm >= 3 ? '元婴' : '金丹'
-  const frag = document.createDocumentFragment()
-  const row = document.createElement('div')
-  row.className = 'sect-row'
-  const tn = document.createElement('span')
-  tn.className = 'tn'
-  tn.textContent = a.name
-  const td = document.createElement('span')
-  td.className = 'td'
-  td.innerHTML = a.bought
-    ? '今日已拍下，明日再来。'
-    : `起拍 <span style="color:var(--gold-light)">${a.price}</span> 灵石${a.realmOk ? '' : `（需${need}期）`}`
-  const btn = document.createElement('button')
-  btn.className = 'mini'
-  btn.textContent = a.bought ? '已结' : '拍下'
-  btn.dataset.auction = '1'
-  if (a.bought || !a.realmOk || !a.affordable) btn.disabled = true
-  row.append(tn, td, btn)
-  frag.appendChild(row)
-  dom.marketAuction.replaceChildren(frag)
-  if (dom.marketNote) {
-    dom.marketNote.textContent = '高境界拍卖行（简化）：每日 1 件稀有物，达标可拍下，每日限 1 次。'
-  }
-}
-
-// 坊市面板动作（事件委托：面板每次重绘不丢监听）
-onPress(dom.marketOverlay, (e) => {
-  const buy = e.target.closest('[data-buy]')
-  if (buy && !buy.disabled) {
-    const res = market.buy(+buy.dataset.buy)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) { persist('market-buy'); emitFloat({ text: `灵石 −${res.cost}`, kind: 'gold' }) }
-    renderMarket()
-    return
-  }
-  const sell = e.target.closest('[data-sell]')
-  if (sell && !sell.disabled) {
-    const res = market.sell(sell.dataset.sell)
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) { persist('market-sell'); emitFloat({ text: `灵石 +${res.gain}`, kind: 'gold' }) }
-    renderMarket()
-    return
-  }
-  const auc = e.target.closest('[data-auction]')
-  if (auc && !auc.disabled) {
-    const res = market.buyAuction()
-    pushLog(res.message, res.ok ? 'ok' : 'info')
-    if (res.ok) { persist('market-auction'); emitFloat({ text: `灵石 −${res.cost}`, kind: 'gold' }) }
-    renderMarket()
-  }
-})
+function openMarket () { if (marketPanel) marketPanel.open() }
+function closeMarket () { if (marketPanel) marketPanel.close() }
+function toggleMarket () { if (marketPanel) marketPanel.toggle() }
+function renderMarket () { if (marketPanel) marketPanel.render() }
 
 // 事件页动作（事件委托：面板每次重绘不丢监听）
 // ⚠ 宿主必须是**整个纪事遮罩**：自动策略行（#ev-strat-row）位于 #event-page 之外
@@ -4365,17 +3781,7 @@ dom.btnWait.addEventListener('click', () => {
 })
 dom.returnCard.addEventListener('click', () => hideReturnCard())
 
-// 坊市页签（折扣店 / 回收 / 拍卖行）
-for (const t of dom.marketTabs) {
-  t.addEventListener('click', () => {
-    marketTab = t.dataset.markettab || 'shop'
-    for (const x of dom.marketTabs) x.classList.toggle('on', x === t)
-    dom.marketShopPage.hidden = marketTab !== 'shop'
-    dom.marketRecyclePage.hidden = marketTab !== 'recycle'
-    dom.marketAuctionPage.hidden = marketTab !== 'auction'
-    renderMarket()
-  })
-}
+// 坊市页签监听已随面板迁入 src/ui/MarketPanel.js（V3.5.5）
 // 丹房：炼制 / 自动炼制（事件委托：面板每次重绘，避免丢监听）
 onPress(dom.alchemyOverlay, (e) => {
   const b = e.target.closest('[data-brew]')
@@ -5067,6 +4473,27 @@ async function boot () {
   dungeon.ensure()         // 老档补字段（秘境子树：cleared / stars / dispatch）
   // V3.3.1：秘境残卷 / 首通赠功法经注入的 TechniqueSystem.grant 落袋（见 DungeonSystem._grantTech）
   market = new MarketSystem(state)  // 2.6 坊市：懒建 state.market 子树，无需 ensure（首次打开即 ensureDaily）
+  // V3.5.5 拆分：坊市面板（src/ui/MarketPanel.js）——依赖注入（state/system 取 getter 防捕获旧引用）
+  marketPanel = createMarketPanel({
+    state: () => state,
+    system: () => market,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmtRefreshPeriod, onPress }
+  })
+  // V3.5.5 拆分：灵兽面板（src/ui/BeastPanel.js）
+  beastPanel = createBeastPanel({
+    state: () => state,
+    system: () => beasts,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh }
+  })
+  // V3.5.5 拆分：秘境面板（src/ui/DungeonPanel.js）
+  dungeonPanel = createDungeonPanel({
+    state: () => state,
+    system: () => dungeon,
+    dom,
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod }
+  })
   achv = new AchievementSystem(state, { grant: grantAchvReward })  // 2.10：奖励发放经装配层回调落到 resources / inventory
   achv.ensure()            // 老档补字段 + 新档播种纪事 + 凡档称号入袋
   // 2.5：注入 sect 供渡劫准备「宗门援助」报价与扣贡献（CultivationSystem 只调接口，不读它的子树）

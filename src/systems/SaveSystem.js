@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '3.5.4'                // V3.5.4（工程加固：单日收益归因台账 EconLedger——§七 占比护栏校验工具；对照两参考项目提炼）；与 package.json 同步
+const APP_VERSION = '3.5.5'                                // V3.5.5（BonusLedger 契约修订 + 拆分 main.js 第一批：坊市/灵兽/秘境三面板迁 src/ui/；对照两参考项目提炼）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
