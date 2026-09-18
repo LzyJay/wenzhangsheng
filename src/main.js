@@ -274,6 +274,7 @@ const dom = {
   sectTasks: el('sect-tasks'),
   sectLibrary: el('sect-library'),
   sectShop: el('sect-shop'),
+  sectDisciples: el('sect-disciples'),   // V5.5 弟子线（收徒 / 传功 / 派职 / 贡献）
   sectNote: el('sect-note'),
   btnTaskStartall: el('btn-task-startall'),       // V4.7 一键接取
   btnTaskAutostart: el('btn-task-autostart'),     // V4.7 自动接取（开关）
@@ -2518,10 +2519,14 @@ function renderChronicle () {
  */
 function renderAchv () {
   if (!state || !achv) return
+  // V5.1.3（A2 真机复跑抓到的实现缺陷）：说明文案原写死「成就 90 个」，而数据实有 94 条
+  //   （秘境档由 15 增至 19）——同屏自相矛盾。改为取 view().total，与成就墙渲染同源，
+  //   两处口径不再各写一份数字。view 只算一次，向下透传给 renderAchvWall（避免重复构建）。
+  const v = achv.view(collectMetrics())
   for (const b of dom.achvTabs) b.classList.toggle('on', b.dataset.achvtab === achvTab)
   if (dom.achvWall) dom.achvWall.hidden = achvTab !== 'wall'
   if (dom.titleList) dom.titleList.hidden = achvTab !== 'title'
-  if (achvTab === 'wall') renderAchvWall()
+  if (achvTab === 'wall') renderAchvWall(v)
   else renderTitleList()
 
   const points = achv.points
@@ -2535,7 +2540,7 @@ function renderAchv () {
   }
   if (dom.achvNote) {
     dom.achvNote.textContent =
-      `成就 90 个 · 已解锁 ${achv.unlockedCount} 个 ｜ 五档阶梯（凡/灵/玄/王/皇）按累计成就点发放称号 + 外观碎片 + 少量材料；` +
+      `成就 ${v.total} 个 · 已解锁 ${achv.unlockedCount} 个 ｜ 五档阶梯（凡/灵/玄/王/皇）按累计成就点发放称号 + 外观碎片 + 少量材料；` +
       `称号同时只可佩戴 1 个，纯展示不涉数值。隐藏成就只给暗示，条件得自己撞。`
   }
 }
@@ -2651,8 +2656,7 @@ function renderChronicleList () {
   dom.evtList.replaceChildren(f2)
 }
 
-function renderAchvWall () {
-  const v = achv.view(collectMetrics())
+function renderAchvWall (v = achv.view(collectMetrics())) {
   const frag = document.createDocumentFragment()
   for (const c of v.cats) {
     const h = document.createElement('div')
@@ -3711,11 +3715,13 @@ async function boot () {
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, fmt, fmtRefreshPeriod, fmtRealSpan, onPress, emit }
   })
   // V3.5.6 拆分：宗门面板（src/ui/SectPanel.js）
+  // V5.5：面板两铁律 —— 系统 / state 一律 **getter 注入**（Rule A），委托回调内自行取（Rule B）
   sectPanel = createSectPanel({
-    state,
-    sect,
+    state: () => state,
+    sect: () => sect,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitBurst, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh, fmtHoursLeft, fmtRealSpan, gameClockOf, fmtGameStamp }
+    // V5.5：弟子线面板里「传功」花掉的灵气也回传既有 `sect` 归因线（照 V5.1 noteDungeon 写法）
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitBurst, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh, fmtHoursLeft, fmtRealSpan, gameClockOf, fmtGameStamp, noteSect: (gain) => noteGain(state, 'sect', gain) }
   })
   // V3.5.6 拆分：行囊面板（src/ui/BagPanel.js）
   bagPanel = createBagPanel({
@@ -3737,7 +3743,9 @@ async function boot () {
     state: () => state,
     system: () => beasts,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh, onPress }
+    // V5.6：面板里点出来的兽潮赏格 / 大比赏格也要落进 §七 归因的 beast 线
+    //   （主循环段间快照只覆盖被动产出，这两条手动链路由面板回传，同 noteDungeon 模式）
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, msToNextRefresh, onPress, noteBeast: (gain) => noteGain(state, 'beast', gain) }
   })
   // V3.5.5 拆分：秘境面板（src/ui/DungeonPanel.js）
   dungeonPanel = createDungeonPanel({

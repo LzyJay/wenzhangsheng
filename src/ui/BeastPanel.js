@@ -9,6 +9,7 @@
  */
 
 import { STAR } from '../data/beasts.js'   // 纯数据（ui 层允许 import data/）：星级上限与每星加成展示
+import { WAVE, CONTEST } from '../data/beastWaves.js'   // V5.6：兽潮/大比悬停说明引用的参数（只读）
 
 export function createBeastPanel (ctx) {
   const dom = ctx.dom
@@ -16,6 +17,11 @@ export function createBeastPanel (ctx) {
   const getSystem = ctx.system
   const H = ctx.helpers
   if (!dom.beastOverlay) return null
+  // V5.6 兽潮 / 大比两区宿主：dom 表未登记（不动装配层公共区），面板内自行兜底查找
+  const waveHost = dom.beastWave ||
+    (typeof document !== 'undefined' && document.getElementById ? document.getElementById('beast-wave') : null)
+  const contestHost = dom.beastContest ||
+    (typeof document !== 'undefined' && document.getElementById ? document.getElementById('beast-contest') : null)
 
 let lastBeastRender = 0 // 灵兽面板轻刷节拍（V3.5.2：时间驱动，倒计时跟拍）
 // V4.7：分解（杀鸡取卵）需二次确认 —— 第一次点按记 uid，4 秒内再点方才动手（运行期变量，不入存档）
@@ -244,12 +250,88 @@ let decomposeTimer = null
     dom.beastPark.replaceChildren(frag)
   }
 
+  // ④b 兽潮（V5.6：周期来犯 · 一轮三波 · 高波定档；细则进悬停）
+  if (waveHost) {
+    const wv = system.waveView(now)
+    const row = document.createElement('div')
+    row.className = 'sect-row'
+    const tn = document.createElement('span')
+    tn.className = 'tn'
+    tn.textContent = '兽潮抵御'
+    const td = document.createElement('span')
+    td.className = 'td'
+    td.textContent = wv.unlocked ? '一轮三波 · 高波定档' : '金丹期解锁'
+    td.title = wv.unlocked
+      ? `妖兽每 ${wv.cycleText} 来犯一次，低/中/高三波一并抵御。\n` +
+        `个人 DPS＝战力 × ${WAVE.dpsCoef}（讨伐期间灵兽出战加成 ×${WAVE.beastMul}），以最险的高波贡献定档（参与 / 中坚 / 前列）。\n` +
+        `奖励：灵石按当量 ${wv.rewardH.join}~${wv.rewardH.front} h + 妖丹 ×${wv.yaodan.join}~${wv.yaodan.front}；` +
+        `掉蛋概率 ${Math.round(wv.eggChance.join * 100)}%~${Math.round(wv.eggChance.front * 100)}%（连 ${wv.stats.pityEvery} 次不出灵品以上则必出）。\n` +
+        `已抵御 ${wv.stats.fought} 轮 · 失守 ${wv.stats.missed} 轮`
+      : '金丹期起妖兽方会来犯。'
+    const tp = document.createElement('span')
+    tp.className = 'tp' + (wv.pending ? '' : ' dim')
+    tp.textContent = wv.pending ? '来袭！' : `退去 · 下一轮 ${H.fmtGameDuration(wv.nextInMs)}`
+    const btn = document.createElement('button')
+    btn.className = 'mini gap'
+    if (wv.pending) {
+      btn.textContent = '抵御'
+      btn.dataset.waveResist = '1'
+      btn.disabled = !wv.unlocked
+      if (!wv.unlocked) btn.title = '金丹期解锁'
+    } else {
+      btn.textContent = '已抵御'
+      btn.disabled = true
+    }
+    row.append(tn, td, tp, btn)
+    waveHost.replaceChildren(row)
+  }
+
+  // ④c 灵兽大比（V5.6：每届上场评比 → 名次 → 领奖；细则进悬停）
+  if (contestHost) {
+    const cv = system.contestView(now)
+    const row = document.createElement('div')
+    row.className = 'sect-row'
+    const tn = document.createElement('span')
+    tn.className = 'tn'
+    tn.textContent = '灵兽大比'
+    const td = document.createElement('span')
+    td.className = 'td'
+    td.textContent = cv.lastRank > 0
+      ? `上届第 ${cv.lastRank} 名（${cv.lastTierName}）`
+      : `${cv.npcs} 强镜像 · 每届一比`
+    td.title = `大比每 ${cv.cycleText} 一届：随行编队评分定种子，与 ${cv.npcs - 1} 名同档镜像对位（有输有赢）。\n` +
+      `名次奖励（设计库 §2.3 表折届）：冠军 / 亚军 / 四强 / 八强 / 参与，灵石按境界档位系数折算` +
+      `（外门 ×0.6 / 内门 ×1.0 / 真传 ×1.8 / 长老 ×3.0），另附妖丹 ×1~3。` +
+      (cv.wins > 0 ? `\n累计夺冠 ${cv.wins} 届。` : '')
+    const tp = document.createElement('span')
+    tp.className = 'tp' + (cv.canClaim ? '' : ' dim')
+    tp.textContent = cv.canClaim ? '待领奖' : (cv.entered ? `第 ${cv.lastRank} 名 · 已领` : '本届未上场')
+    const btn = document.createElement('button')
+    btn.className = 'mini gap'
+    if (cv.canClaim) {
+      btn.textContent = '领奖'
+      btn.dataset.contestClaim = '1'
+    } else if (cv.entered) {
+      btn.textContent = '已上场'
+      btn.disabled = true
+    } else {
+      btn.textContent = '上场比试'
+      btn.dataset.contestEnter = '1'
+      btn.disabled = !cv.unlocked || !cv.hasSquad
+      btn.title = !cv.unlocked
+        ? '金丹期解锁'
+        : (!cv.hasSquad ? '尚无随行灵兽：先孵出一只（主战 / 辅助均可上场）' : '编队评分上场，揭榜后领奖')
+    }
+    row.append(tn, td, tp, btn)
+    contestHost.replaceChildren(row)
+  }
+
   // ⑤ 脚注（只留一句口径；细则都在上面的悬停说明里）
   if (dom.beastNote) {
     dom.beastNote.textContent = ov.unlocked
       ? '主战 1 只全额生效，辅助位随境界解锁（元婴 1 / 合体 2，产出与战力按 50%）；孵化位 2 个（金丹解锁第 2 位）。' +
         '被动产出随在线秒入账、离线不发，上限 0.6 时/日 × 星级。升星＝同品级同种 2 合 1；分解＝取妖丹与灵石（随行中不可）。' +
-        '血脉觉醒 / 化形 / 代采随内容批次 2、3 开放。'
+        '兽潮每轮抵御按高波定档发奖（V5.6）；灵兽大比每届上场评比、领名次赏格。血脉觉醒 / 化形 / 代采随内容批次 2、3 开放。'
       : '金丹期解锁万兽林；血脉觉醒 / 化形 / 灵兽园扩容 / 代采随内容批次 2、3 开放。'
   }
 }
@@ -356,6 +438,41 @@ dom.beastOverlay.addEventListener('click', (e) => {
     const res = system.decompose(uid)
     H.pushLog(res.message, res.ok ? 'fail' : 'info')
     if (res.ok) { H.persist('beast-decompose'); H.emitFloat({ text: `灵石 +${res.stones}`, kind: 'gold' }) }
+    render()
+    return
+  }
+  // V5.6 兽潮抵御（奖励走既有 beast 归因线，同 V5.1 noteDungeon 模式）
+  const wr = e.target.closest('[data-wave-resist]')
+  if (wr && !wr.disabled) {
+    const res = system.resistWave()
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      H.noteBeast({ stones: res.stones })   // §七 归因：兽潮赏格入 beast 线
+      H.persist('beast-wave')
+      if (res.egg) H.emitFloat({ text: `兽潮掉落${res.egg.gradeName}蛋！`, kind: 'ok' })
+    }
+    render()
+    return
+  }
+  // V5.6 灵兽大比 · 上场比试（只定名次，不发奖励）
+  const ce = e.target.closest('[data-contest-enter]')
+  if (ce && !ce.disabled) {
+    const res = system.contestEnter()
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) H.persist('beast-contest')
+    render()
+    return
+  }
+  // V5.6 灵兽大比 · 领奖（名次赏格 → beast 归因线）
+  const cc = e.target.closest('[data-contest-claim]')
+  if (cc && !cc.disabled) {
+    const res = system.contestClaim()
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      H.noteBeast({ stones: res.stones })   // §七 归因：大比赏格入 beast 线
+      H.persist('beast-contest-claim')
+      H.emitFloat({ text: `灵石 +${res.stones}`, kind: 'gold' })
+    }
     render()
   }
 })

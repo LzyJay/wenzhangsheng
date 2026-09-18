@@ -18,7 +18,9 @@
  *   · 升星（V4.7 主人）：同品级同种 2 合 1 → 星级 +1（上限 5 星）
  *   · 分解 / 杀鸡取卵（V4.7 主人）：返还妖丹（按品级）+ 灵石（按品级基准 × 等级系数）；随行中不可分解
  *   · 喂养：妖丹 → 升 1 级（1~9 级），每级 +10%；8% 悟性爆发本次连升 2 级
- *   · 血脉觉醒 / 化形 / 灵兽园扩容 / 代采 / 兽潮 ＝ 内容批次 2/3，不在本模块
+ *   · 兽潮与灵兽大比（V5.6 首批）：周期波次抵御 + 大比评比领奖，参数在 data/beastWaves.js，
+ *     周期与坊市/寻蛋同源（periodKeyOf），奖励走既有 beast 归因线
+ *   · 血脉觉醒 / 化形 / 灵兽园扩容 / 代采 ＝ 内容批次 2/3（C2），不在本模块
  *
  * 存档子树：state.beast（null＝尚无灵兽资产；懒建兜底，老档自动补全）
  * 跨模块接线（13.1②，均由 main.js 中转）：
@@ -28,8 +30,12 @@
  */
 
 import { GRADES, WANSHOU, HATCH, STAR, DECOMPOSE, ASSIST, FEED, GROWTH, OUTPUT, PARK_CAP, TRIAL_BEAST, dayKey, getGrade, getSpecies, rollGrade, speciesOfGrade } from '../data/beasts.js'
+// V5.6 兽潮与灵兽大比：参数与周期/分档纯函数（数据先行，见 data/beastWaves.js 文件头口径）
+import { WAVE, CONTEST, WAVE_TIERS, waveKeyOf, waveMsToNext, contestKeyOf, waveTierOfShare, waveTierRank, waveTierName, contestTierOfRank, contestTier, contestRealmMul } from '../data/beastWaves.js'
 import { getLevelInfo } from '../data/realms.js'
 import { getItem } from '../data/items.js'
+// 奖励折灵石：与秘境 / 事件同一量纲（1 h 当量 → stoneHourly(level) 灵石）
+import { stoneHourly } from '../data/events.js'
 // 游戏历（主人 2026-09-17）：剩余时长一律用游戏历文案，不再报现实时分
 import { fmtGameDuration, fmtRefreshPeriod } from '../data/gametime.js'
 
@@ -72,6 +78,13 @@ class BeastSystem {
       if (!(p.star >= 1)) p.star = 1
       if (p.exp == null) p.exp = 0
       if (p.gf == null) p.gf = 0
+    }
+    // V5.6 兽潮 / 大比叶子（懒建兜底，零迁移；老档已有该叶则原样保留）
+    if (!b.wave || typeof b.wave !== 'object') {
+      b.wave = { doneKey: null, pity: 0, fought: 0, missed: 0 }
+    }
+    if (!b.contest || typeof b.contest !== 'object') {
+      b.contest = { doneKey: null, lastRank: 0, lastTier: null, lastScore: 0, claimed: true, wins: 0 }
     }
     return b
   }
@@ -620,6 +633,203 @@ class BeastSystem {
       out.push({ kind: 'start', ...this.startHatch(egg.uid, now) })
     }
     return out
+  }
+
+  // ── 兽潮与灵兽大比（V5.6 首批 · 设计库《灵兽兽潮与大比 v1》§1.5 / §2）──────
+  // 参数与周期纯函数在 data/beastWaves.js（数据先行）；周期键与坊市/寻蛋同源
+  // （periodKeyOf + gameDaysToMs），失守轮数用「轮次键差」懒结算，不另立时钟。
+  // 奖励归因走既有 beast 线：主循环快照只覆盖被动产出，这里点出来的收益由装配层
+  // 经 helpers.noteBeast 回传（同 V5.1 noteDungeon 模式），本系统不直接记账本。
+
+  /** 兽潮叶子（懒建兜底；ensure 亦会补，方法内再兜一道防裸调） */
+  _wave () {
+    const b = this.s
+    if (!b.wave || typeof b.wave !== 'object') {
+      b.wave = { doneKey: null, pity: 0, fought: 0, missed: 0 }
+    }
+    return b.wave
+  }
+
+  /** 大比叶子（懒建兜底，同上） */
+  _contest () {
+    const b = this.s
+    if (!b.contest || typeof b.contest !== 'object') {
+      b.contest = { doneKey: null, lastRank: 0, lastTier: null, lastScore: 0, claimed: true, wins: 0 }
+    }
+    return b.contest
+  }
+
+  /**
+   * 抵御兽潮（本轮一次；三波一并结算，**以最险的高波定整轮档位**）
+   *   个人 DPS ＝ 境界基准战力 × (1 + 灵兽出战加成) × dpsCoef × beastMul（讨伐 ×1.2）
+   *   贡献 share ＝ DPS ÷ 波次血池（境界基准 × hpPer）→ 前列 / 中坚 / 参与（WAVE_TIERS）
+   *   奖励：灵石（rewardH × stoneHourly）+ 妖丹；掉蛋（灵品以上）带 pityEvery 保底
+   * @returns {{ok:boolean, message:string, tier?:string, tierName?:string, stones?:number, yaodan?:number, egg?:object|null}}
+   */
+  resistWave (now = Date.now()) {
+    if (!this.unlocked) {
+      const name = getLevelInfo(WAVE.unlockRealmIndex * 9 + 1).displayName
+      return { ok: false, message: `妖兽尚不敢犯境：${name}以上方有兽潮来袭。` }
+    }
+    const w = this._wave()
+    const key = waveKeyOf(now)
+    if (w.doneKey === key) {
+      return { ok: false, message: '本轮兽潮已经退去，等下一轮再来（见倒计时）。' }
+    }
+    // 失守记账：距上次抵御空过的轮数（轮次键差懒结算，无钟可用错）
+    if (w.doneKey != null) w.missed = (w.missed | 0) + Math.max(0, Number(key) - Number(w.doneKey) - 1)
+    const level = this.state.player.realm.level
+    const basePower = getLevelInfo(level).combat.power
+    const petPct = this.powerBonusPct()
+    const dps = basePower * (1 + petPct) * WAVE.dpsCoef * WAVE.beastMul
+    let tier = 'front'
+    const rows = []
+    for (const wf of WAVE.waves) {
+      const pool = Math.max(1, basePower * wf.hpPer)
+      const share = dps / pool
+      const t = waveTierOfShare(share)
+      rows.push({ id: wf.id, name: wf.name, share, tier: t })
+      if (waveTierRank(t) > waveTierRank(tier)) tier = t      // 三波取最差档
+    }
+    const stones = Math.round(stoneHourly(level) * WAVE.rewardH[tier])
+    const yaodan = WAVE.yaodan[tier] | 0
+    this.state.resources.stones = (this.state.resources.stones | 0) + stones
+    this.state.inventory.items.mat_yaodan = (this.state.inventory.items.mat_yaodan | 0) + yaodan
+    // 掉蛋（设计库 §1.2：兽潮是灵兽养成的主水源；连续 pityEvery 次不出 → 必出灵品以上）
+    w.pity = (w.pity | 0) + 1
+    let egg = null
+    const chance = w.pity >= WAVE.pityEvery ? 1 : WAVE.eggChance[tier]
+    if (Math.random() < chance) {
+      const grade = Math.random() < WAVE.wangChance ? 'wang' : 'ling'
+      const uid = ++this.s.seq
+      this.s.eggs.push({ uid, grade, startAt: 0 })
+      egg = { grade, gradeName: getGrade(grade).name }
+      w.pity = 0
+    }
+    w.doneKey = key
+    w.fought = (w.fought | 0) + 1
+    const tierName = waveTierName(tier)
+    return {
+      ok: true,
+      tier,
+      tierName,
+      rows,
+      stones,
+      yaodan,
+      egg,
+      message: `兽潮退去（${tierName}）：三波妖兽尽数击退，拾得妖丹 ×${yaodan}、灵石 +${stones}` +
+        `${egg ? `，兽王仓皇间遗落一枚${egg.gradeName}蛋！` : ''}。`
+    }
+  }
+
+  /** 编队评分：Σ(品级战力% × 等级系数 × 星级系数 × 编队权重) × scorePer（主战全额、辅助 50%） */
+  contestScore () {
+    let sum = 0
+    for (const { pet, mul } of this.squad()) {
+      sum += CONTEST.scorePer * this.petPowerPct(pet) * this.levelCoef(pet && pet.level) * this.starCoef(pet) * mul
+    }
+    return Math.round(sum)
+  }
+
+  /**
+   * 灵兽大比 · 上场比试（每届一次；评分定名次，奖励另点「领奖」）
+   *   16 强镜像（设计库 §2.2 首批近似）：15 名同档 NPC 整体让玩家 edge、各带 ±spread 起伏，
+   *   保证有输有赢；真 percentile 镜像需全服分位数据，留后续批。
+   * @returns {{ok:boolean, message:string, rank?:number, tier?:string, tierName?:string, score?:number}}
+   */
+  contestEnter (now = Date.now()) {
+    if (!this.unlocked) {
+      const name = getLevelInfo(CONTEST.unlockRealmIndex * 9 + 1).displayName
+      return { ok: false, message: `${name}以下不设灵兽大比，先安心孵蛋。` }
+    }
+    if (!this.squad().length) return { ok: false, message: '尚无随行灵兽可上场，先孵出一只再来比试。' }
+    const c = this._contest()
+    const key = contestKeyOf(now)
+    if (c.doneKey === key) return { ok: false, message: '本届大比已揭榜，领奖即可。' }
+    const score = this.contestScore()
+    let rank = 1
+    for (let i = 0; i < CONTEST.npcs; i++) {
+      const npc = score * (1 - CONTEST.edge + CONTEST.spread * (Math.random() * 2 - 1))
+      if (npc > score) rank++
+    }
+    const t = contestTierOfRank(rank)
+    c.doneKey = key
+    c.lastRank = rank
+    c.lastTier = t.id
+    c.lastScore = score
+    c.claimed = false
+    return {
+      ok: true,
+      rank,
+      tier: t.id,
+      tierName: t.name,
+      score,
+      message: `灵兽大比揭榜：随行编队以 ${score} 分位列第 ${rank} 名（${t.name}），赏格待领。`
+    }
+  }
+
+  /**
+   * 灵兽大比 · 领奖（上场揭榜后领取；结果保留到领完为止，不设过期）
+   *   灵石 ＝ rewardH(名次档) × 档位系数(大境界) × stoneHourly；另附妖丹（§2.3 表首批折算）
+   */
+  contestClaim (now = Date.now()) {
+    const c = this._contest()
+    if (!c.lastTier || c.claimed) return { ok: false, message: '本届没有待领的大比赏格。' }
+    const t = contestTier(c.lastTier)
+    const mul = contestRealmMul(this.realmIndex)
+    const level = this.state.player.realm.level
+    const stones = Math.round(stoneHourly(level) * t.h * mul)
+    const yaodan = t.yaodan | 0
+    this.state.resources.stones = (this.state.resources.stones | 0) + stones
+    this.state.inventory.items.mat_yaodan = (this.state.inventory.items.mat_yaodan | 0) + yaodan
+    c.claimed = true
+    if (c.lastRank === 1) c.wins = (c.wins | 0) + 1
+    return {
+      ok: true,
+      tier: t.id,
+      tierName: t.name,
+      rank: c.lastRank,
+      stones,
+      yaodan,
+      realmMul: mul,
+      message: `大比领奖（第 ${c.lastRank} 名 · ${t.name}${mul !== 1 ? ` · 档位系数 ×${mul}` : ''}）：灵石 +${stones}、妖丹 ×${yaodan}。`
+    }
+  }
+
+  /** 兽潮视图（面板渲染用，纯读） */
+  waveView (now = Date.now()) {
+    const w = this._wave()
+    const key = waveKeyOf(now)
+    return {
+      unlocked: this.unlocked,
+      cycleText: fmtRefreshPeriod(WAVE.cycleDays),
+      pending: key !== w.doneKey,
+      nextInMs: waveMsToNext(now),
+      stats: { fought: w.fought | 0, missed: w.missed | 0, pity: w.pity | 0, pityEvery: WAVE.pityEvery },
+      tiers: WAVE_TIERS.map((t) => ({ id: t.id, name: t.name, shareMin: t.shareMin })),
+      rewardH: { ...WAVE.rewardH },
+      yaodan: { ...WAVE.yaodan },
+      eggChance: { ...WAVE.eggChance }
+    }
+  }
+
+  /** 大比视图（面板渲染用，纯读） */
+  contestView (now = Date.now()) {
+    const c = this._contest()
+    const key = contestKeyOf(now)
+    const t = c.lastTier ? contestTier(c.lastTier) : null
+    return {
+      unlocked: this.unlocked,
+      hasSquad: this.squad().length > 0,
+      cycleText: fmtRefreshPeriod(CONTEST.cycleDays),
+      npcs: CONTEST.npcs,
+      entered: c.doneKey === key,
+      canClaim: c.doneKey === key && !c.claimed,
+      lastRank: c.lastRank | 0,
+      lastTierName: t ? t.name : '',
+      lastScore: c.lastScore | 0,
+      wins: c.wins | 0
+    }
   }
 
   // ── 视图（装配层渲染用，纯读）────────────────────────────────────────────

@@ -30,6 +30,17 @@
  *
  * 存档子树：state.sect（null＝未入宗；mergeDefaults 对老档自动兜底）
  *   新增叶子 techGrants（realmIndex → 已下发功法 id / '—'），老档懒建兜底
+ *
+ * ── V5.5 弟子线首批（收徒 / 培养 / 职权 / 贡献）────────────────────────────
+ *   数据源：src/data/disciples.js（设计库《宗门与弟子 v1》第二部分）
+ *   · **四件事闭环**：收徒（观礼 / 相看）→ 培养（传功升级）→ 职权（派岗）→ 贡献（上缴）
+ *   · 存档叶子 state.sect.**disciples**（本类 `s` getter 懒建兜底，**零迁移**，不动 SaveSystem）
+ *   · 产出只给**材料 / 宗门贡献 / 灵石**，**不发境界**（§七 硬护栏）
+ *   · 归因：灵石入账发生在主循环 `tick()` 内（装配层快照窗口）→ 自动落既有 `sect` 线，
+ *     不新增归因线；贡献 / 材料同既有宗门任务口径（非 qi/stones，不入台账）
+ *   · 上限：全部弟子合计当量 h/日 封顶 DISCIPLE_CAP_H_PER_DAY（设计库第三部分 2.4h/日 → 主人 2026-09-19 拍板下调至 2.0h/日）
+ *   预留（后续批 B2）：助战 / 代管（设计库 §2.3）、出师门客（§2.4）、师徒风险事件（§2.5）、
+ *     藏经阁分层与个人洞府（§1.4）—— 见 data/disciples.js 的 POSTS_RESERVED
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -38,11 +49,28 @@ import {
   contribOf, REALM_GRANTS, realmGrant, taskDurationMs,
   SECT_REFRESH_DAYS, sectMsToNextRefresh, fmtSectRefreshPeriod
 } from '../data/sect.js'
+// V5.5 弟子线（首批：收徒 / 培养 / 职权 / 贡献）——数据先行，参数全在 data 层
+import {
+  RECRUIT, recruitCooldownMs, slotsOf,
+  APTITUDES, PITY, POSTS, POSTS_RESERVED, DISCIPLE_LV, DISCIPLE_CAP_H_PER_DAY, DAY_SEC,
+  aptById, witById, specById, postById, rollAptitude, rollWits, rollSpecialty,
+  rollName, specMaterial, discipleGrowth, discipleOutput, specFitsPost, discipleRateH,
+  trainCostH, capScale
+} from '../data/disciples.js'
 import { getLevelInfo, getRealmMeta, TRIAL_AID } from '../data/realms.js'
 import { getItem } from '../data/items.js'
 import { getTechnique, tierLabel } from '../data/techniques.js'
+import { stoneHourly } from '../data/events.js'   // 当量 h → 灵石（与秘境 / 事件同一口径）
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+/** 大数简写（万 / 亿 / 万亿）——仅用于日志与面板文案，不动任何数值 */
+const fmtBig = (n) => {
+  const v = Math.max(0, Number(n) || 0)
+  if (v >= 1e12) return `${(v / 1e12).toFixed(2)} 万亿`
+  if (v >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`
+  if (v >= 1e4) return `${(v / 1e4).toFixed(2)} 万`
+  return `${Math.round(v)}`
+}
 /** 提前提交的最低受理比例：与"至少接手 1 秒"取小 —— 任务只有几个时辰（现实十几秒），
  *  若硬按 10% 算，1 时辰的活要等 0.5 秒、5 时辰的活要等 2.5 秒；取小后"随时可交"名副其实。 */
 const MIN_CLAIM_RATIO = 0.1
@@ -68,7 +96,7 @@ class SectSystem {
     if (!this.state.sect || typeof this.state.sect !== 'object') {
       this.state.sect = {
         joined: false, sectId: null, rank: 0,
-        totalContrib: 0, lastDay: null, slots: [], techGrants: {}
+        totalContrib: 0, lastDay: null, slots: [], techGrants: {}, disciples: null
       }
     }
     // V3.3.1：老档补「境界下发功法」台账 + 任务板字段兜底（懒建，不进迁移链）
@@ -76,6 +104,19 @@ class SectSystem {
       this.state.sect.techGrants = {}
     }
     if (!Array.isArray(this.state.sect.slots)) this.state.sect.slots = []
+    // V5.5：弟子线子树兜底（懒建，不进迁移链；老档 sect 存在但没有该叶子）
+    const dl = this.state.sect.disciples
+    if (!dl || typeof dl !== 'object') {
+      this.state.sect.disciples = { list: [], pity: 0, gazeAt: 0, seq: 0, accC: 0, accS: 0, accM: {} }
+    } else {
+      if (!Array.isArray(dl.list)) dl.list = []
+      if (typeof dl.pity !== 'number' || !isFinite(dl.pity)) dl.pity = 0
+      if (!dl.gazeAt) dl.gazeAt = 0
+      if (!dl.seq) dl.seq = 0
+      if (typeof dl.accC !== 'number' || !isFinite(dl.accC)) dl.accC = 0
+      if (typeof dl.accS !== 'number' || !isFinite(dl.accS)) dl.accS = 0
+      if (!dl.accM || typeof dl.accM !== 'object') dl.accM = {}
+    }
     return this.state.sect
   }
 
@@ -224,13 +265,16 @@ class SectSystem {
   }
 
   /**
-   * 主循环节拍：俸禄随在线时间入账 + 任务板换轮 + **到点自动交差**
+   * 主循环节拍：俸禄随在线时间入账 + 任务板换轮 + **到点自动交差** + 弟子产出（V5.5）
    * @param {number} now 当前时间戳
    * @param {number} dtSec 本拍经过的在线秒数（暂停/离线传 0 → 只做轮次与自动交差）
-   * @returns {{salary:number, claims:Array<object>}} 本拍入账俸禄 + 自动交差结果（供装配层打日志）
+   * @returns {{salary:number, claims:Array<object>, disciples:{contrib:number, stones:number, mats:number}}}
+   *          本拍入账俸禄 + 自动交差结果 + 弟子产出（供装配层打日志）
+   *   注意：弟子产出的**灵石**在本方法内入账 —— 装配层对 sect.tick 已做快照归因，
+   *         故灵石自动落既有 `sect` 线，无需新增归因点（§13.4 · §七）。
    */
   tick (now, dtSec = 0) {
-    const out = { salary: 0, claims: [] }
+    const out = { salary: 0, claims: [], disciples: { contrib: 0, stones: 0, mats: 0 } }
     if (!this.joined) return out
     this.ensureDaily(now)
     out.claims = this.autoClaimDue(now)
@@ -241,6 +285,7 @@ class SectSystem {
         out.salary = gain
       }
     }
+    out.disciples = this._tickDisciples(now, dtSec)
     return out
   }
 
@@ -599,6 +644,364 @@ class SectSystem {
     }
     this.state.resources.contribution = this.contribution - info.cost
     return { ok: true, cost: info.cost, message: `${info.rankName}同门闻讯赶来，结阵护法（贡献 −${info.cost}）：` }
+  }
+
+  // ── V5.5 弟子线（首批：收徒 → 培养 → 职权 → 贡献）───────────────────────────
+  // 设计源：设计库《宗门与弟子 v1》第二部分；参数全在 src/data/disciples.js
+  //   · 产出只给**材料 / 宗门贡献 / 灵石**，**不发境界**（§七 硬护栏）
+  //   · 灵石在 tick() 内入账 → 归因自动落既有 `sect` 线（不新增线）
+  //   · 存档叶子 state.sect.disciples（懒建兜底，零迁移）
+
+  /** 弟子子树（懒建见 `s` getter） */
+  get d () {
+    return this.s.disciples
+  }
+
+  /** 玩家基准产出（灵气/秒）——传功代价按它折算「当量 h」 */
+  get baseQiPerSec () {
+    return getLevelInfo(this.state.player.realm.level).output.qiPerSec
+  }
+
+  /** 灵石时薪（当量 h 折灵石，与秘境 / 事件同一口径 stoneHourly） */
+  stonePerHour () {
+    return stoneHourly(this.state.player.realm.level)
+  }
+
+  /** 当量 h → 灵气（传功代价用） */
+  hToQi (h) {
+    return Math.max(0, Math.round(this.baseQiPerSec * Math.max(0, Number(h) || 0) * 3600))
+  }
+
+  /**
+   * 收徒资格 / 名额 / 两种方式的可用态（纯读；面板与自测共用同一口径）
+   *   开启条件（设计库 §2.1）：金丹期 + 真传名分；名额见 data/disciples.js slotsOf
+   */
+  recruitGate (now = Date.now()) {
+    const rankIdx = this.rankMeta.idx
+    const realmIdx = this.realmIndex
+    const slots = slotsOf(realmIdx, rankIdx)
+    const used = this.d.list.length
+    const open = this.joined && slots > 0
+    const free = Math.max(0, slots - used)
+    // ⚠ 毫秒时间戳禁用 `| 0`（32 位溢出，见开发册 §7 环境坑）——一律 Number(x) || 0
+    const readyAt = (Number(this.d.gazeAt) || 0) + recruitCooldownMs()
+    return {
+      open,
+      realmOk: realmIdx >= RECRUIT.realmIndex,
+      rankOk: rankIdx >= RECRUIT.rankIdx,
+      realmName: getRealmMeta(RECRUIT.realmIndex).name,
+      rankName: RANKS[RECRUIT.rankIdx].name,
+      slots,
+      used,
+      free,
+      full: used >= slots,
+      canGaze: open && free > 0 && now >= readyAt,
+      gazeInMs: Math.max(0, readyAt - now),
+      cooldownMs: recruitCooldownMs(),
+      inspectCost: RECRUIT.inspectCost,
+      inspectLift: RECRUIT.inspectLift,
+      contribution: this.contribution,
+      canInspect: open && free > 0 && this.contribution >= RECRUIT.inspectCost,
+      pity: this.d.pity | 0,
+      pityNeed: PITY.streak,
+      maxSlots: RECRUIT.maxSlots,
+      aptitudes: APTITUDES,
+      posts: POSTS,
+      reserved: POSTS_RESERVED,
+      capH: DISCIPLE_CAP_H_PER_DAY
+    }
+  }
+
+  /**
+   * 掷一名弟子（观礼 / 相看共用）
+   *   资质含保底（连续 PITY.streak 次未出变异以上 → 好资质权重 ×2，封顶 ×3，见 aptWeights）
+   *   lift＝相看：该弟子资质系数整体上浮 RECRUIT.inspectLift（成长与产出同时 +10%）
+   */
+  _recruit (now = Date.now(), opts = {}) {
+    const gate = this.recruitGate(now)
+    if (!gate.open) {
+      return { ok: false, message: `收徒未开启：需${gate.realmName}期修为，且列身${gate.rankName}。` }
+    }
+    if (gate.full) {
+      return { ok: false, message: `门下已满（${gate.used}/${gate.slots}）：每晋一大境界 +1 名额，首座 +2、掌门 +3，至多 ${gate.maxSlots} 名。` }
+    }
+    const d = this.d
+    const streak = d.pity | 0
+    const aptId = rollAptitude(Math.random(), streak, false)
+    const good = aptId === 'bianyi' || aptId === 'tian'
+    d.pity = good ? 0 : Math.min(999, streak + 1)
+    const seq = (d.seq | 0) + 1
+    d.seq = seq
+    const spec = rollSpecialty(Math.random())
+    const rec = {
+      uid: `disc${seq}`,
+      name: rollName(Math.random(), Math.random()),
+      apt: aptId,
+      wits: rollWits(Math.random()),
+      spec,
+      mat: specMaterial(spec, seq),
+      lv: 1,
+      exp: 0,                 // 预留（经验条 / 出师，后续批）
+      post: null,             // 未派职
+      lift: opts.lift ? RECRUIT.inspectLift : 0,
+      bornAt: now
+    }
+    d.list.push(rec)
+    const a = aptById(rec.apt)
+    const aptText = good && streak >= PITY.streak ? `${a.name}（保底兑现）` : a.name
+    return {
+      ok: true,
+      disciple: rec,
+      message: `${opts.lift ? '相看' : '观礼'}得徒：${rec.name}（${aptText} · 悟性 ${rec.wits} · 特长${specById(rec.spec).name}），已录入门墙。`
+    }
+  }
+
+  /** 观礼收徒（免费，每 3 游戏天一次） */
+  recruitByGaze (now = Date.now()) {
+    const gate = this.recruitGate(now)
+    if (!gate.canGaze) {
+      if (!gate.open) return { ok: false, message: `收徒未开启：需${gate.realmName}期修为，且列身${gate.rankName}。` }
+      if (gate.full) return { ok: false, message: `门下已满（${gate.used}/${gate.slots}）。` }
+      const waitSec = Math.max(1, Math.ceil(gate.gazeInMs / 1000))
+      return { ok: false, message: `观礼之期未到：还需约 ${waitSec} 秒（每 3 游戏天可观礼一次）。` }
+    }
+    const r = this._recruit(now, { lift: false })
+    if (r.ok) this.d.gazeAt = now
+    return r
+  }
+
+  /** 相看收徒（200 贡献；该弟子资质系数整体上浮 10%） */
+  recruitByInspect (now = Date.now()) {
+    const gate = this.recruitGate(now)
+    if (!gate.open) return { ok: false, message: `收徒未开启：需${gate.realmName}期修为，且列身${gate.rankName}。` }
+    if (gate.full) return { ok: false, message: `门下已满（${gate.used}/${gate.slots}）。` }
+    if (this.contribution < RECRUIT.inspectCost) {
+      return { ok: false, cost: RECRUIT.inspectCost, message: `相看需 ${RECRUIT.inspectCost} 贡献（现有 ${this.contribution}）。` }
+    }
+    const r = this._recruit(now, { lift: true })
+    if (r.ok) this.state.resources.contribution = this.contribution - RECRUIT.inspectCost
+    return { ...r, cost: r.ok ? RECRUIT.inspectCost : 0 }
+  }
+
+  /** 传功信息（代价 + 负担性；纯读） */
+  trainInfo (uid) {
+    const d = (this.d.list || []).find((x) => x.uid === uid)
+    if (!d) return { ok: false }
+    const lv = Math.max(1, d.lv | 0)
+    const maxed = lv >= DISCIPLE_LV.max
+    const h = trainCostH(d)
+    const qi = this.hToQi(h)
+    return {
+      ok: true,
+      uid,
+      name: d.name,
+      lv,
+      max: DISCIPLE_LV.max,
+      maxed,
+      h,
+      qi,
+      have: this.state.resources.qi,
+      affordable: !maxed && this.state.resources.qi >= qi
+    }
+  }
+
+  /**
+   * 传功（培养）：耗灵气送弟子一级（首批简化＝一次传功进一级，经验条留后续批）
+   *   代价随等级指数升、随成长系数反比降（见 data/disciples.js trainCostH）
+   *   返回 cost（灵气）供装配层回传归因：属「宗门线支出」，记负额
+   */
+  train (uid) {
+    const info = this.trainInfo(uid)
+    if (!info.ok) return { ok: false, message: '门下没有这名弟子。' }
+    if (info.maxed) return { ok: false, message: `${info.name}已至第 ${info.max} 级，进无可进。` }
+    if (!info.affordable) {
+      return { ok: false, cost: info.qi, message: `传功需 ${fmtBig(info.qi)} 修为（现有 ${fmtBig(this.state.resources.qi)}）。` }
+    }
+    this.state.resources.qi -= info.qi
+    const d = this.d.list.find((x) => x.uid === uid)
+    d.lv = Math.max(1, d.lv | 0) + 1
+    return {
+      ok: true,
+      uid,
+      name: d.name,
+      cost: info.qi,
+      lv: d.lv,
+      message: `传功毕：${d.name}修为进至第 ${d.lv} 级（耗灵气 ${fmtBig(info.qi)}）。`
+    }
+  }
+
+  /**
+   * 派职 / 撤职（职权）
+   *   postId 传 null / 'none' / '' → 撤下回山静修
+   */
+  assignPost (uid, postId) {
+    const d = (this.d.list || []).find((x) => x.uid === uid)
+    if (!d) return { ok: false, message: '门下没有这名弟子。' }
+    if (postId == null || postId === 'none' || postId === '') {
+      d.post = null
+      return { ok: true, uid, post: null, message: `${d.name}已卸去职司，回山静修（不再产出）。` }
+    }
+    const p = postById(postId)
+    if (!p) return { ok: false, message: '宗门里没有这个职司。' }
+    d.post = p.id
+    const fit = specFitsPost(d, p.id) ? '（特长对口 · 产出 +30%）' : ''
+    return { ok: true, uid, post: p.id, message: `${d.name}领${p.name}之职${fit}：${p.desc}` }
+  }
+
+  /**
+   * 弟子线产出统计（纯读；面板与自测共用，也是「静态量级预估」的口径来源）
+   *   rawHPerDay＝未封顶合计 → scale＝封顶缩放 → hPerDay/contribPerDay/stonesPerDay/matsPerDay
+   */
+  discipleStats () {
+    const list = this.d.list || []
+    const scale = capScale(list.reduce((s, x) => s + discipleRateH(x, x.post), 0))
+    const stoneH = this.stonePerHour()
+    let h = 0
+    let contrib = 0
+    let stones = 0
+    let mats = 0
+    for (const x of list) {
+      const p = postById(x.post)
+      if (!p) continue
+      const r = discipleRateH(x, x.post) * scale
+      h += r
+      contrib += r * p.contribPerH
+      if (p.stones) stones += r * stoneH
+      if (p.matPerH > 0) mats += r * p.matPerH
+    }
+    return {
+      count: list.length,
+      posted: list.filter((x) => !!x.post).length,
+      slots: this.slotCount(),
+      rawHPerDay: list.reduce((s, x) => s + discipleRateH(x, x.post), 0),
+      scale,
+      capH: DISCIPLE_CAP_H_PER_DAY,
+      hPerDay: h,
+      hPerHour: h / 24,
+      contribPerDay: Math.round(contrib),
+      stonesPerDay: Math.round(stones),
+      stonesPerHour: stones / 24,
+      matsPerDay: mats,
+      stoneHourly: stoneH
+    }
+  }
+
+  /** 名额（未入宗 / 未开启时回落 0，面板不必另判） */
+  slotCount () {
+    return slotsOf(this.realmIndex, this.rankMeta.idx)
+  }
+
+  /**
+   * 弟子产出一拍（由 tick 内调用）
+   *   按「每现实日当量 h ÷ 86400」逐秒累计，取整后入账：
+   *     贡献 → earnContribution（货币 + 累计双线，与任务同通道）
+   *     灵石 → resources.stones（**在主循环快照窗口内 → 归因落既有 sect 线**）
+   *     材料 → inventory.items[x.mat]（同宗门任务口径，不入台账）
+   *
+   * ⚠ 小数位累计器挂在**子树聚合层**（disciples.accC / accS / accM）而不是逐名弟子：
+   *   封顶后 9 名弟子每名仅 ≈0.267 当量 h/日，若逐人取整会被 floor 吃光（材料永远 0 份）。
+   */
+  _tickDisciples (now = Date.now(), dtSec = 0) {
+    const out = { contrib: 0, stones: 0, mats: 0 }
+    if (!this.joined || !(dtSec > 0)) return out
+    const dl = this.d
+    const list = dl.list
+    if (!list.length) return out
+    const stats = this.discipleStats()
+    const stoneH = stats.stoneHourly
+    let dC = 0
+    let dS = 0
+    const dM = {}
+    for (const x of list) {
+      const p = postById(x.post)
+      if (!p) continue
+      const dh = discipleRateH(x, x.post) * stats.scale / DAY_SEC * dtSec   // 本拍当量 h
+      dC += dh * p.contribPerH
+      if (p.stones) dS += dh * stoneH
+      if (p.matPerH > 0 && x.mat) dM[x.mat] = (dM[x.mat] || 0) + dh * p.matPerH
+    }
+    dl.accC = (Number(dl.accC) || 0) + dC
+    dl.accS = (Number(dl.accS) || 0) + dS
+    // ⚠ 小数位逐秒累加后 floor；封顶档（如 2.0h/日×40）浮点求和可能落到 79.9999…
+    //    故 floor 加 1e-6 容差（<1、远大于 ~1e-13 浮点噪声，不引入任何系统性多付）
+    const FL = 1e-6
+    const nC = Math.floor(dl.accC + FL)
+    if (nC > 0) {
+      dl.accC -= nC
+      this.earnContribution(nC)
+      out.contrib = nC
+    }
+    const nS = Math.floor(dl.accS + FL)
+    if (nS > 0) {
+      dl.accS -= nS
+      // ⚠ 大数禁 `| 0`（32 位溢出）：灵气/灵石都可冲到 1e9 以上
+      this.state.resources.stones = (Number(this.state.resources.stones) || 0) + nS
+      out.stones = nS
+    }
+    const accM = dl.accM || (dl.accM = {})
+    const inv = this.state.inventory.items
+    let nM = 0
+    for (const id of Object.keys(dM)) accM[id] = (Number(accM[id]) || 0) + dM[id]
+    // 各材料先发 floor 的整数部分，余数归正到 [0,1)；分池各 <1 时会吃掉总量，
+    // 故再用**最大余数法**把合计小数位（floor 后）补发的整数份分给余数最大的材料 —— 材料产出贴合名义当量
+    const mids = Object.keys(accM)
+    for (const id of mids) {
+      const n = Math.floor(accM[id] + FL)
+      if (n > 0) { inv[id] = (inv[id] | 0) + n; nM += n }
+      accM[id] -= n   // 归正为余数 ∈ [0,1)
+    }
+    const extra = Math.floor(mids.reduce((s, id) => s + accM[id], 0) + FL)
+    if (extra > 0) {
+      const order = mids.slice().sort((a, b) => accM[b] - accM[a])
+      for (let i = 0; i < extra; i++) {
+        const id = order[i % order.length]
+        inv[id] = (inv[id] | 0) + 1
+        nM += 1
+        accM[id] -= 1   // 记一笔「已发」的债，后续累计自行回正
+      }
+    }
+    out.mats = nM
+    return out
+  }
+
+  /** 弟子列表视图（面板渲染用，纯读） */
+  disciplesView () {
+    const stats = this.discipleStats()
+    const list = (this.d.list || []).map((x) => {
+      const a = aptById(x.apt)
+      const w = witById(x.wits)
+      const sp = specById(x.spec)
+      const p = postById(x.post)
+      const info = this.trainInfo(x.uid)
+      return {
+        uid: x.uid,
+        name: x.name,
+        lv: Math.max(1, x.lv | 0),
+        lvMax: DISCIPLE_LV.max,
+        apt: a,
+        wits: w,
+        spec: sp,
+        lift: x.lift || 0,
+        matName: x.mat ? getItem(x.mat).name : '',
+        postId: x.post || null,
+        post: p,
+        fit: p ? specFitsPost(x, p.id) : false,
+        growth: discipleGrowth(x),
+        output: discipleOutput(x),
+        rateH: discipleRateH(x, x.post) * stats.scale,   // 已封顶折算后的每日当量
+        rawRateH: discipleRateH(x, x.post),
+        trainQi: info.qi || 0,
+        trainMaxed: !!info.maxed,
+        trainAffordable: !!info.affordable,
+        posts: POSTS.map((pp) => ({
+          id: pp.id,
+          name: pp.name,
+          active: pp.id === x.post,
+          fit: specFitsPost(x, pp.id)
+        }))
+      }
+    })
+    return { stats, list, gate: this.recruitGate(), reserved: POSTS_RESERVED }
   }
 
   // ── 视图（装配层渲染用，纯读）────────────────────────────────────────────

@@ -32,9 +32,9 @@ import { refreshMs, periodKeyOf, msToNextPeriod } from './gametime.js'
 const powerBase = FORMULA.powerBase        // 35
 const powerGrowth = FORMULA.powerGrowth    // 1.40
 
-/** 试炼塔（MVP 1~60 层；层数上限 floors 可扩到 100） */
+/** 试炼塔（V5.1.2 扩容：1~100 层；floors 即设计全量，不再预留扩容注释） */
 export const TOWER = {
-  floors: 60,                 // MVP 首版层数（设计全量 100 层，随后续版本扩）
+  floors: 100,                // V5.1.2：由 60 扩到 100（设计全量层数）
   powerMul: 1.15,             // 敌战力 = 1.15 × power(m)
   firstClearBase: 1.5,        // 首通当量 h = 1.5 + 0.15×m
   firstClearPer: 0.15,
@@ -42,8 +42,11 @@ export const TOWER = {
   weeklyCap: 20,              // 周扫荡上限 20h
   milestoneEvery: 10,         // 每 10 层里程碑
   milestoneBonusH: 5,         // 里程碑「材料箱」≈ +5h 当量（外观/灵兽蛋等后续模块接入）
-  // V5.1：里程碑文案里本就预留的「秘境积分 ×100」接线（招牌积分商店的上游来源）
-  milestonePoints: { 30: 100 }
+  // V5.1.2：试炼塔里程碑「秘境积分」发放表（招牌积分商店上游来源）
+  //   来源：仅 30 层有基准数据（V5.1 预留 milestonePoints[30]=100，即「秘境积分 ×100」）。
+  //   70/80/90/100 为 V5.1.2 新增四档，数值沿用 30 层口径——每 10 层一档、每档 +100 点，
+  //   与 30 层同口径（仅 30 层有基准数据，不擅自递增斜率）。如需递增曲线由主人拍板后单点调。
+  milestonePoints: { 30: 100, 70: 100, 80: 100, 90: 100, 100: 100 }
 }
 
 /** 试炼塔第 m 层推荐战力（= 1.15 × power(m)，与 CSV 逐层取整一致） */
@@ -70,7 +73,12 @@ export function towerMilestone (m) {
     30: '秘境积分 ×100',
     40: '灵兽蛋 ×1 · 材料箱',
     50: '解锁自动推塔 · 大材料箱',
-    60: '外观「塔顶客」'
+    60: '外观「塔顶客」',
+    // V5.1.2：70~100 层外观档，风格与 60 层「塔顶客」一致（"XX客" 命名）
+    70: '外观「凌云客」',
+    80: '外观「摘星客」',
+    90: '外观「踏虚客」',
+    100: '外观「登天客」'
   }
   return labels[m] || `第 ${m} 层里程碑`
 }

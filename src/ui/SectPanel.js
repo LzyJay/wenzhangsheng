@@ -1,9 +1,16 @@
 /**
- * SectPanel.js —— 宗门面板（#sect-overlay：信息 / 任务板 / 藏经阁 / 商店）
+ * SectPanel.js —— 宗门面板（#sect-overlay：信息 / 任务板 / 藏经阁 / 商店 / 门下弟子）
  * ═══════════════════════════════════════════════════════════════════════════
  * 边界（src/ui/ 层 · V3.5.6 拆分 main.js 第二批）：只碰本面板自己的 DOM；
  *   systems（sect）与装配层工具经 createSectPanel(ctx) 注入，禁止 import systems；
- *   纯数据层可 import（当前无）。任务/职级/商店规则在 SectSystem + data/sect.js。
+ *   纯数据层可 import（当前无）。任务/职级/商店规则在 SectSystem + data/sect.js，
+ *   弟子线（收徒 / 培养 / 职权 / 贡献）规则在 SectSystem + data/disciples.js。
+ *
+ * V5.5 注入契约（两条铁律，与 DungeonPanel 同口径）：
+ *   · Rule A：面板顶**只取 getter**（`const getSect = ctx.sect`），不得把 `ctx.sect` 直取成
+ *     局部常量——直传会在 boot 早期被捕获成 null，面板静默全空（V4.7 批 0 实测过）。
+ *   · Rule B：委托回调内**自行 getSect() / getState()**，不裸引用 render() 的局部变量。
+ *   装配层对应写法见 main.js「宗门（2.4）」区块（`state: () => state, sect: () => sect`）。
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -13,15 +20,18 @@ import { getRealmMeta } from '../data/realms.js'
 
 export function createSectPanel (ctx) {
   const dom = ctx.dom
-  const state = ctx.state
-  const sect = ctx.sect
+  // V5.5：系统一律 **getter 注入**（Rule A）——直传实例在 boot 早期会被捕获成 null，
+  //   面板静默全空（V4.7 批 0 在渡劫面板上实测过）。委托回调内一律自行 getSect() / getState()
+  //   （Rule B），不裸引用 render() 的局部变量。
+  const getState = ctx.state
+  const getSect = ctx.sect
   const H = ctx.helpers
   if (!dom.sectOverlay) return null
 
 // ── 宗门面板（2.4）：信息 / 任务板 / 藏经阁 / 商店 ─────────────────────────
 
   function open () {
-    if (!state) return
+    if (!getState()) return
     H.closeTip()
     H.closeAllOverlays('sect')
     render()
@@ -59,6 +69,7 @@ function fmtTaskLeft (ms) {
  *   无待接的活儿 → 「一键接取」置灰；无到点的活儿 → 「一键提交」置灰（未到期不替你折损）
  */
 function syncTaskBulkBtns (taskList) {
+  const state = getState()
   const live = Array.isArray(taskList) ? taskList.filter((t) => !t.broken) : []
   const openCnt = live.filter((t) => t.state === 'open').length
   if (dom.btnTaskStartall) {
@@ -80,7 +91,142 @@ function syncTaskBulkBtns (taskList) {
   }
 }
 
+/**
+ * V5.5 门下弟子区（收徒 → 培养 → 职权 → 贡献）
+ *   数据全部取自 sect.disciplesView()（纯读）；本区只做接线与展示，规则在 SectSystem + data/disciples.js。
+ */
+function renderDisciples (info) {
+  const host = dom.sectDisciples
+  if (!host) return
+  const sect = getSect()
+  if (!sect) return
+  if (!info.joined) {
+    host.innerHTML = '<div class="bag-empty">入宗后开放</div>'
+    return
+  }
+  const v = sect.disciplesView()
+  const g = v.gate
+  const st = v.stats
+  const capped = st.rawHPerDay > st.capH + 1e-9
+
+  let head = ''
+  if (!g.open) {
+    head = `<div class="si-line">收徒未开：需 <b>${g.realmName}</b> 期修为，且列身 <b>${g.rankName}</b>` +
+      `（今为 ${getRealmMeta(sect.realmIndex).name}期 · ${sect.rankMeta.name}）。先做宗门任务攒贡献、晋职级。</div>`
+  } else {
+    head =
+      `<div class="si-line">门墙 <b>${g.used}/${g.slots}</b> 名（上限 ${g.maxSlots}：每晋一大境界 +1 · 首座 +2 · 掌门 +3）` +
+      `　在岗 ${st.posted} 名　保底计数 ${g.pity}/${g.pityNeed}</div>` +
+      `<div class="si-line">合计产出 <span class="jade">${st.hPerDay.toFixed(2)} 当量 h/日</span>` +
+      `　贡献 +${st.contribPerDay}/日　灵石 +${H.fmt(st.stonesPerDay)}/日　材料 ${st.matsPerDay.toFixed(1)} 份/日` +
+      (capped ? `　<span class="dim">（原始 ${st.rawHPerDay.toFixed(2)} h/日，已按宗门线护栏压至 ${st.capH} h/日）</span>` : '') +
+      `</div>`
+  }
+  const gazeNote = !g.open ? '未开启'
+    : (g.free <= 0 ? '名额已满'
+      : (g.canGaze ? '' : `还差 ${Math.max(1, Math.ceil(g.gazeInMs / 1000))} 秒`))
+  head +=
+    `<div class="sect-row">` +
+    `<span class="tn">收徒</span>` +
+    `<span class="td">观礼：免费，每 3 游戏天一次　｜　相看：${g.inspectCost} 贡献，此徒资质系数 +${Math.round(g.inspectLift * 100)}%` +
+    `<em style="color:rgba(185,140,255,0.8)">弟子只产材料 / 贡献 / 灵石，不发境界</em></span>` +
+    `<span class="tp dim">${g.open ? `空名额 ${g.free}` : ''}</span>` +
+    `<button class="mini gap" data-recruit-gaze${g.canGaze ? '' : ' disabled'}>观礼${gazeNote ? `（${gazeNote}）` : ''}</button>` +
+    `<button class="mini" data-recruit-inspect${g.canInspect ? '' : ' disabled'}>相看 ${g.inspectCost}</button>` +
+    `</div>`
+  host.innerHTML = head
+
+  if (!v.list.length) {
+    const empty = document.createElement('div')
+    empty.className = 'bag-empty'
+    empty.textContent = g.open
+      ? '门墙尚空 —— 先「观礼」或「相看」收一名弟子（观礼免费，有冷却）。'
+      : '收徒开启后可在此培养弟子。'
+    host.appendChild(empty)
+    return
+  }
+
+  const frag = document.createDocumentFragment()
+  for (const d of v.list) {
+    const row = document.createElement('div')
+    row.className = 'sect-row' + (d.post ? '' : ' locked')
+
+    const tn = document.createElement('span')
+    tn.className = 'tn'
+    tn.textContent = d.name
+
+    const td = document.createElement('span')
+    td.className = 'td'
+    td.textContent = `${d.apt.name} · 悟性 ${d.wits.id} · 特长${d.spec ? d.spec.name : '—'} · 第 ${d.lv}/${d.lvMax} 级`
+
+    const line2 = document.createElement('div')
+    line2.textContent = d.post
+      ? `职司 ${d.post.name}${d.fit ? '（对口 +30%）' : ''} → ${d.rateH.toFixed(3)} 当量 h/日${d.matName ? ` · 出 ${d.matName}` : ''}`
+      : '闲居未派职（不产出）'
+    line2.style.color = 'rgba(232,185,106,0.78)'
+    td.appendChild(line2)
+
+    if (d.trainMaxed) {
+      const em = document.createElement('em')
+      em.textContent = '已至满级'
+      em.style.color = 'rgba(127,214,168,0.85)'
+      td.appendChild(em)
+    } else if (!d.trainAffordable) {
+      const em = document.createElement('em')
+      em.textContent = `传功需 ${H.fmt(d.trainQi)} 修为（不足）`
+      em.style.color = 'rgba(226,120,120,0.85)'
+      td.appendChild(em)
+    }
+
+    // 职权：每名已实装岗位一枚按钮 + 一枚「撤职 / 闲居」
+    const acts = document.createElement('div')
+    acts.style.marginTop = '2px'
+    for (const p of d.posts) {
+      const b = document.createElement('button')
+      b.className = 'mini'
+      b.style.marginRight = '4px'
+      b.textContent = `${p.name}${p.active ? ' ✓' : ''}`
+      b.dataset.postSet = d.uid
+      b.dataset.post = p.id
+      b.title = p.fit ? `${p.name}（特长对口 · 产出 +30%）` : `${p.name}`
+      if (p.active) b.disabled = true
+      acts.appendChild(b)
+    }
+    const off = document.createElement('button')
+    off.className = 'mini'
+    off.textContent = d.post ? '撤职' : '闲居'
+    off.dataset.postSet = d.uid
+    off.dataset.post = 'none'
+    off.title = '卸去职司，回山静修（不产出）'
+    if (!d.post) off.disabled = true
+    acts.appendChild(off)
+    td.appendChild(acts)
+
+    const tp = document.createElement('span')
+    tp.className = 'tp dim'
+    tp.textContent = d.trainMaxed ? '满级' : `传功 ${H.fmt(d.trainQi)}`
+
+    const btn = document.createElement('button')
+    btn.className = 'mini gap'
+    if (d.trainMaxed) {
+      btn.textContent = '已满'
+      btn.disabled = true
+    } else {
+      btn.textContent = '传功'
+      btn.dataset.train = d.uid
+      btn.disabled = !d.trainAffordable
+      btn.title = `耗灵气 ${H.fmt(d.trainQi)}，修为进一级（代价随等级升、随资质悟性降）`
+    }
+
+    row.append(tn, td, tp, btn)
+    frag.appendChild(row)
+  }
+  host.replaceChildren(frag)
+}
+
 function render () {
+  const state = getState()
+  const sect = getSect()
   if (!state || !sect) return
   const info = sect.infoView()
 
@@ -279,6 +425,9 @@ function render () {
     dom.sectShop.replaceChildren(frag)
   }
 
+  // ⑤ 门下弟子（V5.5：收徒 / 传功 / 派职 / 贡献）
+  renderDisciples(info)
+
   if (dom.sectNote) {
     dom.sectNote.textContent = info.joined
       ? `任务板${info.refreshText || H.fmtRefreshPeriod()}刷新一次（交完本轮转空 · 距下一轮 ${fmtTaskLeft(info.nextRefreshInMs || H.msToNextRefresh(Date.now()))}）；` +
@@ -293,6 +442,10 @@ function render () {
 
 // 宗门面板动作（事件委托：面板每次重绘不丢监听）
 dom.sectOverlay.addEventListener('click', (e) => {
+  // V5.5 Rule B：委托回调内自行取 system / state —— 不裸引用 render() 的局部变量
+  const state = getState()
+  const sect = getSect()
+  if (!state || !sect) return
   // V4.7 主人：一键接取 / 一键提交（回执合并成一条，避免逐槽刷屏）
   const tsa = e.target.closest('[data-task-startall]')
   if (tsa && !tsa.disabled) {
@@ -383,6 +536,51 @@ dom.sectOverlay.addEventListener('click', (e) => {
     const res = sect.buyShop(sb.dataset.shopBuy)
     H.pushLog(res.message, res.ok ? 'ok' : 'info')
     if (res.ok) H.persist('sect-shop')
+    render()
+    return
+  }
+  // ── V5.5 弟子线（收徒 / 传功 / 职权）───────────────────────────────────────
+  const rg = e.target.closest('[data-recruit-gaze]')
+  if (rg && !rg.disabled) {
+    const res = sect.recruitByGaze()
+    H.pushLog(res.message, res.ok ? 'root' : 'info')
+    if (res.ok) {
+      H.persist('sect-recruit-gaze')
+      H.emitBurst({ kind: 'breakthrough' })
+    }
+    render()
+    return
+  }
+  const ri = e.target.closest('[data-recruit-inspect]')
+  if (ri && !ri.disabled) {
+    const res = sect.recruitByInspect()
+    H.pushLog(res.message, res.ok ? 'root' : 'info')
+    if (res.ok) {
+      H.persist('sect-recruit-inspect')
+      H.emitBurst({ kind: 'breakthrough' })
+    }
+    render()
+    return
+  }
+  const tr = e.target.closest('[data-train]')
+  if (tr && !tr.disabled) {
+    const res = sect.train(tr.dataset.train)
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      // 传功＝灵气支出（宗门线净额的负项）→ 回传既有 `sect` 归因线，不新增线
+      // ⚠ 大数禁 `| 0`（会 32 位溢出），一律 Number(x) || 0
+      if (H.noteSect) H.noteSect({ qi: -(Number(res.cost) || 0) })
+      H.persist('sect-train')
+      H.emitFloat({ text: `${res.name} · 第 ${res.lv} 级`, kind: 'gold' })
+    }
+    render()
+    return
+  }
+  const ps = e.target.closest('[data-post-set]')
+  if (ps && !ps.disabled) {
+    const res = sect.assignPost(ps.dataset.postSet, ps.dataset.post)
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) H.persist('sect-post')
     render()
   }
 })
