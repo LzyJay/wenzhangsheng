@@ -33,7 +33,7 @@
 
 import { GRADES, WANSHOU, HATCH, STAR, DECOMPOSE, ASSIST, FEED, GROWTH, OUTPUT, PARK_CAP, TRIAL_BEAST, AWAKEN, MORPH, dayKey, getGrade, getSpecies, rollGrade, speciesOfGrade } from '../data/beasts.js'
 // V5.6 兽潮与灵兽大比：参数与周期/分档纯函数（数据先行，见 data/beastWaves.js 文件头口径）
-import { WAVE, CONTEST, WAVE_TIERS, waveKeyOf, waveMsToNext, contestKeyOf, waveTierOfShare, waveTierRank, waveTierName, contestTierOfRank, contestTier, contestRealmMul } from '../data/beastWaves.js'
+import { WAVE, CONTEST, WAVE_TIERS, waveKeyOf, waveMsToNext, contestKeyOf, waveTierOfShare, waveTierRank, waveTierName, contestTierOfRank, contestTier, contestRealmMul, contestBaseScore } from '../data/beastWaves.js'
 import { getLevelInfo } from '../data/realms.js'
 import { getItem } from '../data/items.js'
 // 奖励折灵石：与秘境 / 事件同一量纲（1 h 当量 → stoneHourly(level) 灵石）
@@ -885,8 +885,8 @@ class BeastSystem {
 
   /**
    * 灵兽大比 · 上场比试（每届一次；评分定名次，奖励另点「领奖」）
-   *   16 强镜像（设计库 §2.2 首批近似）：15 名同档 NPC 整体让玩家 edge、各带 ±spread 起伏，
-   *   保证有输有赢；真 percentile 镜像需全服分位数据，留后续批。
+   *   16 强镜像（V5.6.2 换锚）：15 名 NPC 锚到「档位基准分 baseScore[大境界]」沿 ±span 铺开，
+   *   全队再乘每届 swing 浮动 —— 基准不依赖玩家分数，故编队越强名次越好（真 percentile 留后续批）。
    * @returns {{ok:boolean, message:string, rank?:number, tier?:string, tierName?:string, score?:number}}
    */
   contestEnter (now = Date.now()) {
@@ -899,9 +899,14 @@ class BeastSystem {
     const key = contestKeyOf(now)
     if (c.doneKey === key) return { ok: false, message: '本届大比已揭榜，领奖即可。' }
     const score = this.contestScore()
+    // V5.6.2 换锚：NPC 分数锚到「档位基准分」而非玩家自己的分数 ——
+    //   旧式 npc = score × (…) 判 npc > score 会把 score 约掉，名次与编队强度完全无关。
+    const base = contestBaseScore(this.realmIndex)
+    const swing = 1 + CONTEST.swing * (Math.random() * 2 - 1)
     let rank = 1
     for (let i = 0; i < CONTEST.npcs; i++) {
-      const npc = score * (1 - CONTEST.edge + CONTEST.spread * (Math.random() * 2 - 1))
+      const t = (i + Math.random()) / CONTEST.npcs          // 15 名沿基准铺开
+      const npc = base * swing * (1 + CONTEST.span * (2 * t - 1))
       if (npc > score) rank++
     }
     const t = contestTierOfRank(rank)
@@ -977,6 +982,8 @@ class BeastSystem {
       hasSquad: this.squad().length > 0,
       cycleText: fmtRefreshPeriod(CONTEST.cycleDays),
       npcs: CONTEST.npcs,
+      base: contestBaseScore(this.realmIndex),   // V5.6.2：本届同档基准分（面板显示，让玩家知道差距）
+      span: CONTEST.span,                        // V5.6.2：铺开幅度（面板解释名次怎么来的）
       entered: c.doneKey === key,
       canClaim: c.doneKey === key && !c.claimed,
       lastRank: c.lastRank | 0,

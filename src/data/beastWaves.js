@@ -9,6 +9,8 @@
  *   · 大比：周期评比（每 7 个「刷新日」一届 · 16 强镜像对阵）+ 名次分档奖励（§2.3 表）
  * V5.6.1（C2）已补：奖励池扩「觉醒石 / 兽王精华」（设计库 §1.5 奖励池原文），
  *   供血脉觉醒 / 化形消耗（参数在 data/beasts.js 的 AWAKEN / MORPH）。
+ * V5.6.2（C3）已改：大比镜像换锚 —— NPC 分数锚到「档位基准分」（随大境界递进）而非玩家
+ *   自己的分数，使编队强度真正决定名次（参数 CONTEST.span / swing / baseScore）。
  * 未进本批（后续批 / 其他域）：全服共享血池 / 防线限时秘境 / 斗法丹 / 赛季积分与
  *   限定称号（称号表在 achievements 域，跨域不动）/ 代采（产出线，需另立周期，见 C2 清单 §5）。
  *
@@ -23,9 +25,11 @@
  *     门槛按「无兽参战＝参与 / 单只出战＝中坚 / 满编高星＝前列」校准（WAVE_TIERS.shareMin）。
  *   · 掉蛋保底（§1.2「每 3 次兽潮必出 1 枚灵品以上」）：连续 pityEvery 次抵御未出蛋
  *     → 下一波必出（灵品以上；王品蛋另按 wangChance 概率）。
- *   · 大比评分＝Σ(品级战力% × 等级系数 × 星级系数 × 编队权重) × scorePer；
- *     16 强镜像＝15 名同档 NPC 整体让玩家 edge、各带 ±spread 起伏（首批近似 §2.2
- *     「percentile 镜像 · 有输有赢」——单机无全服分位数据，真分位留后续批）。
+ *   · 大比评分＝Σ(品级战力% × 等级系数 × 星级系数 × 编队权重) × scorePer（**本式未动**）；
+ *     16 强镜像（V5.6.2 换锚）＝15 名 NPC 锚到「档位基准分 baseScore[大境界]」沿 ±span
+ *     铺开，全队再乘每届 swing 浮动 —— 基准不依赖玩家分数，故编队越强名次越好。
+ *     ⚠ 旧式「npc = score × 系数」判 npc > score 会把 score 约掉（⟺ u > 0.7667，恒 4.50 名），
+ *     名次与强度无关 —— C1 首批近似过头的缺陷，V5.6.2 修正；真 percentile 分位仍留后续批。
  *   · 大比奖励＝§2.3 内门档基准表 ÷ 48（一届 ≈ 1/48 周），折灵石走 events.stoneHourly
  *     （与秘境 / 事件同一量纲）；档位系数（外门 0.6 / 内门 1.0 / 真传 1.8 / 长老 3.0）
  *     按大境界序取（§2.3）。设计库原文「奖励计入宗门线预算」：本批归因按任务卡硬口径
@@ -75,8 +79,19 @@ export const CONTEST = {
   unlockRealmIndex: 2,                      // 金丹起可上场
   cycleDays: 7 * REFRESH_DAYS,              // 210 游戏天 ≈ 现实 3.5 小时一届（§2.1 七日循环的折算）
   npcs: 15,                                 // 16 强签位（§2.1 淘汰赛 16 强口径）
-  spread: 0.15,                             // 镜像起伏 ±15%（§2.2「每局 ±5% 随机起伏」首批取档内散布）
-  edge: 0.08,                               // 同档镜像整体让玩家 8%（近似 percentile 镜像的「有输有赢」）
+  // ── V5.6.2 换锚：NPC 锚到档位基准分，编队强度 → 名次 ────────────────────
+  span: 0.50,                               // NPC 沿档位基准铺开 ±50%（决定「强度→名次」的灵敏度）
+  swing: 0.15,                              // 每届整体浮动 ±15%（保留 §2.2「有输有赢」；原 spread 的角色）
+  baseScore: [                              // 档位基准分（＝该境界「中位编队」分数；§2.2 的「同档」＝大境界）
+    { from: 0, base: 60 },                  // 炼气（大比未解锁，占位）
+    { from: 1, base: 75 },                  // 筑基（同上）
+    { from: 2, base: 95 },                  // 金丹
+    { from: 3, base: 140 },                 // 元婴
+    { from: 4, base: 215 },                 // 化神
+    { from: 5, base: 285 },                 // 炼虚
+    { from: 6, base: 350 },                 // 合体（2 辅助位）
+    { from: 7, base: 350 }                  // 大乘（同 2 辅助位，与合体同基准）
+  ],
   scorePer: 1000,                           // 编队评分系数
   tiers: [                                  // 名次 → 奖励（maxRank＝该档最高名次；§2.3 表 ÷ 48）
     { id: 'champion', name: '冠军', maxRank: 1, h: 4 / 48, yaodan: 3 },
@@ -135,10 +150,16 @@ export function contestRealmMul (realmIndex) {
   for (const r of CONTEST.realmMul) if (realmIndex >= r.from) mul = r.mul
   return mul
 }
+/** 大境界序 → 大比档位基准分（V5.6.2 换锚；同款读法，取「from ≤ realmIndex」的最后一档） */
+export function contestBaseScore (realmIndex) {
+  let base = CONTEST.baseScore[0].base
+  for (const b of CONTEST.baseScore) if (realmIndex >= b.from) base = b.base
+  return base
+}
 
 export default {
   WAVE, WAVE_TIERS, CONTEST,
   waveKeyOf, waveMsToNext, contestKeyOf, contestMsToNext,
   waveTierOfShare, waveTierRank, waveTierName,
-  contestTierOfRank, contestTier, contestRealmMul
+  contestTierOfRank, contestTier, contestRealmMul, contestBaseScore
 }

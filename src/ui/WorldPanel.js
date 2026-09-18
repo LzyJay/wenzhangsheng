@@ -6,7 +6,9 @@
  *   纯数据层可 import（当前用 data/worldMechanics.js 的 MECH 做量级文案）。
  *
  * 结构（已拍板方案①）：**不新增遮罩**——沿用 `#world-overlay`，只多一个 `data-state="daily"`：
- *   intro（开局抽世界）/ result（揭晓）/ **daily（本面板：世界词条 + 专属机制 + 摩擦项）**；
+ *   intro（开局抽世界）/ result（揭晓）/ **daily（本面板：世界词条 + 专属机制 + 摩擦项 + 换界行）**；
+ *   V5.3 A4c 追加「换界 · 界镜 / 界游符」一行（`data-world-travel="<kind>:buy|use"`，第三条委托分支）——
+ *   数据与结算在 `WorldSystem.travelView / buyTravel / useTravel`（面板只做按钮与文案，零 state 写入）；
  *   `.ov` 遮罩家族仍 11 个（本遮罩本来就不带 .ov class）。
  * 开合由注入的 helpers.showWorldOverlay / hideWorldOverlay 完成（与 main.js 开局两态同一对函数），
  *   Esc 与面板互斥由装配层登记（A3 已按 K0 预核风险申报，见回执-A3 §1）。
@@ -35,6 +37,46 @@ export function createWorldPanel (ctx) {
   const noteHost = pick('worldDailyNote', 'world-daily-note')
 
   const esc = (s) => String(s == null ? '' : s)
+
+  // V5.3 A4c：换界（界游符）不可逆——熟练度清零 → 面板内**二次确认**（只用一个闭包标志，不引新宿主）
+  let pendingSwap = false
+
+  /**
+   * 换界道具行（V5.3 A4c）：界镜 / 界游符 各「兑（花灵石）/ 用（消耗一件）」两键。
+   * 纯展示 + data 属性；结算全在世界机制/世界系统里（本函数不碰 state）。
+   */
+  function travelRowHtml (tv) {
+    if (!tv || !tv.drawn) return ''
+    const line = (p, buyLabel, useLabel) => {
+      const buyWhy = p.canBuy ? ''
+        : (p.limited && p.leftToday === 0
+            ? '本日额度已领完'
+            : (p.affordable ? '不可兑领' : `灵石不足（需 ${H.fmt(p.priceStones)}）`))
+      const useWhy = p.held >= 1 ? '' : `行囊无${p.name}`
+      return '<div class="world-d-travel-line">' +
+        `${esc(p.name)} <b>×${p.held}</b>　兑价 ${H.fmt(p.priceStones)} 灵石（${p.priceH}h 当量）` +
+        (p.limited ? `　<span class="world-d-quota">本日额度 ${p.usedToday}/${p.dailyLimit}</span>` : '　不限量') +
+        '<div class="dbtns">' +
+        `<button class="d-btn" data-world-travel="${esc(p.kind)}:buy"${p.canBuy ? '' : ' disabled'}` +
+        `${buyWhy ? ` title="${esc(buyWhy)}"` : ''}>${buyLabel}</button>` +
+        `<button class="d-btn" data-world-travel="${esc(p.kind)}:use"${p.held >= 1 ? '' : ' disabled'}` +
+        `${useWhy ? ` title="${esc(useWhy)}"` : ''}>${useLabel}</button>` +
+        '</div></div>'
+    }
+    const confirmHint = pendingSwap
+      ? '<br><span class="world-d-tax">⚠ 再点一次「确 认 换 界」即生效：熟练度清零、专属机制状态重置（招牌首通与秘境积分保留）</span>'
+      : ''
+    return '<div class="dungeon-row">' +
+      '<span class="dn">换界 · 界镜 / 界游符</span>' +
+      '<span class="dd">' +
+      line(tv.mirror, '兑 界 镜', '用界镜重掷') +
+      line(tv.talisman, '兑 界 游 符', pendingSwap ? '确 认 换 界' : '换 界') +
+      '<br>换界为<b>原子</b>切换：世界修正 ＋ 熟练度（清零）＋ 专属机制状态一起换；' +
+      '招牌首通与秘境积分是跨界资产，保留。' +
+      `「界游之礼」期望 ≈ ${(tv.giftExpectH || 0).toFixed(1)}h 当量（灵石或既有材料，单次随机）。` +
+      confirmHint +
+      '</span></div>'
+  }
 
   function open () {
     if (!getState()) return
@@ -133,6 +175,8 @@ export function createWorldPanel (ctx) {
           `</div>`
       }
     }
+    // ②-b（V5.3 A4c）换界道具行：界镜 / 界游符（世界系统提供数据，面板只做按钮与文案）
+    if (world && typeof world.travelView === 'function') actsHtml += travelRowHtml(world.travelView(now))
     actsHost.innerHTML = actsHtml
 
     // ③ 摩擦行（三种：已在别处生效的展示联动 / 只做标记 / 可开关）
@@ -182,8 +226,48 @@ export function createWorldPanel (ctx) {
   const onPress = H.onPress || ((host, fn) => host.addEventListener('click', fn))
   onPress(dom.worldOverlay, (e) => {
     const system = getSystem()
-    if (!system) return
     const st = getState()
+    // ── V5.3 A4c：换界（界镜 / 界游符）── 先于世界机制分支判定（换界后本界动作整行会随之改变）
+    const trBtn = e.target.closest('[data-world-travel]')
+    if (trBtn && !trBtn.disabled) {
+      const wsys = getWorld()
+      if (!wsys || typeof wsys.useTravel !== 'function') {
+        H.pushLog('世界系统未接线，暂时无法换界。', 'info')
+        return
+      }
+      const parts = String(trBtn.dataset.worldTravel || '').split(':')
+      const kind = parts[0]
+      const action = parts[1]
+      if (action === 'buy') {
+        const res = wsys.buyTravel(kind)
+        H.pushLog(res.message, res.ok ? 'ok' : 'info')
+        if (res.ok && H.persist) H.persist('world-travel-buy')
+      } else if (action === 'use') {
+        if (kind === 'talisman' && !pendingSwap) {
+          // 换界不可逆（熟练度清零）→ 面板内二次确认（复用同一闭包标志，不引新宿主）
+          pendingSwap = true
+          H.pushLog('再点一次「确 认 换 界」即生效：熟练度将清零、专属机制状态重置（招牌首通与积分保留）。', 'info')
+        } else {
+          pendingSwap = false
+          const before = (st && st.resources) ? (st.resources.stones | 0) : 0
+          const res = wsys.useTravel(kind)
+          H.pushLog(res.message, res.ok ? 'ok' : 'info')
+          if (res.ok) {
+            if (res.giftStones && H.noteWorld && st && st.resources) {
+              H.noteWorld({ stones: (st.resources.stones | 0) - before })
+            }
+            if (H.persist) H.persist('world-travel-use')
+            if (H.emitFloat) {
+              if (res.giftMat) H.emitFloat({ text: `界游之礼：${esc(res.giftMat.n)} 份材料入库`, kind: 'ok' }, 200)
+              else if (res.giftStones) H.emitFloat({ text: `界游之礼：灵石 +${H.fmt(res.giftStones)}`, kind: 'info' })
+            }
+          }
+        }
+      }
+      render()
+      return
+    }
+    if (!system) return
     const actBtn = e.target.closest('[data-world-act]')
     if (actBtn && !actBtn.disabled) {
       const before = st ? (st.resources.stones | 0) : 0

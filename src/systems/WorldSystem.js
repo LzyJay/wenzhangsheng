@@ -8,7 +8,9 @@
  *   · 开局抽世界：12 池等概率（各 1/12）；开局免费重掷 1 次（重掷排除当前世界）
  *   · 世界修正生效：产出 rateMul（含熟练度）／ 寿元流速 ／ 天劫强度 ／ 灵根突破成本
  *   · 同界轮回熟练度：每世 +3%（封顶 +15%），乘进产出修正；触发点随转世系统（阶段二）
- *   · 界游符换界 / 界镜道具重掷 ＝ 内容批次 2/3，本模块只建好字段与接口
+ *   · 界游符换界 / 界镜道具重掷（V5.3 A4c 已实装）：兑领走 `buyTravel`（界镜每日限购 1 件）、
+ *     使用走 `useTravel` → `_swapAtomic`（**原子换界**：世界修正 ＋ 熟练度清零 ＋ 专属机制两叶一起切）；
+ *     随机换界（排除当前界），无定向套利；参数块在 data/worldMechanics.js → `WORLD_TRAVEL`
  *
  * 存档子树：state.world（null＝尚未抽世界；懒建兜底，老档自动补全）
  * 跨模块接线（13.1②，均由 main.js 中转）：
@@ -20,6 +22,11 @@
 import { WORLDS, MASTERY, DRAW, getWorld, rollWorldIndex, rerollWorldIndex } from '../data/worlds.js'
 // 寿元基准流速（1 现实分钟 = 1 游戏天）——世界只提供倍率，绝对值从这里取，避免两处漂移
 import { LIFESPAN } from '../data/lifespan.js'
+// V5.3 A4c：换界道具（界镜 / 界游符）——价格 / 每日限购 / 界游之礼表全在数据层（数据先行），本系统不另立数值
+import {
+  WORLD_TRAVEL, travelPriceStones, travelDayKey, rollTravelGift, travelGiftH, stonesOfH
+} from '../data/worldMechanics.js'
+import { getItem } from '../data/items.js'
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 
@@ -183,13 +190,192 @@ class WorldSystem {
     return { runsInWorld: this.s.runsInWorld, masteryPct: this.masteryPct }
   }
 
-  /** 界游符换界：切换世界并重置熟练度（阶段二转世系统调用） */
-  changeWorld (worldId) {
-    const r = this.assign(worldId)
-    if (!r.ok) return r
-    this.s.masteryPct = 0
-    this.s.runsInWorld = 1
-    return { ok: true, world: r.world, masteryPct: 0 }
+  /**
+   * 原子换界（V5.3 A4c；内部私有）：**worldId ＋ 熟练度 ＋ 专属机制两叶一起切**，不允许半生效。
+   *   · 熟练度：`MASTERY` 口径是「同界轮回」，跨界必须清零（否则可先在一界刷满 +15% 再换界套利）；
+   *   · 专属机制：`specialState` / `frictionState`（A3 两叶）随界重置为 {} —— 由 WorldMechanicSystem
+   *     的 ensure() 在原界语境内懒建默认值，本系统不 import 任何 system（13.1②）；
+   *   · **刻意不动**：`dungeonState.sig`（招牌首通是跨界资产，只换标签与乘数）、积分、`freeRerollLeft`；
+   *   · `drawnAt` 刷成换界时刻（新界纪年开始）。
+   */
+  _swapAtomic (worldId, now = Date.now()) {
+    const w = this.s
+    const from = w.worldId
+    w.worldId = worldId
+    w.masteryPct = 0
+    w.runsInWorld = 1
+    w.specialState = {}
+    w.frictionState = {}
+    w.drawnAt = now
+    return { from, worldId, masteryPct: 0, runsInWorld: 1, cleared: ['specialState', 'frictionState'] }
+  }
+
+  /**
+   * 界游符换界：切换世界并重置熟练度（阶段二转世系统调用）
+   * V5.3 A4c：升级为**原子换界**（熟练度 ＋ 专属机制两叶一并切）——与 `useTravel` 同一路径。
+   */
+  changeWorld (worldId, now = Date.now()) {
+    const w = getWorld(worldId)
+    if (!w) return { ok: false, message: `未登记的世界：${worldId}` }
+    this._swapAtomic(w.id, now)
+    return { ok: true, world: w, masteryPct: 0 }
+  }
+
+  // ── V5.3 A4c · 换界道具（界镜 / 界游符）────────────────────────────────────
+  //   参数块在 data/worldMechanics.js → WORLD_TRAVEL；物品条目在 data/items.js。
+  //   本段只做「兑（花灵石）/ 用（消耗一件 → 换界）」两件事，全部结算在系统内完成。
+
+  /** 行囊快捷访问（老档自愈；照 DungeonSystem.items 同法，不新开存档叶子） */
+  get items () {
+    const inv = this.state.inventory
+    if (!inv || typeof inv !== 'object') this.state.inventory = { items: {} }
+    if (!this.state.inventory.items || typeof this.state.inventory.items !== 'object') {
+      this.state.inventory.items = {}
+    }
+    return this.state.inventory.items
+  }
+
+  /**
+   * 换界道具视图（V5.3 A4c；**纯读**：只读直读 this.state.world，不长子树）
+   * @returns {{drawn,worldId,day,mirror,talisman,canReroll,canSwap,giftExpectH,note}}
+   */
+  travelView (now = Date.now()) {
+    const w = this.state.world
+    const wt = (w && typeof w === 'object' && w.travelDay && typeof w.travelDay === 'object') ? w.travelDay : null
+    const day = travelDayKey(now)
+    const level = this.state.player.realm.level
+    const stones = (this.state.resources && this.state.resources.stones) | 0
+    const bag = (this.state.inventory && this.state.inventory.items) ? this.state.inventory.items : {}
+    const worldId = (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : null
+
+    const pack = (kind, itemId) => {
+      const spec = WORLD_TRAVEL[kind]
+      const price = travelPriceStones(kind, level)
+      const limited = spec.dailyLimit > 0
+      const usedToday = limited && wt && wt.key === day ? Math.max(0, wt.mirror | 0) : 0
+      const leftToday = limited ? Math.max(0, spec.dailyLimit - usedToday) : 0
+      return {
+        kind,
+        itemId,
+        name: getItem(itemId).name,
+        held: Math.max(0, bag[itemId] | 0),
+        priceH: spec.priceH,
+        priceStones: price,
+        limited,
+        dailyLimit: spec.dailyLimit,
+        usedToday,
+        leftToday,
+        affordable: stones >= price,
+        canBuy: (!limited || leftToday > 0) && stones >= price
+      }
+    }
+    const mirror = pack('mirror', WORLD_TRAVEL.mirrorItem)
+    const talisman = pack('talisman', WORLD_TRAVEL.talismanItem)
+    return {
+      drawn: !!worldId,
+      worldId,
+      day,
+      mirror,
+      talisman,
+      canReroll: !!worldId && mirror.held >= 1,
+      canSwap: !!worldId && talisman.held >= 1,
+      giftExpectH: WORLD_TRAVEL.gift.rolls.reduce((a, r) => a + r.p * travelGiftH(r), 0),
+      note: '换界为**原子**切换：世界修正 ＋ 熟练度（清零）＋ 专属机制状态一起换；招牌首通与积分是跨界资产，保留。'
+    }
+  }
+
+  /**
+   * 兑领换界道具（V5.3 A4c）：扣灵石 → 入行囊；界镜受「每日限购 1 件」约束
+   * （日键 = 世界域读法 1 现实日 = MECH.dayGameDays 游戏天）。
+   * ⚠ 存档叶子 `world.travelDay = { key, mirror }` **只在写入时懒建**（查询不长子树），零迁移。
+   */
+  buyTravel (kind, now = Date.now()) {
+    const spec = WORLD_TRAVEL[kind]
+    if (!spec) return { ok: false, message: `未登记的换界道具：${kind}` }
+    const itemId = kind === 'mirror' ? WORLD_TRAVEL.mirrorItem : WORLD_TRAVEL.talismanItem
+    const name = getItem(itemId).name
+    const day = travelDayKey(now)
+    const w = this.s
+    if (!w.travelDay || typeof w.travelDay !== 'object') w.travelDay = { key: day, mirror: 0 }
+    if (w.travelDay.key !== day) { w.travelDay.key = day; w.travelDay.mirror = 0 }
+    const used = Math.max(0, w.travelDay.mirror | 0)
+    if (spec.dailyLimit > 0 && used >= spec.dailyLimit) {
+      return { ok: false, kind, itemId, message: `${name}每日限领 ${spec.dailyLimit} 件，本日已领（${used}/${spec.dailyLimit}）——明日再来。` }
+    }
+    const price = travelPriceStones(kind, this.state.player.realm.level)
+    const stones = this.state.resources.stones | 0
+    if (stones < price) {
+      return { ok: false, kind, itemId, message: `灵石不足：${name}需 ${price}（现有 ${stones}）。` }
+    }
+    this.state.resources.stones = stones - price
+    this.items[itemId] = (this.items[itemId] | 0) + 1
+    if (spec.dailyLimit > 0) w.travelDay.mirror = used + 1
+    const left = spec.dailyLimit > 0 ? Math.max(0, spec.dailyLimit - w.travelDay.mirror) : 0
+    return {
+      ok: true,
+      kind,
+      itemId,
+      spent: price,
+      held: this.items[itemId],
+      leftToday: left,
+      message: `兑得${name} ×1（灵石 −${price}，现有 ${this.items[itemId]} 件）${spec.dailyLimit > 0 ? `；本日额度余 ${left} 件` : ''}。`
+    }
+  }
+
+  /**
+   * 使用换界道具（V5.3 A4c）：消耗 1 件 → **原子换界**（随机换到另一界，排除当前界）
+   * @param {'mirror'|'talisman'} kind
+   * @param {number} now 时间戳
+   * @param {number} r  换界随机数（注入便于自测）
+   * @param {number} rg 「界游之礼」随机数（仅 talisman 用；注入便于自测）
+   * @returns {{ok,message,from?,to?,prevId?,worldId?,gift?,giftStones?,giftMat?,held?,atomic?}}
+   */
+  useTravel (kind, now = Date.now(), r = Math.random(), rg = Math.random()) {
+    const spec = WORLD_TRAVEL[kind]
+    if (!spec) return { ok: false, message: `未登记的换界道具：${kind}` }
+    const itemId = kind === 'mirror' ? WORLD_TRAVEL.mirrorItem : WORLD_TRAVEL.talismanItem
+    const name = getItem(itemId).name
+    if (!this.drawn) return { ok: false, message: '尚未抽定世界，无从换界。' }
+    if ((this.items[itemId] | 0) < 1) {
+      return { ok: false, message: `行囊里没有${name}——先在世界日常面板兑一件。` }
+    }
+    const prevId = this.s.worldId
+    const idx = rerollWorldIndex(prevId, r)
+    const to = WORLDS[idx]
+    const atomic = this._swapAtomic(to.id, now)
+    this.items[itemId] = (this.items[itemId] | 0) - 1
+
+    const fromName = (getWorld(prevId) || {}).name || prevId
+    const out = {
+      ok: true,
+      kind,
+      itemId,
+      prevId,
+      worldId: to.id,
+      from: getWorld(prevId),
+      to,
+      held: this.items[itemId],
+      atomic
+    }
+    if (kind === 'talisman') {
+      // 「界游之礼」＝换界后首个轮回的小机缘（增补 §一.4）——只给灵石或既有材料，不发境界
+      const g = rollTravelGift(rg)
+      out.gift = g
+      out.giftH = travelGiftH(g)
+      if (g.kind === 'mats') {
+        this.items[g.id] = (this.items[g.id] | 0) + (g.n | 0)
+        out.giftMat = { id: g.id, n: g.n }
+        out.message = `${name}已焚：${fromName} → ${to.name}（熟练度已清零）。天地补你一份「界游之礼」——${getItem(g.id).name} ×${g.n}。`
+      } else {
+        const got = stonesOfH(g.h, this.state.player.realm.level)
+        this.state.resources.stones = (this.state.resources.stones | 0) + got
+        out.giftStones = got
+        out.message = `${name}已焚：${fromName} → ${to.name}（熟练度已清零）。天地补你一份「界游之礼」——灵石 +${got}。`
+      }
+    } else {
+      out.message = `${name}一转：${fromName} → ${to.name}（熟练度已清零，专属机制状态随界重置）。`
+    }
+    return out
   }
 
   // ── 视图（装配层渲染用，纯读）────────────────────────────────────────────
