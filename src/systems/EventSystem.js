@@ -30,8 +30,7 @@ import {
   // V4.7：策略 → 等级处置范围 / 选项偏好序，与纪事消息共用同一张表（data 层单一真源）
   STRATEGY_PREF, isAutoQuality, strategyAutoLabel
 } from '../data/events.js'
-
-const clamp = (v, a, b) => Math.min(Math.max(v, a), b)
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
 export const STRATEGY_NAME = { steady: '稳健', balanced: '均衡', aggressive: '激进' }
 

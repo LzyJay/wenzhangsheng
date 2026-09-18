@@ -18,10 +18,7 @@ import { LIFESPAN, FIT, getFitTier, yearsPerRealSecond } from '../data/lifespan.
 import { getRealmMeta, getLevelInfo } from '../data/realms.js'
 // 游戏历（主人 2026-09-17）：天机榜冷却 / 在线护佑进度一律用游戏历文案
 import { fmtGameDuration } from '../data/gametime.js'
-
-function clamp (v, min, max) {
-  return Math.min(Math.max(v, min), max)
-}
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
 class LifespanSystem {
   /**

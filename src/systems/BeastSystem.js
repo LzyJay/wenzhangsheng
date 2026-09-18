@@ -40,8 +40,8 @@ import { getItem } from '../data/items.js'
 import { stoneHourly } from '../data/events.js'
 // 游戏历（主人 2026-09-17）：剩余时长一律用游戏历文案，不再报现实时分
 import { fmtGameDuration, fmtRefreshPeriod } from '../data/gametime.js'
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 const HOUR_MS = 3600 * 1000
 /** 自动孵化"园满停手"的提示节流（10 分钟一次，免得每拍刷屏） */
 const AUTO_HATCH_FULL_NOTE_MS = 10 * 60 * 1000

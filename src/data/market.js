@@ -86,9 +86,7 @@ export function realmIndexOf (level) {
  * 「每日」周期键（主人 2026-09-18 口径变更）：＝ **30 游戏天**（≈现实 2 小时），
  * 与宗门任务板 / 寻蛋同口径；改周期只改 gametime.REFRESH_DAYS。
  */
-export function dayKey (ts) {
-  return gameDayKey(ts)
-}
+export const dayKey = gameDayKey   // 不再本模块自持实现：直接转发 gametime 的唯一真源
 
 export default {
   GOODS, GOODS_MAP, SHOP_SLOTS, DISCOUNT_RANGE, RECYCLE_RATE,

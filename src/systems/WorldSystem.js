@@ -27,8 +27,7 @@ import {
   WORLD_TRAVEL, travelPriceStones, travelDayKey, rollTravelGift, travelGiftH, stonesOfH
 } from '../data/worldMechanics.js'
 import { getItem } from '../data/items.js'
-
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
 class WorldSystem {
   constructor (state) {

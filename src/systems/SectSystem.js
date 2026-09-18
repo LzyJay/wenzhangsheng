@@ -80,8 +80,8 @@ import { getLevelInfo, getRealmMeta, TRIAL_AID } from '../data/realms.js'
 import { getItem } from '../data/items.js'
 import { getTechnique, tierLabel } from '../data/techniques.js'
 import { stoneHourly } from '../data/events.js'   // 当量 h → 灵石（与秘境 / 事件同一口径）
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 /** 大数简写（万 / 亿 / 万亿）——仅用于日志与面板文案，不动任何数值 */
 const fmtBig = (n) => {
   const v = Math.max(0, Number(n) || 0)

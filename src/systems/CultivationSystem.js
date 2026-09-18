@@ -28,6 +28,7 @@ import {
 import { MAT_DROPS } from '../data/alchemy.js'
 // 游戏历（主人 2026-09-17）：调息冷却 / 道伤时长一律用游戏历文案
 import { fmtGameDuration } from '../data/gametime.js'
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
 /** 2.2 丹药系统实装：×3 / ×6 重小瓶颈冲关需消耗破境丹（设计库原文口径，背包已就位） */
 const MVP_REQUIRE_PILL = true
@@ -49,10 +50,6 @@ const QI_SURPLUS = {
 
 /** 单次 tick 的最大结算时长（秒）：防止系统休眠/断点调试造成的异常大额入账（离线走 SaveSystem 结算） */
 const MAX_TICK_SECONDS = 5
-
-function clamp (v, min, max) {
-  return Math.min(Math.max(v, min), max)
-}
 
 class CultivationSystem {
   /**

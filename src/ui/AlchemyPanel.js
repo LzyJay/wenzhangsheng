@@ -7,6 +7,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+import { QUALITY_COLOR } from '../data/events.js'   // 品质色板单一真源（原先本文件函数体内硬编码了一份逐字相同的副本）
+
 export function createAlchemyPanel (ctx) {
   const dom = ctx.dom
   const state = ctx.state
@@ -68,7 +70,6 @@ export function createAlchemyPanel (ctx) {
       '上面开着「自动炼制」时，每种丹常备 1 枚、用掉自动补（材料不足则等有料再补）；' +
       '突破 / 渡劫时若发现缺丹，不管开关如何都会自动开炉一次。'
 
-    const QUALITY_COLOR = { fan: '#b9b3a8', liang: '#e8b96a', zhen: '#7fd6a8', jue: '#b98cff', xian: '#9fd6ff' }
     const frag = document.createDocumentFragment()
     for (const r of views) {
       const row = document.createElement('div')

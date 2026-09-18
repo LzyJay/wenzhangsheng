@@ -23,8 +23,8 @@ import {
   getGoodsValue, recycleUnitPrice, realmIndexOf, dayKey
 } from '../data/market.js'
 import { getItem, getUnit } from '../data/items.js'
+import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
 
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v))
 const randRange = (lo, hi) => lo + Math.random() * (hi - lo)
 
 class MarketSystem {

@@ -187,9 +187,7 @@ export const SPECIES = [
  * 「每日」周期键（主人 2026-09-18 口径变更）：＝ **30 游戏天**（≈现实 2 小时），
  * 与宗门任务板 / 坊市同口径；改周期只改 gametime.REFRESH_DAYS。
  */
-export function dayKey (ts) {
-  return gameDayKey(ts)
-}
+export const dayKey = gameDayKey   // 不再本模块自持实现：直接转发 gametime 的唯一真源
 
 /** 取品级定义；未登记 id 回退凡品（老档不至于崩） */
 export function getGrade (id) {
