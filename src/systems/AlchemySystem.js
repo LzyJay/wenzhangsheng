@@ -157,6 +157,43 @@ class AlchemySystem {
     return out
   }
 
+  // ── 自动补货（V4.7 主人 2026-09-18：丹房自动炼制改成开关）────────────────────
+  // 口径：开关（settings.autoBrew）开启时由装配层主循环每拍调用——每种丹**常备 keep 枚**，
+  //       库存见底且材料够就自动开炉补上（用掉即补）。
+  // 限流：① 整体节流 intervalMs（默认 3s）——避免一帧连补多种把材料一次烧光；
+  //       ② 每拍只补**一种**丹（按丹方表顺序，先缺先补）；
+  //       ③ 单次最多开炉 maxAttempts 炉（默认 3，成丹率不足 100%，失败下拍再来）。
+  // 运行期字段 _restockAt 不入存档（与各面板 lastXxxRender 节拍同类）。
+
+  /**
+   * 补货一拍：挑第一种「库存不足 keep 枚且材料齐备」的丹，开炉补货
+   * @param {number} now Date.now()
+   * @param {object} [opts] { keep?:number 每种丹常备数（默认 1）| intervalMs?:number 补货间隔（默认 3000）| maxAttempts?:number 单次最多开炉数（默认 3）}
+   * @returns {null|{ok:boolean, attempts:number, success:boolean, pillId:string, name:string, message:string, details:string[]}}
+   */
+  restockTick (now, opts = {}) {
+    const keep = Math.max(1, opts.keep | 0 || 1)
+    const intervalMs = opts.intervalMs == null ? 3000 : Math.max(0, opts.intervalMs | 0)
+    const maxAttempts = Math.max(1, opts.maxAttempts | 0 || 3)
+    if (now - (this._restockAt | 0) < intervalMs) return null
+    this._restockAt = now
+    for (const rec of RECIPES) {
+      if (this._count(rec.pillId) >= keep) continue   // 够用：跳过
+      const check = this.canBrew(rec.id)
+      if (!check.ok) continue                         // 材料不齐：跳过（有料时再补）
+      const out = this.autoBrewFor(rec.pillId, { maxAttempts })
+      // 日志口径（主人 2026-09-18「在修行日志里正确显示」）：补货不是"卡关缺丹"，
+      // 文案统一以「丹房自动补炼」开头并点名丹药，成/败都可一眼读懂。
+      if (out && out.attempts > 0) {
+        out.message = out.success
+          ? `丹房自动补炼：${out.name} 库存见底，开炉 ${out.attempts} 炉成丹入囊（常备 1 枚）。`
+          : `丹房自动补炼：${out.name} 开炉 ${out.attempts} 炉未成丹（材料已返一半），稍后再补。`
+      }
+      return out
+    }
+    return null                                       // 无需补货
+  }
+
   // ── 老档补发 / 新手赠丹 ─────────────────────────────────────────────────
 
   /**

@@ -227,106 +227,292 @@ export const CHRONICLE_SECT_TITLES = ['外门弟子', '内门弟子', '真传', 
 /**
  * 纪事模板（text 为事件，note 为一句点评）
  * 占位符：{name} {name2} {place} {place2} {beast} {realm} {title} {you} {n}
+ *
+ * ── V4.7 主人 2026-09-18 重构（「牛头不对马嘴」根治）────────────────────────
+ *   · 每条模板自带 `q`（等级：凡/良/珍/绝/仙，与事件系统同一套口径）；
+ *   · 每条模板自带 `choices`（**专属**选项与已决文案）——不再按频道整组套壳，
+ *     所以「旧墙刻字」绝不会再配上「出手相帮 · 事主塞来一袋灵石」；
+ *   · choices 每项 `tag`（safe / balanced / risky）供自动策略挑（三档对应见 events.STRATEGY_AUTO）；
+ *     代价字段沿用 costStones / needItems，收益沿用 stones / items（护栏：只发灵石与材料）。
  */
 export const CHRONICLE_TEMPLATES = [
-  // 本界
-  { ch: 'realm', text: '{name}于雷雨中渡劫成功，晋入{realm}——城中酒肆皆在谈论。', note: '茶余饭后的谈资，也是你的前车之鉴。' },
-  { ch: 'realm', text: '{name}晋入{realm}，门前贺客排到了巷口。', note: '热闹是旁人的，路是自己走的。' },
-  { ch: 'realm', text: '{name}在{place}闭关三载，出关时只带回半卷残页。', note: '残页也值钱，就看你识不识货。' },
-  { ch: 'realm', text: '{name}与{name2}为{place}的一株灵药起了争执，最后一拍两散。', note: '修士的体面，常常败给一株草。' },
-  { ch: 'realm', text: '{place}的{beast}昨夜伤了行人，猎户们正凑钱请人除它。', note: '悬赏不高，但顺路。' },
-  { ch: 'realm', text: '{name}坐化于{place}的洞府，享寿{years}载；他留下的功法不知花落谁家。', note: '旧闻一则：今日之他人，他日之你我。' },
-  { ch: 'realm', text: '{name}散尽家财求一枚破境丹，终究没等来。', note: '丹没等到，人也没了。' },
-  { ch: 'realm', text: '{name}在{place}摆了三日的流水席，说是要收徒。', note: '收徒的招牌挂出来，先看有多少人来。' },
+  // ── 本界 ──────────────────────────────────────────────────────────────
+  {
+    id: 'realm_leidun', ch: 'realm', q: 'liang',
+    text: '{name}于雷雨中渡劫成功，晋入{realm}——城中酒肆皆在谈论。',
+    note: '茶余饭后的谈资，也是你的前车之鉴。',
+    choices: [
+      { id: 'ting', tag: 'safe', label: '去酒肆坐坐', hint: '听他渡劫时的取舍', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你在酒肆坐到打烊，把那人渡劫时的取舍听了个七七八八，临走还得了半囊灵草。' },
+      { id: 'he', tag: 'risky', label: '备礼登门道贺', hint: '需灵石 80 · 人情往来', good: true, costStones: 80, items: [{ id: 'mat_yaodan', n: 1 }], result: '你备了贺礼登门。那人回赠一枚妖丹，只说"渡劫那日，多谢未曾喧哗"。' }
+    ]
+  },
+  {
+    id: 'realm_heke', ch: 'realm', q: 'liang',
+    text: '{name}晋入{realm}，门前贺客排到了巷口。',
+    note: '热闹是旁人的，路是自己走的。',
+    choices: [
+      { id: 'qiaoqiao', tag: 'safe', label: '混在人群里看', hint: '瞧个热闹，顺便听门道', good: true, items: [{ id: 'mat_lingcao', n: 1 }], result: '你在人群里站了半日，听见一句话受用：「破境靠的不是灵气，是肯不肯再坐一个时辰。」' },
+      { id: 'huifu', tag: 'risky', label: '回洞府多坐一炷香', hint: '不凑热闹，自己用功', good: true, items: [{ id: 'mat_kuang', n: 1 }], result: '你转身回洞府。这一炷香坐得比平日沉，睁眼时铁精已自行剥落了一块。' }
+    ]
+  },
+  {
+    id: 'realm_biguan', ch: 'realm', q: 'fan',
+    text: '{name}在{place}闭关三载，出关时只带回半卷残页。',
+    note: '残页也值钱，就看你识不识货。',
+    choices: [
+      { id: 'shou', tag: 'balanced', label: '出价收下残页', hint: '需灵石 120 · 赌一赌眼力', good: true, costStones: 120, items: [{ id: 'mat_lingcao', n: 4 }], result: '你把残页收了下来。翻到末页才知是半篇药经——不亏，灵草催生的法子还记在上面。' },
+      { id: 'bukan', tag: 'safe', label: '看看便走', hint: '残页多半是坑', good: false, items: [], result: '你没接那半卷残页。半年后听说它被宗门以高价收进了藏经阁。' }
+    ]
+  },
+  {
+    id: 'realm_zhengyi', ch: 'realm', q: 'fan',
+    text: '{name}与{name2}为{place}的一株灵药起了争执，最后一拍两散。',
+    note: '修士的体面，常常败给一株草。',
+    choices: [
+      { id: 'deng', tag: 'safe', label: '等他们散了再摘', hint: '他们争的是药，你摘的是叶', good: true, items: [{ id: 'mat_lingcao', n: 3 }], result: '你等人散尽了才过去。整株被人分走了，落在地上的叶子倒还归你——够熬三副药。' },
+      { id: 'quan', tag: 'balanced', label: '上前劝一句', hint: '顺手做个人情', good: true, stones: 60, items: [], result: '你上前劝了两句。两人到底分了药，临走各塞你三十灵石：「谢你一句话。」' }
+    ]
+  },
+  {
+    id: 'realm_yaoshou', ch: 'realm', q: 'liang',
+    text: '{place}的{beast}昨夜伤了行人，猎户们正凑钱请人除它。',
+    note: '悬赏不高，但顺路。',
+    choices: [
+      { id: 'jie', tag: 'risky', label: '接下悬赏', hint: '顺路的活，赚个辛苦钱', good: true, stones: 150, items: [], result: '你循着血迹找到了那头畜生。一击毙命，猎户们凑的赏钱当场点清。' },
+      { id: 'quanlie', tag: 'safe', label: '教他们设套', hint: '不必亲自下场', good: true, stones: 0, items: [{ id: 'mat_kuang', n: 2 }], result: '你教猎户在涧口布了铁夹。三日后它就伏了诛，猎户们抬来两块铁精道谢。' }
+    ]
+  },
+  {
+    id: 'realm_zuohua', ch: 'realm', q: 'fan',
+    text: '{name}坐化于{place}的洞府，享寿{years}载；他留下的功法不知花落谁家。',
+    note: '旧闻一则：今日之他人，他日之你我。',
+    choices: [
+      { id: 'saomu', tag: 'safe', label: '去洞府外上一炷香', hint: '不为功法，只为同行一场', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你在洞府外燃了一炷香。风把灰吹到石阶缝里，那里竟还长着一丛他生前种的灵草。' },
+      { id: 'xunfa', tag: 'risky', label: '进去碰碰机缘', hint: '功法若在，技高者得', good: true, items: [{ id: 'mat_kuang', n: 2 }], result: '你在洞府里搜了半日，只剩些炼器的边角料——功法早被人取走了，留下满地石屑。' }
+    ]
+  },
+  {
+    id: 'realm_poyao', ch: 'realm', q: 'fan',
+    text: '{name}散尽家财求一枚破境丹，终究没等来。',
+    note: '丹没等到，人也没了。',
+    choices: [
+      { id: 'jieji', tag: 'safe', label: '替他结个善缘', hint: '修行路上，能扶一把是一把', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你替他垫了药材钱。他没能破境，倒是把你这份情记在了册子上。' },
+      { id: 'buwen', tag: 'balanced', label: '不予理会', hint: '各自有各自的劫', good: false, items: [], result: '你没管。再听见这个名字时，是在坊市的一张讣告上。' }
+    ]
+  },
+  {
+    id: 'realm_liushui', ch: 'realm', q: 'fan',
+    text: '{name}在{place}摆了三日的流水席，说是要收徒。',
+    note: '收徒的招牌挂出来，先看有多少人来。',
+    choices: [
+      { id: 'quchi', tag: 'safe', label: '去坐一坐', hint: '席上人多，消息也多', good: true, items: [{ id: 'mat_lingcao', n: 3 }], result: '你在席上坐了半日，听了几桩别处听不到的事，走时还带了主人给的三份灵草。' },
+      { id: 'baoming', tag: 'balanced', label: '打听他收徒的规矩', hint: '探个底细', good: true, stones: 40, items: [], result: '你问明了规矩：不看出身，只看能否三日不眠。你没拜师，倒把这话记了三十年。' }
+    ]
+  },
 
-  // 宗门
-  { ch: 'sect', text: '采药弟子{name}在万兽林带回一株三色灵芝，长老破例赏下辟谷丹。', note: '运气也是修行的一部分。' },
-  { ch: 'sect', text: '{name}晋为{title}，同门纷纷来贺。', note: '职级高一档，任务板的槽位也宽一档。' },
-  { ch: 'sect', text: '藏经阁一夜之间少了三卷功法，{name}被罚去山门扫阶三月。', note: '扫阶三月，倒是把心扫静了。' },
-  { ch: 'sect', text: '门中大比临近，{name}已连胜七场，赔率悄悄变了。', note: '赔率比名册诚实。' },
-  { ch: 'sect', text: '{name}替宗门押送一批玄铁，途中遇上劫道的。', note: '这种差事，向来是给"能打的"留的。' },
-  { ch: 'sect', text: '掌门闭门不出已{n}日，山门事务暂由长老议处。', note: '越是安静，越是有事。' },
-  { ch: 'sect', text: '{name}自请外放执事，说是要去{place}清静几年。', note: '清静是假，躲人是真。' },
-  { ch: 'sect', text: '{name}在任务板前站了半晌，最后接了最不起眼的那件。', note: '会挑活的人，走得久。' },
+  // ── 宗门 ──────────────────────────────────────────────────────────────
+  {
+    id: 'sect_lingzhi', ch: 'sect', q: 'liang',
+    text: '采药弟子{name}在万兽林带回一株三色灵芝，长老破例赏下辟谷丹。',
+    note: '运气也是修行的一部分。',
+    choices: [
+      { id: 'xunlu', tag: 'safe', label: '问他走哪条路', hint: '同一条路，未必只长一株', good: true, items: [{ id: 'mat_lingcao', n: 3 }], result: '他指了条溪谷给你。你循着走了一趟，采回三份品相不差的灵草。' },
+      { id: 'heshou', tag: 'balanced', label: '替他向长老请赏', hint: '同门的事，揽了便有人记着', good: true, stones: 80, items: [], result: '你替他把话递到了执事长老跟前。长老多赏了他一份丹药，他转手把谢礼送到了你洞府。' }
+    ]
+  },
+  {
+    id: 'sect_jinzhi', ch: 'sect', q: 'liang',
+    text: '{name}晋为{title}，同门纷纷来贺。',
+    note: '职级高一档，任务板的槽位也宽一档。',
+    choices: [
+      { id: 'daoxi', tag: 'safe', label: '道一声喜', hint: '同门之间，话不必多', good: true, stones: 50, items: [], result: '你去道了一声喜。他随手塞来五十灵石：「沾个喜气。」' },
+      { id: 'qingjiao', tag: 'risky', label: '趁热请教他晋级的门道', hint: '真话只在兴头上', good: true, items: [{ id: 'mat_kuang', n: 2 }], result: '他酒喝到一半，把晋级的关窍讲了七成。临别还塞了两块玄铁：「别四处说。」' }
+    ]
+  },
+  {
+    id: 'sect_shuqie', ch: 'sect', q: 'zhen',
+    text: '藏经阁一夜之间少了三卷功法，{name}被罚去山门扫阶三月。',
+    note: '扫阶三月，倒是把心扫静了。',
+    choices: [
+      { id: 'songshui', tag: 'safe', label: '去给他送壶水', hint: '落难的时候，看得清人', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你提了壶热茶下山门。他扫到阶尾，抬头说了句：「卷宗不是我拿的。」' },
+      { id: 'chajiu', tag: 'risky', label: '私下查一查', hint: '需灵石 100 · 打点看阁的执事', good: true, costStones: 100, items: [{ id: 'mat_kuang', n: 3 }], result: '你花灵石打点了看阁的执事，摸出一条线索。此后阁中少了一桩冤案，你也多了三块好铁。' }
+    ]
+  },
+  {
+    id: 'sect_dabi', ch: 'sect', q: 'liang',
+    text: '门中大比临近，{name}已连胜七场，赔率悄悄变了。',
+    note: '赔率比名册诚实。',
+    choices: [
+      { id: 'ya', tag: 'risky', label: '押他一场', hint: '需灵石 100 · 赢面不小', good: true, costStones: 100, stones: 220, items: [], result: '你把灵石压了上去。第八场他险胜半招，赌注翻了倍。' },
+      { id: 'guan', tag: 'safe', label: '只看不押', hint: '看人比赢钱要紧', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你没押注，只把他的招式记在心里。散场时顺手捡回两份被踩落的灵草。' }
+    ]
+  },
+  {
+    id: 'sect_husong', ch: 'sect', q: 'zhen',
+    text: '{name}替宗门押送一批玄铁，途中遇上劫道的。',
+    note: '这种差事，向来是给"能打的"留的。',
+    choices: [
+      { id: 'jiuyuan', tag: 'risky', label: '赶去接应', hint: '宗门的东西不能丢', good: true, stones: 120, items: [{ id: 'mat_kuang', n: 3 }], result: '你赶去时他已被围住。两人合力打退了那伙人，玄铁一件没少——宗门照例重赏。' },
+      { id: 'baoxin', tag: 'safe', label: '先把消息递回山门', hint: '救人要紧，规矩也要紧', good: true, items: [{ id: 'mat_kuang', n: 1 }], result: '你抢先把消息递回山门。长老带人接应，玄铁保住了大半，你也分到一块。' }
+    ]
+  },
+  {
+    id: 'sect_bimen', ch: 'sect', q: 'fan',
+    text: '掌门闭门不出已{n}日，山门事务暂由长老议处。',
+    note: '越是安静，越是有事。',
+    choices: [
+      { id: 'jingshou', tag: 'safe', label: '守好自己那份差事', hint: '多事之秋，先稳住', good: true, stones: 60, items: [], result: '你把分内的事做得比平日更干净。月底领例钱时，执事多给了六十灵石，没说缘由。' },
+      { id: 'datan', tag: 'balanced', label: '找人打探几句', hint: '山门风向，早知早做准备', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你听了半天风言风语，唯一有用的那句是「掌门在炼一炉旧丹」——顺手还换回两份灵草。' }
+    ]
+  },
+  {
+    id: 'sect_waifang', ch: 'sect', q: 'fan',
+    text: '{name}自请外放执事，说是要去{place}清静几年。',
+    note: '清静是假，躲人是真。',
+    choices: [
+      { id: 'jiekou', tag: 'safe', label: '托他捎句话', hint: '外放路上，消息最灵', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你托他给{place}的旧识捎了封信。半月后回信到了，还夹着两份当地才有的灵草。' },
+      { id: 'tongxing', tag: 'risky', label: '同去{place}走一趟', hint: '需灵石 60 · 外放之地多有异产', good: true, costStones: 60, items: [{ id: 'mat_yaodan', n: 1 }], result: '你随他走了一趟{place}。那地方冷清，妖兽却多，回来时囊里多了一枚妖丹。' }
+    ]
+  },
+  {
+    id: 'sect_renwu', ch: 'sect', q: 'fan',
+    text: '{name}在任务板前站了半晌，最后接了最不起眼的那件。',
+    note: '会挑活的人，走得久。',
+    choices: [
+      { id: 'xue', tag: 'safe', label: '学他的挑法', hint: '最不起眼的活，往往最少人抢', good: true, stones: 70, items: [], result: '你照他的挑法接了一桩跑腿的活。果然没人抢，交差时执事还给了七十灵石的路费。' },
+      { id: 'huan', tag: 'balanced', label: '与他换一桩', hint: '各取所需', good: true, items: [{ id: 'mat_kuang', n: 1 }], result: '你把自己手上那桩换给了他。他谢得实在——一块玄铁直接拍在你手里。' }
+    ]
+  },
 
-  // 天下
-  { ch: 'world', text: '兽潮退去，防线守住了——守军折损三成，兽王已被斩落。', note: '守住了就该庆功，哪怕只庆半日。' },
-  { ch: 'world', text: '传闻{place}现了一处仙府遗迹，四方散修都在赶去。', note: '赶去的人多，回来的少。' },
-  { ch: 'world', text: '{beast}一族自北境南下，沿途三城闭门。', note: '城门关得住兽，关不住人心。' },
-  { ch: 'world', text: '天机阁重排天下俊彦榜，{name}的名字第一次上了榜尾。', note: '榜尾也是榜。' },
-  { ch: 'world', text: '{place}的坊市今日贴出告示：高阶功法残页，价高者得。', note: '残页的价，向来由最后一个买家定。' },
-  { ch: 'world', text: '有魔修在{place}血祭一城，正道诸宗已发出追剿令。', note: '追剿令发出得快，人来得慢。' },
-  { ch: 'world', text: '百年一度的{place}论道将于明年开启，各宗已在点兵。', note: '点兵点到自家头上，才是真要开始了。' },
-  { ch: 'world', text: '有散修在{place}拾得一枚无名残页，上面的字无人认得。', note: '无人认得，反而最贵。' }
+  // ── 天下 ──────────────────────────────────────────────────────────────
+  {
+    id: 'world_shouchao', ch: 'world', q: 'jue',
+    text: '兽潮退去，防线守住了——守军折损三成，兽王已被斩落。',
+    note: '守住了就该庆功，哪怕只庆半日。',
+    choices: [
+      { id: 'shishi', tag: 'risky', label: '去战场捡兽骨', hint: '兽王尸骸未寒，值钱的东西不少', good: true, items: [{ id: 'mat_yaodan', n: 2 }, { id: 'mat_kuang', n: 2 }], result: '你在焦土里翻了整夜，扒出两枚没散尽的妖丹和两块兽骨铁。回来时指尖还在抖。' },
+      { id: 'kaola', tag: 'safe', label: '犒劳守军', hint: '需灵石 150 · 活下来的人最该被记得', good: true, costStones: 150, items: [{ id: 'mat_lingcao', n: 4 }], result: '你把灵石换成酒肉送上防线。守军头领把随身的伤药回赠给你——四份灵草，用油纸包得仔细。' }
+    ]
+  },
+  {
+    id: 'world_xianfu', ch: 'world', q: 'zhen',
+    text: '传闻{place}现了一处仙府遗迹，四方散修都在赶去。',
+    note: '赶去的人多，回来的少。',
+    choices: [
+      { id: 'gan', tag: 'risky', label: '赶去碰机缘', hint: '去晚了连渣都不剩', good: true, items: [{ id: 'mat_kuang', n: 2 }], result: '你赶去时好东西已被卷空，只在断墙下挖出两块矿胚——总比空手回来强。' },
+      { id: 'hou', tag: 'safe', label: '在必经之路上等', hint: '不进去，也能捡漏', good: true, items: [{ id: 'mat_lingcao', n: 3 }], result: '你在谷口摆了个茶摊。出来的人急着赶路，随手拿东西换水喝——半日下来你收了三份灵草。' }
+    ]
+  },
+  {
+    id: 'world_nanxia', ch: 'world', q: 'zhen',
+    text: '{beast}一族自北境南下，沿途三城闭门。',
+    note: '城门关得住兽，关不住人心。',
+    choices: [
+      { id: 'shoucheng', tag: 'risky', label: '上城墙援一手', hint: '城破之后，谁都不好过', good: true, stones: 200, items: [], result: '你在城头守了两夜，第三夜兽群散了。城主散赏，你的那份是整整二百灵石。' },
+      { id: 'zhenzai', tag: 'safe', label: '沿路施药收尸', hint: '不图赏钱，图个心安', good: true, items: [{ id: 'mat_yaodan', n: 1 }], result: '你在城外收殓了十几具尸首。有个老猎户把随身妖丹塞给你，说「路上用得着」。' }
+    ]
+  },
+  {
+    id: 'world_bang', ch: 'world', q: 'liang',
+    text: '天机阁重排天下俊彦榜，{name}的名字第一次上了榜尾。',
+    note: '榜尾也是榜。',
+    choices: [
+      { id: 'xue', tag: 'safe', label: '抄一份榜文回去', hint: '照着他，一步一步来', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你把榜文抄了一份贴在洞府墙上。抄的时候顺手记下几处地名，倒真找出两味灵草。' },
+      { id: 'jiemai', tag: 'balanced', label: '去榜单下拜个交情', hint: '榜尾也是榜，人情先到', good: true, stones: 90, items: [], result: '你在榜下等了半日，终于等到他来看榜。一顿酒下来，他给了你九十灵石的「见面礼」。' }
+    ]
+  },
+  {
+    id: 'world_fangshi', ch: 'world', q: 'fan',
+    text: '{place}的坊市今日贴出告示：高阶功法残页，价高者得。',
+    note: '残页的价，向来由最后一个买家定。',
+    choices: [
+      { id: 'pai', tag: 'risky', label: '出价拍下来', hint: '需灵石 200 · 价高者得', good: true, costStones: 200, stones: 0, items: [{ id: 'mat_yaodan', n: 2 }], result: '你举了三次牌才拿下。翻开一看，残页里夹着两枚妖丹——上一个主人留的私货。' },
+      { id: 'deng', tag: 'safe', label: '等流拍再谈', hint: '流拍的东西，能砍价', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你等到流拍。摊主没卖成，倒把压箱底的两份灵草便宜让给了你。' }
+    ]
+  },
+  {
+    id: 'world_moxiu', ch: 'world', q: 'jue',
+    text: '有魔修在{place}血祭一城，正道诸宗已发出追剿令。',
+    note: '追剿令发出得快，人来得慢。',
+    choices: [
+      { id: 'zhuijiao', tag: 'risky', label: '随追剿队去', hint: '出力就有份赏', good: true, stones: 260, items: [], result: '你把那人堵在了废城里。事后分赏，你的那份是二百六十灵石——沾血的钱，花得也快。' },
+      { id: 'jiuhu', tag: 'safe', label: '去接幸存者', hint: '追杀有人做，救人没人做', good: true, items: [{ id: 'mat_yaodan', n: 2 }], result: '你在废墟里背出七个活人。其中一个药童把随身的妖丹全给了你，说「我记不清家的路了」。' }
+    ]
+  },
+  {
+    id: 'world_lundao', ch: 'world', q: 'zhen',
+    text: '百年一度的{place}论道将于明年开启，各宗已在点兵。',
+    note: '点兵点到自家头上，才是真要开始了。',
+    choices: [
+      { id: 'moming', tag: 'balanced', label: '先报个名', hint: '百年一度，去了不亏', good: true, items: [{ id: 'mat_lingcao', n: 3 }], result: '你把名号报给了执事。回来路上有人塞给你三份灵草：「名额紧，替我说句好话。」' },
+      { id: 'bikan', tag: 'safe', label: '闭门用功', hint: '名次虚，修为实', good: true, items: [{ id: 'mat_kuang', n: 2 }], result: '你没报名，把这一年都花在了功上。年底清点，铁精攒了两块，心里也踏实。' }
+    ]
+  },
+  {
+    id: 'world_canye', ch: 'world', q: 'liang',
+    text: '有散修在{place}拾得一枚无名残页，上面的字无人认得。',
+    note: '无人认得，反而最贵。',
+    choices: [
+      { id: 'shoucan', tag: 'balanced', label: '用东西换来看看', hint: '需玄铁 ×1 · 字不认得，纸认得', good: true, needItems: [{ id: 'mat_kuang', n: 1 }], items: [{ id: 'mat_lingcao', n: 4 }], result: '你用一块玄铁换来了残页。字果然不认得，可纸是灵草浆做的——照方子泡水，催出了四份新草。' },
+      { id: 'shan', tag: 'safe', label: '笑一笑走开', hint: '认不得的字，未必是机缘', good: false, items: [], result: '你没接那枚残页。三个月后听说它被天机阁以三倍价钱收走。' }
+    ]
+  }
 ]
 
 /**
- * 互动纪事（主人 2026-09-17 / 09-18：**所有消息类型都可以互动**，
- * 但只按概率出现，且概率要写明 —— 不是每条都摆一堆按钮）
- *
- * 结构：频道 → { chance：该频道每条消息"可择"的概率，sets：可挂的选项组 }
- *   · V3.5.1（主人：纪事整体互动概率往上提 10%）——本界 0.35→0.45 / 宗门 0.30→0.40 / 天下 0.40→0.50。
- *   · 正文仍是该频道的随机新闻（本界 / 宗门 / 天下），命中概率的消息才多挂一组选项；
- *   · 选项写成"通用反应"，配任何一条同频道的新闻都读得通；
- *     选定即结算并落一句结果（结果同样通用），一条消息只可择一次。
- *   · 「你」频道 = 你自己的里程碑（成就即时插入）：chance 0 —— 自家的事没有待抉择。
- * 字段：costStones 需先备足灵石（不足则置灰）；needItems 需先有料；
- *       stones / items 为所得；good 决定日志配色（同事件系统口径）。
- * 护栏：只发灵石与材料，不发境界、不直接加成就点。
+ * 互动纪事的**概率**（主人 2026-09-18：概率要写明）
+ *   · V4.7 起选项不再按频道整组套壳 —— 每条模板自带专属 `choices`（见上），
+ *     本表只管「该频道每条消息有多大概率可择」。
+ *   · V3.5.1（主人：互动概率往上提 10%）：本界 0.35→0.45 / 宗门 0.30→0.40 / 天下 0.40→0.50。
+ *   · 「你」频道 = 自己的里程碑（成就即时插入）：chance 0 —— 自家的事没有待抉择。
+ * 自动处置：命中概率且该条等级落在自动策略的处置范围内时，由系统按策略偏好替玩家选
+ *   （见 events.STRATEGY_AUTO）；付不起的选项一律留给玩家亲自决断。
  */
 export const CHRONICLE_INTERACT = {
-  realm: {
-    chance: 0.45,
-    sets: [
-      { options: [
-        { id: 'go', label: '前往一探', hint: '循着消息赶去看看', good: true, stones: 0, items: [{ id: 'mat_lingcao', n: 2 }], result: '你循着消息赶了过去，只捡回几株灵草——聊胜于无，也算没白跑。' },
-        { id: 'stay', label: '守在洞府', hint: '不凑这个热闹', good: false, stones: 0, items: [], result: '你按下不动。这桩事在坊间又传了几日，随后被新的传闻盖了过去。' }
-      ] },
-      { options: [
-        { id: 'help', label: '出手相帮', hint: '顺手一桩人情', good: true, stones: 120, items: [], result: '你出手了。事主千恩万谢，塞来一袋灵石。' },
-        { id: 'ignore', label: '事不关己', hint: '修行要紧', good: false, stones: 0, items: [], result: '你没管。青岚界这类事天天都有，多一件不多。' }
-      ] }
-    ]
-  },
-  sect: {
-    chance: 0.40,
-    sets: [
-      { options: [
-        { id: 'take', label: '接下这桩差事', hint: '同门的事，揽了便有人记着', good: true, stones: 0, items: [{ id: 'mat_kuang', n: 1 }], result: '你把差事揽了下来。回来时师兄弟塞给你一块玄铁，说是"顺手捡的"。' },
-        { id: 'later', label: '推给旁人', hint: '自家修行要紧', good: false, stones: 0, items: [], result: '你把话头绕开了。差事落在别人肩上，山门里也没人多说一句。' }
-      ] },
-      { options: [
-        { id: 'gift', label: '送他两份灵草', hint: '需灵草 ×2 · 同门情面是要还的', good: true, needItems: [{ id: 'mat_lingcao', n: 2 }], stones: 60, items: [], result: '你把灵草塞了过去。半月后他还来六十灵石，连装草的玉盒也一并送了。' },
-        { id: 'silent', label: '当作没听见', hint: '各家自扫门前雪', good: false, stones: 0, items: [], result: '你装作没听见。对方没开口，只是把手里的空药囊捏得更紧了。' }
-      ] }
-    ]
-  },
-  world: {
-    chance: 0.50,
-    sets: [
-      { options: [
-        { id: 'join', label: '赶去凑个机缘', hint: '去碰碰运气', good: true, stones: 0, items: [{ id: 'mat_kuang', n: 2 }], result: '你赶去时好位置早被人占了，只在圈外扒了半日，捡回两块矿胚。' },
-        { id: 'mind', label: '闭门不理', hint: '天下事与我何干', good: false, stones: 0, items: [], result: '你没动身。后来听人说，去的人里三成没回来。' }
-      ] },
-      { options: [
-        { id: 'aid', label: '出手相助', hint: '斩妖护民，自有其报', good: true, stones: 0, items: [{ id: 'mat_yaodan', n: 1 }], result: '你出手斩了那头畜生。事主把随身妖丹塞给你，说命比丹贵。' },
-        { id: 'watch', label: '静观其变', hint: '符光灭了，与你无关', good: false, stones: 0, items: [], result: '你没有动身。第四夜符光灭了，纪事里再没提起这件事。' }
-      ] },
-      { options: [
-        { id: 'donate', label: '捐 100 灵石', hint: '需灵石 100 · 沿岸村落会记着这份情', good: true, costStones: 100, stones: 0, items: [{ id: 'mat_lingcao', n: 3 }], result: '你把灵石留在堤上。村老硬塞给你三份晒好的灵草，说是"不白拿人的"。' },
-        { id: 'pass', label: '无暇顾及', hint: '修行事大', good: false, stones: 0, items: [], result: '你从堤上走过。修堤的人抬头看了你一眼，又低头去搬石头。' }
-      ] }
-    ]
-  },
-  you: { chance: 0, sets: [] }
+  realm: { chance: 0.45 },
+  sect: { chance: 0.40 },
+  world: { chance: 0.50 },
+  you: { chance: 0 }
 }
 
-/** 提到「你」的条目（隐藏成就「无名之辈」的来源；ch 用天下/本界） */
+/** 提到「你」的条目（隐藏成就「无名之辈」的来源；ch 用天下/本界）；同样各带等级与专属选项 */
 export const CHRONICLE_MENTIONS = [
-  { ch: 'world', text: '有人在{place}的酒肆里提起你的名字——「{you}，据说是从{place2}出来的。」', note: '你没在场，名字先到了。' },
-  { ch: 'world', text: '天机阁的榜单边角写着一行小字：{you}，{realm}，未详。', note: '「未详」二字，有时比排名好听。' },
-  { ch: 'realm', text: '{name}与人打赌：{you}活不过下一劫。', note: '赌注不大，话传得很远。' },
-  { ch: 'realm', text: '{place}的旧墙上被人刻了一行字：{you}到此一游。', note: '你没刻过，但字是真的。' }
+  {
+    id: 'mention_jiusi', ch: 'world', q: 'liang',
+    text: '有人在{place}的酒肆里提起你的名字——「{you}，据说是从{place2}出来的。」',
+    note: '你没在场，名字先到了。',
+    choices: [
+      { id: 'xun', tag: 'safe', label: '寻去那家酒肆', hint: '看看是谁在提你', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你寻到那家酒肆，问出提你名字的是个走商。他把路引让给你抄了一份，还塞了两份灵草。' },
+      { id: 'buguan', tag: 'balanced', label: '由他们去说', hint: '名字传远了，未必是好事', good: false, items: [], result: '你没理会。往后半年，这个名字在坊间越传越玄，最后连你自己都认不出。' }
+    ]
+  },
+  {
+    id: 'mention_bangdan', ch: 'world', q: 'liang',
+    text: '天机阁的榜单边角写着一行小字：{you}，{realm}，未详。',
+    note: '「未详」二字，有时比排名好听。',
+    choices: [
+      { id: 'tianji', tag: 'balanced', label: '去天机阁补个籍', hint: '需灵石 100 · 有了籍，好办事', good: true, costStones: 100, items: [{ id: 'mat_kuang', n: 2 }], result: '你在天机阁补了籍。执事顺手给了你两块铁精：「入册的人，往后好打交道。」' },
+      { id: 'weixiang', tag: 'safe', label: '就让它是「未详」', hint: '不显名，少麻烦', good: true, items: [{ id: 'mat_lingcao', n: 2 }], result: '你转身走了。「未详」二字替你挡掉不少麻烦，路上顺手采了两份灵草。' }
+    ]
+  },
+  {
+    id: 'mention_dadu', ch: 'realm', q: 'fan',
+    text: '{name}与人打赌：{you}活不过下一劫。',
+    note: '赌注不大，话传得很远。',
+    choices: [
+      { id: 'dui', tag: 'risky', label: '反押自己一注', hint: '需灵石 100 · 让他们看看', good: true, costStones: 100, stones: 240, items: [], result: '你把灵石押在了自己身上。下一劫你过了——赌注翻倍，那人从此不再开口。' },
+      { id: 'yi', tag: 'safe', label: '一笑置之', hint: '嘴上输赢，不值当', good: true, items: [{ id: 'mat_lingcao', n: 1 }], result: '你笑了笑就走。回去的路上多坐了一个时辰，顺手把洞府门前的灵草收了。' }
+    ]
+  },
+  {
+    id: 'mention_kezi', ch: 'realm', q: 'fan',
+    text: '{place}的旧墙上被人刻了一行字：{you}到此一游。',
+    note: '你没刻过，但字是真的。',
+    choices: [
+      { id: 'mo', tag: 'safe', label: '把字磨掉', hint: '留名容易，留祸也容易', good: true, items: [{ id: 'mat_kuang', n: 1 }], result: '你磨了半日才把那行字抹平。墙根下露出的旧砖竟是铁精烧的，顺手凿下一块。' },
+      { id: 'liu', tag: 'balanced', label: '随它留着', hint: '有人想借你的名头', good: true, stones: 50, items: [], result: '你由它留着。数日后真有人循着字找上门来送谢礼——「借名号吓退了一伙蟊贼。」' }
+    ]
+  }
 ]
 
 export default {

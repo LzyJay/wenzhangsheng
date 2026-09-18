@@ -1,10 +1,21 @@
 /**
- * TrialPanel.js —— 渡劫面板（#trial-overlay：八关口 / 准备加成 / 静养）+ 引雷气泡「已备 +N%」
+ * TrialPanel.js —— 渡劫面板（V4.7 主人 2026-09-19：**面板恢复**）+ 角色旁引雷气泡
  * ═══════════════════════════════════════════════════════════════════════════
- * 边界（src/ui/ 层 · V3.5.6 拆分 main.js 第二批）：只碰本面板自己的 DOM；
+ * 双宿主：
+ *   ① `#trial-overlay`（独立 `.ov` 遮罩，快捷条「渡劫」键打开）＝面板本体：
+ *      八关口全览（#trial-node + #trial-gates）· 准备加成（#trial-preps）· 静养疗伤
+ *      （#btn-trial-cure，抬头右）· 前去引雷（#btn-trial-go）· 战绩史册（#trial-history-body）
+ *      · 脚注（#trial-note）。
+ *   ② `#mid` 内的 `#trial-bubble`（角色旁引雷轻提示，突破条件达成时自动浮出）：
+ *      成率（#bubble-rate）· 已备加成（#bubble-prep）· 引雷（#btn-strike）· 再等等（#btn-wait）
+ *      · 看八关口（#btn-trial-open → 打开面板）。
+ * 面板与气泡共用同一批渲染（render() 一次画全），故两处口径永远一致。
+ *
+ * 边界（src/ui/ 层 · V3.5.6 拆分 main.js 第二批）：只碰本面板 / 气泡自己的 DOM；
  *   systems（cult / alchemy）与装配层工具经 createTrialPanel(ctx) 注入，禁止 import systems；
  *   纯数据层可 import（TRIBULATION ← data/realms.js）。渡劫规则在 CultivationSystem 2.5 区块。
- * 引雷主流程（onBreakthrough）留在装配层，本面板只负责「关闭自己 → 交回装配层」。
+ * 引雷主流程（onBreakthrough）留在装配层：#btn-strike / #btn-trial-go 由 main.js 直接绑到
+ *   doBreakthrough；本面板只负责渲染与开合。
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
@@ -13,11 +24,14 @@ import { TRIBULATION } from '../data/realms.js'
 export function createTrialPanel (ctx) {
   const dom = ctx.dom
   const state = ctx.state            // boot 后引用稳定（重置走整页 reload）
-  const cult = ctx.cult
-  const alchemy = ctx.alchemy
+  // 系统实例一律取 getter（() => cult / () => alchemy）：本面板在 boot 里**先于 cult 实例化**，
+  // 直取会捕获到 null → render() 每次早退，八关口 / 准备 / 说明三块全空（V4.7 批 0 修复的实测 bug）
+  const getCult = ctx.cult
+  const getAlchemy = ctx.alchemy
   const H = ctx.helpers
-  if (!dom.trialOverlay) return null
+  if (!dom.trialOverlay) return null   // 宿主＝渡劫遮罩（V4.7 主人 09-19 恢复）
 
+  // 遮罩走 ovShow/ovHide（与其余 .ov 同一套转场与拖拽判定）
   function open () {
     if (!state) return
     H.closeTip()
@@ -41,6 +55,7 @@ export function createTrialPanel (ctx) {
 
 /** 该准备项所需的丹，丹房能否现炼（材料够了就允许"炼丹服下"一键走完） */
 function canAutoBrew (v) {
+  const alchemy = getAlchemy()
   if (!v || !v.itemId || !alchemy) return false
   const rec = alchemy.recipeForPill(v.itemId)
   return !!(rec && alchemy.canBrew(rec.id).ok)
@@ -53,6 +68,7 @@ function renderBubblePrep (preview) {
 }
 
 function render () {
+  const cult = getCult()
   if (!state || !cult) return
   const preview = cult.getBreakthroughPreview(Date.now())
   const nodes = cult.nodesView()
@@ -61,6 +77,14 @@ function render () {
   const node = nodes[idx]
   const preps = cult.prepSummary(idx)
   const fails = (state.trialState.consecutiveFails | 0)
+
+  // 气泡抬头：成率 + 「已备 +N%」在每次重绘时同步（备妥一项立刻看得见变化）
+  if (dom.bubbleRate) {
+    dom.bubbleRate.textContent = Number.isFinite(preview.probability)
+      ? `${(preview.probability * 100).toFixed(1)}%`
+      : '—%'
+  }
+  renderBubblePrep(preview)
 
   // ① 当前关口
   let head = ''
@@ -174,12 +198,40 @@ function render () {
       : `道伤：产出 −30%，剩余 ${H.fmtDuration(ds.endsAt - Date.now())}；花 ${cost} 灵石静养即可尽去`
   }
 
-  // 前往引雷：条件不足时说清楚缺什么
-  const goBtn = dom.btnTrialGo
-  goBtn.disabled = !preview.ready
-  goBtn.title = preview.ready
-    ? '关闭本面板，去主界面引雷（三道天雷 · 过二即成）'
-    : `尚不可冲击：${preview.blocked || '条件不足'}`
+  // 引雷键（面板内的「前 去 引 雷」+ 气泡内的「引 雷」同源，条件不足时都说清楚缺什么）
+  const strikeTitle = preview.ready ? '引雷（三道天雷 · 过二即成）' : `尚不可冲击：${preview.blocked || '条件不足'}`
+  if (dom.btnStrike) {
+    dom.btnStrike.disabled = !preview.ready
+    dom.btnStrike.title = strikeTitle
+  }
+  if (dom.btnTrialGo) {
+    dom.btnTrialGo.disabled = !preview.ready
+    dom.btnTrialGo.title = strikeTitle
+    dom.btnTrialGo.textContent = preview.ready ? '前 去 引 雷' : '条件未足'
+  }
+
+  // ⑥ 战绩史册（V4.7 主人：气泡内折叠区 —— 八关口战绩 + 最近 20 次，此前面板从未渲染过 history）
+  if (dom.trialHistoryBody) {
+    const tb = (cult.tribul) || {}
+    const hist = Array.isArray(tb.history) ? tb.history : []
+    const passedN = nodes.filter((n) => n.passed).length
+    const tries = nodes.reduce((s, n) => s + (n.tries | 0), 0)
+    const passes = nodes.reduce((s, n) => s + (n.passes | 0), 0)
+    let html = `<div class="tn-line">八关口：已渡 <b>${passedN}</b>/${nodes.length} ｜ 试炼 <b>${tries}</b> 次 · 成 <b>${passes}</b> 次</div>`
+    if (!hist.length) {
+      html += '<div class="tn-line">尚无引雷记录 —— 第一道天雷之后，这里会留下战绩。</div>'
+    } else {
+      html += hist.slice().reverse().map((h) => {
+        const n = nodes[h.node] || {}
+        const d = new Date(h.at)
+        const hh = String(d.getHours()).padStart(2, '0')
+        const mm = String(d.getMinutes()).padStart(2, '0')
+        return `<div class="tn-line">${h.ok ? '<span class="jade">渡过</span>' : '<span class="red">未过</span>'} · ${n.name || `第 ${h.node + 1} 关`}` +
+          `（成率 ${(h.p * 100).toFixed(1)}%） <span class="dim">${hh}:${mm}</span></div>`
+      }).join('')
+    }
+    dom.trialHistoryBody.innerHTML = html
+  }
 
   const capPct = Math.round(preps.cap * 100)
   dom.trialNote.textContent =
@@ -190,6 +242,9 @@ function render () {
 
 // 渡劫面板交互（事件委托：面板每次重绘，避免丢监听）
 dom.trialPreps.addEventListener('click', (e) => {
+  const cult = getCult()
+  const alchemy = getAlchemy()
+  if (!cult || !alchemy) return
   const b = e.target.closest('[data-prep]')
   if (!b || b.disabled) return
   let res = cult.prepare(b.dataset.prep)
@@ -214,6 +269,8 @@ dom.trialPreps.addEventListener('click', (e) => {
 })
 
 dom.btnTrialCure.addEventListener('click', () => {
+  const cult = getCult()
+  if (!cult) return
   const res = cult.cureDaoShang(Date.now())
   H.pushLog(res.message, res.ok ? 'ok' : 'info')
   if (res.ok) {
@@ -223,10 +280,7 @@ dom.btnTrialCure.addEventListener('click', () => {
   }
 })
 
-dom.btnTrialGo.addEventListener('click', () => {
-  close()
-  H.onBreakthrough()
-})
+// V4.7：原「前去引雷」按钮已并入气泡的 #btn-strike（主循环外的装配层绑定，见 main.js）
 
   return { open, close, toggle, render, renderBubblePrep }
 }

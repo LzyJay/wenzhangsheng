@@ -452,6 +452,79 @@ class SectSystem {
     return out
   }
 
+  // ── 一键操作（V4.7 主人 2026-09-18：任务板一键接取 / 一键提交）─────────────
+  // 口径：等价于把每个槽位逐个点一遍，不新增任何数值口径 —— 一键接取走 startTask
+  //       （战力达标的照旧当场办妥）；一键提交**只交已到点的满额任务**，
+  //       未到期的不替玩家折损（想折损仍逐个点「提前交差」）。
+
+  /**
+   * 一键接取：把当前所有待接（open）的槽位一次接完
+   * @returns {{ok:boolean, started:number, instant:number, contrib:number, results:object[]}}
+   */
+  startAllOpen (now = Date.now()) {
+    const out = { ok: false, started: 0, instant: 0, contrib: 0, results: [] }
+    if (!this.joined) {
+      out.results.push({ ok: false, message: '尚未拜入宗门。' })
+      return out
+    }
+    const slots = this.s.slots || []
+    for (let i = 0; i < slots.length; i++) {
+      if (!slots[i] || slots[i].state !== 'open') continue
+      const r = this.startTask(i, now)
+      out.results.push({ ...r, index: i })
+      if (r.ok) {
+        out.started += 1
+        if (r.instant) { out.instant += 1; out.contrib += r.contrib | 0 }
+      }
+    }
+    out.ok = out.started > 0
+    return out
+  }
+
+  /**
+   * 自动接取一拍（主循环每拍调用；内部节流，避免每 100ms 空转扫板）
+   *   主人 2026-09-18：任务板一刷新就自动把活儿接下来 —— 提交交给既有「到点自动交差」。
+   *   节流间隔内 / 无可接的活儿 → 返回 null（不产生日志与写盘）。
+   * @returns {null|{started:number, instant:number, contrib:number, results:object[]}}
+   */
+  autoStartTick (now = Date.now(), opts = {}) {
+    const intervalMs = opts.intervalMs == null ? 1500 : Math.max(0, opts.intervalMs | 0)
+    if (now - (this._autoStartAt | 0) < intervalMs) return null
+    this._autoStartAt = now
+    const out = this.startAllOpen(now)
+    return out.started > 0 ? out : null
+  }
+
+  /**
+   * 一键提交：把所有**已到点（满额）**的槽位一次交差
+   *   （V4.7 主人 2026-09-18 修订：面板不再单列「一键提交」按钮 —— 提交由主循环
+   *    「到点自动交差」负责；本方法作为批量提交入口保留，供后续做「提前交差全部」时复用）
+   * @returns {{ok:boolean, claimed:number, contrib:number, failed:number, results:object[]}}
+   */
+  claimAllDone (now = Date.now()) {
+    const out = { ok: false, claimed: 0, contrib: 0, failed: 0, results: [] }
+    if (!this.joined) {
+      out.results.push({ ok: false, message: '尚未拜入宗门。' })
+      return out
+    }
+    const slots = this.s.slots || []
+    for (let i = 0; i < slots.length; i++) {
+      const slot = slots[i]
+      if (!slot || slot.state !== 'running') continue
+      if (!this.taskDefOf(slot)) continue
+      if (!this.progressOf(slot, now).done) continue   // 未到点：不动（不替玩家折损）
+      const r = this.claimTask(i, now)
+      out.results.push({ ...r, index: i })
+      if (r.ok) {
+        out.claimed += 1
+        out.contrib += r.contrib | 0
+        if (r.success === false) out.failed += 1
+      }
+    }
+    out.ok = out.claimed > 0
+    return out
+  }
+
   // ── 藏经阁 / 商店 ───────────────────────────────────────────────────────
 
   /** 贡献兑换功法（落到 tech.ownedTechniques，1 级；去功法面板自行装备） */

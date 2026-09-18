@@ -319,7 +319,7 @@
     }
 
     /* 快捷条：贴在突破按钮的**上方**（不盖住按钮），文字标签而非圆点 */
-    /* 2026-09-19：新增「成就」键后共 10 键 → 收紧内边距；窄窗放不下时自动折行（向上生长） */
+    /* V4.7 主人（2026-09-18）：撤掉「成就」键 → 共 **9 键**；窄窗放不下时自动折行（向上生长） */
     #quick-row {
       position: absolute; right: 0; bottom: 4px;
       display: flex; flex-wrap: wrap; justify-content: flex-end;
@@ -358,9 +358,11 @@
       bottom: var(--ov-bottom, 5px);
       display: none; flex-direction: column;
       border-radius: 10px;
-      background: radial-gradient(circle at 50% 0%, rgba(var(--bg-veil-hi-rgb), 0.94), rgba(var(--bg-veil-lo-rgb), 0.97));
+      /* 底色不透明度可调（V4.7 主人：设置里「浮层透明度」）——调低即可让底下的修行日志透出来，
+         背景模糊同步按比例减弱，否则字仍被糊掉。变量由装配层写在 <html> 上，缺省 1＝现状。 */
+      background: radial-gradient(circle at 50% 0%, rgba(var(--bg-veil-hi-rgb), calc(0.94 * var(--ov-alpha, 1))), rgba(var(--bg-veil-lo-rgb), calc(0.97 * var(--ov-alpha, 1))));
       border: 1px solid rgba(var(--gold-rgb), 0.26);
-      backdrop-filter: blur(9px);
+      backdrop-filter: blur(calc(9px * var(--ov-alpha, 1)));
       pointer-events: auto;
       overflow: hidden;
     }
@@ -882,35 +884,57 @@
     }
     .world-act #btn-world-ok:hover { background: linear-gradient(180deg, rgba(var(--gold-rgb), 0.44), rgba(var(--gold-rgb), 0.20)); }
 
-    /* ═══════════ 层 3：渡劫确认气泡（挂在 #mid 内，带按钮必须免拖拽） ═══════════ */
-    #confirm-bubble {
+    /* ═══════════ 层 3：渡劫交互气泡（V4.7 主人 2026-09-18：原渡劫遮罩已删，全收进这里） ═══════════
+       挂在 #mid 内、自带 no-drag（否则按钮真鼠标点不动，§九 坑 10）；
+       内容比旧「确认气泡」多（八关口 / 准备 / 战绩史册），故限宽限高、内部可滚动。 */
+    #trial-bubble {
       -webkit-app-region: no-drag;
-      position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
-      width: 232px; z-index: 4; display: none;
-      background: rgba(var(--bg-card-rgb), 0.96);
-      border: 1px solid rgba(var(--fail-rgb), 0.55);
-      border-radius: 10px; padding: 10px 12px;
-      font-size: 11px; color: var(--warn-light); text-align: center;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+      width: min(356px, calc(100% - 12px));
+      max-height: calc(100% - 12px);
+      overflow-y: auto;
+      z-index: 5; display: none;
+      background: rgba(var(--bg-card-rgb), 0.97);
+      border: 1px solid rgba(var(--gold-rgb), 0.50);
+      border-radius: 10px; padding: 9px 11px 10px;
+      font-size: 11px; color: var(--text);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.50);
       pointer-events: auto;
       animation: pop-in 180ms ease-out;
     }
-    #confirm-bubble.show { display: block; }
-    #confirm-bubble b { color: var(--fail-light); font-variant-numeric: tabular-nums; }
-    #confirm-bubble .row { display: flex; gap: 8px; margin-top: 9px; }
-    #confirm-bubble button {
+    #trial-bubble.show { display: block; }
+    #trial-bubble .tb-head { display: flex; align-items: center; gap: 6px; }
+    #trial-bubble .tb-title { font-family: var(--serif); font-size: 13px; letter-spacing: 3px; color: var(--gold-light); }
+    #trial-bubble .tb-rate { color: var(--text-dim); font-size: 10.5px; }
+    #trial-bubble .tb-rate b { color: var(--fail-light); font-variant-numeric: tabular-nums; }
+    #trial-bubble .tb-x {
+      flex: none; width: 20px; height: 20px; border-radius: 5px; cursor: pointer;
+      border: 1px solid rgba(var(--ash-deep-rgb), 0.32);
+      background: transparent; color: var(--text-dim); font-size: 12px; line-height: 1;
+    }
+    #trial-bubble .tb-x:hover { background: rgba(255, 255, 255, 0.06); }
+    #trial-bubble .tb-sec { margin: 8px 0 2px; font-size: 10px; color: var(--dim); letter-spacing: 1px; }
+    #trial-bubble .tb-btns { display: flex; gap: 7px; margin-top: 9px; }
+    #trial-bubble .tb-btns button {
       flex: 1; height: 26px; border-radius: 6px; font-size: 11.5px; cursor: pointer;
       font-family: var(--sans);
       border: 1px solid rgba(var(--fail-rgb), 0.55);
       background: rgba(var(--fail-deep-rgb), 0.18); color: var(--warn-light);
       transition: background 0.15s ease;
     }
-    #confirm-bubble button:hover { background: rgba(var(--fail-deep-rgb), 0.32); }
-    #confirm-bubble button.ghost {
+    #trial-bubble .tb-btns button:hover { background: rgba(var(--fail-deep-rgb), 0.32); }
+    #trial-bubble .tb-btns button.ghost {
       border-color: rgba(var(--ash-deep-rgb), 0.35);
       background: transparent; color: var(--text-dim);
     }
-    #confirm-bubble button.ghost:hover { background: rgba(255, 255, 255, 0.05); }
+    #trial-bubble .tb-btns button.ghost:hover { background: rgba(255, 255, 255, 0.05); }
+    #trial-bubble .tb-btns button.tb-cure {
+      flex: none; padding: 0 9px; height: 22px; align-self: center;
+      font-size: 10px; border-color: rgba(var(--fail-rgb), 0.45);
+    }
+    #trial-bubble details { margin-top: 8px; font-size: 10px; color: var(--dim); }
+    #trial-bubble summary { cursor: pointer; color: var(--text-dim); font-size: 10.5px; letter-spacing: 1px; }
+    #trial-bubble .tb-note { margin-top: 7px; font-size: 9.5px; line-height: 1.6; color: var(--dim); }
 
     /* ═══════════ 层 4：闭关归来结算卡（本次精修 · 高光交互之二） ═══════════ */
     /* 结算的是"修为" → 归入鎏金族（此前是绿色，与修为同量不同色） */
@@ -1195,6 +1219,15 @@
       color: var(--jade);
     }
     .chr-result.gap { color: var(--text-dim); }
+    /* V4.7 主人：待你决断的置顶（角标 + 更亮的边），事件近事录单列一区 */
+    .chr-item.chr-pending { border-left: 2px solid rgba(var(--fail-rgb), 0.75); padding-left: 7px; }
+    .chr-pendtag {
+      margin-left: 6px; padding: 0 5px; border-radius: 7px;
+      font-size: 9px; color: var(--warn-light);
+      border: 1px solid rgba(var(--fail-rgb), 0.55);
+      background: rgba(var(--fail-deep-rgb), 0.18);
+    }
+    #evt-list { margin-top: 2px; }
 
     .achv-cat {
       margin: 9px 0 4px;
@@ -1333,17 +1366,23 @@
         <button class="q-pill" id="btn-beast" title="灵兽（万兽林寻蛋 · 孵化 · 出战）">灵兽</button>
         <button class="q-pill" id="btn-trial" title="渡劫（八关口 · 渡劫准备 · 三道天雷）">渡劫</button>
         <button class="q-pill" id="btn-dungeon" title="秘境（试炼塔 · 资源秘境 · 分身派遣）">秘境</button>
-        <!-- 主人 2026-09-18 / 09-19：事件与纪事合成一册（同页看完）；成就与称号另立一册 -->
-        <button class="q-pill" id="btn-chronicle" title="事件与纪事（待抉择事件 · 近事录 · 三频道纪事）">纪事<i class="dot"></i></button>
-        <button class="q-pill" id="btn-achv" title="成就与称号（成就墙 · 称号佩戴）">成就<i class="dot"></i></button>
+        <!-- 主人 2026-09-18 / 09-19：事件与纪事合成一册（同页看完）；成就与称号另立一册
+             V4.7 主人（09-18）：**撤掉快捷条「成就」键** —— 成就册入口只留人物头顶的称号牌点按 -->
+        <button class="q-pill" id="btn-chronicle" title="事件与纪事（待决断置顶 · 消息按等级 · 事件近事录）">纪事<i class="dot"></i></button>
       </div>
 
-      <!-- 渡劫确认气泡（带按钮，必须免拖拽） -->
-      <div id="confirm-bubble">
-        <div>三道天雷 · 过二即成 ｜ 当前成率 <b id="bubble-rate">--%</b><span id="bubble-prep"></span></div>
-        <div class="row">
+      <!-- 渡劫引雷气泡（V4.7 主人 2026-09-18/09-19：**面板已恢复** #trial-overlay，
+           气泡回归"人物旁的引雷轻提示"：成率 + 已备加成 + 引雷 / 再等等 / 去面板做准备。
+           挂在 #mid 内、自带免拖拽；突破条件达成时自动弹出（沿用原确认气泡的位置与时机）。 -->
+      <div id="trial-bubble">
+        <div class="tb-head">
+          <span class="tb-title">引 雷</span>
+          <span class="tb-rate">三道天雷 · 过二即成 ｜ 成率 <b id="bubble-rate">--%</b><span id="bubble-prep"></span></span>
+        </div>
+        <div class="tb-btns">
+          <button class="tb-open" id="btn-trial-open" title="打开渡劫面板：八关口全览 · 准备加成 · 静养疗伤 · 战绩史册">看八关口 · 做准备</button>
           <button id="btn-strike">引 雷</button>
-          <button id="btn-wait" class="ghost">再等等</button>
+          <button class="ghost" id="btn-wait">再等等</button>
         </div>
       </div>
 
@@ -1396,6 +1435,13 @@
     </div>
     <div id="alchemy-mats"></div>
     <div class="ov-body">
+      <!-- V4.7 主人：自动炼制做成面板内**直观开关**（与设置面板同一叶子 settings.autoBrew） -->
+      <div class="row">
+        <span class="k">自动炼制</span>
+        <span class="spacer"></span>
+        <span class="v dim" id="brew-auto-note">每种丹常备 1 枚，用掉自动补</span>
+        <button class="toggle" id="tg-brew-auto" data-brew-auto title="开启后丹房自动补货：每种丹常备 1 枚，库存见底且材料够就自动开炉补上">开</button>
+      </div>
       <div id="brew-list"></div>
       <div class="bag-note" id="brew-note"></div>
     </div>
@@ -1431,6 +1477,15 @@
       <div id="sect-info"></div>
       <div class="divider"></div>
       <div class="tech-sec">任务板 · 按境界出题（每 7 游戏天刷新）· 限时到点自动交差，战力达标的活接取即办妥</div>
+      <!-- V4.7 主人 2026-09-18：一键接取按钮 + 自动接取开关（口径见 SectSystem.startAllOpen / autoStartTick）；
+           提交不再单列按钮 —— 由既有「到点自动交差」负责（未到期仍可逐个点「提前交差」） -->
+      <div class="row">
+        <span class="k">自动接取</span>
+        <span class="spacer"></span>
+        <span class="v dim" id="sect-auto-note">刷新即接下，到点自动交差</span>
+        <button class="toggle" id="btn-task-autostart" data-task-autostart title="开启后任务板一刷新就自动把活儿接下来（战力达标的当场办妥）">开</button>
+        <button class="mini" id="btn-task-startall" data-task-startall title="把当前所有待接的活儿一次接完（战力达标的当场办妥）">一键接取</button>
+      </div>
       <div id="sect-tasks"></div>
       <div class="divider"></div>
       <div class="tech-sec">藏经阁 · 贡献借阅功法（入袋后去「功法」面板装槽）</div>
@@ -1481,7 +1536,7 @@
       <div class="tech-sec">万兽林 · 寻蛋</div>
       <div id="beast-dispatch"></div>
       <div class="divider"></div>
-      <div class="tech-sec">孵化位</div>
+      <div class="tech-sec">孵化位 <span class="v dim" id="beast-hatch-mode"></span></div>
       <div id="beast-eggs"></div>
       <div class="divider"></div>
       <div class="tech-sec">灵兽园 · 喂养 / 出战</div>
@@ -1490,23 +1545,9 @@
     </div>
   </div>
 
-  <!-- 层 5f：渡劫（2.5 · 八关口 / 准备加成 / 三道天雷） -->
-  <div class="ov" id="trial-overlay">
-    <div class="ov-head">
-      <span class="ov-title">渡 劫</span>
-      <span class="spacer"></span>
-      <button class="mini danger" id="btn-trial-cure" hidden title="花灵石静养，立即清除道伤">静 养 疗 伤</button>
-      <button class="ov-close" id="btn-trial-close" title="关闭（Esc）">×</button>
-    </div>
-    <div class="ov-body">
-      <div id="trial-node"></div>
-      <div class="divider"></div>
-      <div class="tech-sec">渡劫准备 · 单道天雷通过率加成（上限 +35%）</div>
-      <div id="trial-preps"></div>
-      <div class="btnrow"><button class="mini" id="btn-trial-go" title="回到主界面引雷（须先满足修为与调息条件）">前 去 引 雷</button></div>
-      <div class="bag-note" id="trial-note"></div>
-    </div>
-  </div>
+  <!-- 层 5f：渡劫遮罩 —— **V4.7 主人 2026-09-18 已删除**：
+       内容（八关口 / 准备加成 / 静养 / 引雷 / 战绩史册）整体搬进 #mid 内的 #trial-bubble 交互气泡。
+       连带效果：`.ov` 遮罩清单 11 → 10（syncDragRegions / Esc 链 / 烟测结构核对同步收窄）。 -->
 
   <!-- 层 5g：秘境（2.7 · 试炼塔 / 资源秘境 / 分身派遣） -->
   <div class="ov" id="dungeon-overlay">
@@ -1557,22 +1598,46 @@
     </div>
   </div>
 
+  <!-- 层 5f：渡劫（2.5 · 八关口 / 准备加成 / 三道天雷）
+       V4.7 主人 2026-09-19：「渡劫面板恢复」—— 八关口全览 / 准备加成 / 静养疗伤 / 战绩史册
+       回归独立遮罩（快捷条「渡劫」键打开）；#mid 内的引雷气泡只留成率与引雷两个动作。 -->
+  <div class="ov" id="trial-overlay">
+    <div class="ov-head">
+      <span class="ov-title">渡 劫</span>
+      <span class="spacer"></span>
+      <button class="mini danger" id="btn-trial-cure" hidden title="花灵石静养，立即清除道伤">静 养 疗 伤</button>
+      <button class="ov-close" id="btn-trial-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="trial-node"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">渡劫准备 · 单道天雷通过率加成（上限 +35%）</div>
+      <div id="trial-preps"></div>
+      <div class="btnrow"><button class="mini" id="btn-trial-go" title="引来三道天雷（须先满足修为与调息条件）">前 去 引 雷</button></div>
+      <details id="trial-history">
+        <summary>战绩史册 · 八关口与最近 20 次</summary>
+        <div id="trial-history-body"></div>
+      </details>
+      <div class="bag-note" id="trial-note"></div>
+    </div>
+  </div>
+
   <!-- 层 5i：事件与纪事（2.10 + 2.3 · 主人 2026-09-19：两者同页看完，不再分页签） -->
   <div class="ov" id="chronicle-overlay">
     <div class="ov-head">
       <span class="ov-title">纪 事</span>
       <span class="spacer"></span>
-      <button class="mini" id="btn-goto-achv" title="成就与称号另立一册（成就墙 · 称号佩戴）">成就与称号 ›</button>
+      <!-- V4.7 主人：撤掉此处「成就与称号 ›」按钮 —— 成就册改由人物头顶称号牌进入 -->
       <button class="ov-close" id="btn-chronicle-close" title="关闭（Esc）">×</button>
     </div>
-    <!-- 气运摘要 + 自动策略（原事件簿整页并入） -->
+    <!-- 气运摘要 + 自动策略（原事件簿整页并入）；三档各自管到哪一级，悬停里写明 -->
     <div class="ev-strat" id="ev-strat-row">
       <span id="event-luck">气运 50 · 平运</span>
       <span class="spacer" style="flex:1"></span>
       自动策略
-      <button class="strat-pill" data-strategy="steady" title="保底项优先：不求有功，但求无过">稳健</button>
-      <button class="strat-pill" data-strategy="balanced" title="期望项优先：长期收益最大化">均衡</button>
-      <button class="strat-pill" data-strategy="aggressive" title="高波动项优先：富贵险中求">激进</button>
+      <button class="strat-pill" data-strategy="steady" title="自动处置 凡 / 良 · 保底项优先：不求有功，但求无过">稳健</button>
+      <button class="strat-pill" data-strategy="balanced" title="自动处置 凡 / 良 / 珍 · 期望项优先：长期收益最大化">均衡</button>
+      <button class="strat-pill" data-strategy="aggressive" title="自动处置 凡 ~ 仙（全自动）· 高波动项优先：富贵险中求">激进</button>
     </div>
     <div class="ev-strat" id="chr-filter">
       频道
@@ -1583,14 +1648,16 @@
       <button class="chr-pill" data-chrfilter="world">天下</button>
     </div>
     <div class="ov-body">
-      <!-- V3.5.1（主人）：事件与纪事合并为一册纪事——
-           绝 / 仙级置顶为「关键事件」，强制亲断，不决不走（角标常亮）；
-           已结算事件按统一格式并入下方纪事流，不再单列「近事录」。 -->
-      <div class="tech-sec">关键事件 · 绝 / 仙级，须亲断（不决不走）</div>
+      <!-- V4.7 主人 2026-09-18 重构：消息与事件**分区**，消息逐条带等级、待决断的置顶。
+           ① 关键事件＝超出自动策略处置范围的（不决不走、角标常亮）；② 消息流；③ 事件近事录单列。 -->
+      <div class="tech-sec">关键事件 · 超出自动档的，须亲断（不决不走）</div>
       <div id="event-pending"></div>
       <div class="divider"></div>
-      <div class="tech-sec">纪事流 · 事件与消息同列</div>
+      <div class="tech-sec">消息流 · 四频道 · 按等级着色（待你决断的置顶）</div>
       <div id="chr-list"></div>
+      <div class="divider"></div>
+      <div class="tech-sec">事件近事录 · 你遭遇过的（含自动策略替你结算的）</div>
+      <div id="evt-list"></div>
       <div class="bag-note" id="chr-note"></div>
     </div>
   </div>
@@ -1696,6 +1763,12 @@
         <div class="hint2">修为够了自动冲关（含 ×3 / ×6 小瓶颈，缺破境丹会自动开炉）。<b>渡劫不自动</b>——引雷要你亲自按。</div>
         <div class="row"><span class="k">自动寻蛋</span><span class="spacer"></span><button class="toggle" id="tg-autoegg">开</button></div>
         <div class="hint2">灵鹰空闲即自动入万兽林，回来自动收蛋入笼（孵化与破壳仍由你决定）。</div>
+        <div class="row"><span class="k">自动孵化</span><span class="spacer"></span><button class="toggle" id="tg-autohatch">开</button></div>
+        <div class="hint2">有待孵的蛋、且孵化位（金丹起 2 位）有空时自动入孵，孵满即自动破壳收兽（灵兽园满 / 孵位满时自动停下等你腾位）。</div>
+        <div class="row"><span class="k">丹房自动炼制</span><span class="spacer"></span><button class="toggle" id="tg-autobrew">开</button></div>
+        <div class="hint2">开启后<b>每种丹常备 1 枚</b>：库存见底就自动开炉补上（材料不足则等有料再补）。突破 / 渡劫缺丹仍会自动开炉一次，与此开关无关。丹房面板里也有同一个开关。</div>
+        <div class="row"><span class="k">浮层透明度</span><span class="spacer"></span><button class="toggle" id="tg-ovalpha">不透明</button></div>
+        <div class="hint2">丹方 / 宗门 / 纪事这些面板是盖在<b>修行日志</b>之上的；调低底色不透明度即可边开炉边看日志（背景模糊同步减弱，否则字仍被糊掉）。点按循环：不透明 → 微透 → 半透 → 很透。</div>
         <div class="row"><span class="k">氛围</span><span class="spacer"></span><button class="toggle" id="tg-ambience">自动</button></div>
         <div class="hint2">昼夜色调 · 灵气粒子流 · 轻天气（雨 / 雪 / 霞）。「自动」＝全开，但系统开着「减弱动态」时自动降一档（粒子更稀更缓）；想彻底安静点上面这一行切成「静态」或「关闭」。</div>
         <div class="row"><span class="k">天气</span><span class="spacer"></span><button class="toggle" id="tg-weather">自动</button></div>

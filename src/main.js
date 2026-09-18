@@ -32,7 +32,10 @@ import { getItem, getUnit } from './data/items.js'
 // 界面上的**所有时间文案**统一走它；机制仍按现实时间推进（见 data/gametime.js 头注）。
 import { fmtGameDuration, fmtGameClock, fmtGameStamp, fmtGameDate, fmtRefreshPeriod, msToNextRefresh, gameClockOf } from './data/gametime.js'
 import { TIER_MAP, maxRatePct, maxCombatPct, getTechnique } from './data/techniques.js'
-import { stoneHourly, QUALITY_COLOR } from './data/events.js'
+import { stoneHourly, QUALITY_COLOR, QUALITY_NAME, STRATEGY_AUTO, STRATEGY_PREF } from './data/events.js'
+
+/** 选项 tag → 中文（自动策略偏好序在悬停里写清楚，主人问的"三项各管什么"就在这行） */
+const OPT_TAG_NAME = { safe: '保底项', balanced: '期望项', risky: '高波动项' }
 import { LIFESPAN } from './data/lifespan.js'
 import { getRealmLook } from './data/appearance.js'   // 3.1 角色表现
 import { BREAKTHROUGH_FX } from './data/fx.js'        // 3.2 演出：成功飘字推迟到文案浮现同拍
@@ -44,6 +47,9 @@ import { SKIN_IDS, SKIN_AUTO, resolveSkin } from './data/themes.js'  // 3.4 UI �
 import {
   MOTION, MOTION_SETTINGS, MOTION_NAMES, resolveMotionMode, rollDisplay
 } from './data/motion.js'                             // 3.4 UI 动效与主题（动效纪律）
+import {
+  OVERLAY_ALPHA_LEVELS, resolveOvAlpha, ovAlphaName, nextOvAlpha
+} from './data/overlay.js'                            // V4.7 浮层（.ov）透明度档位
 import SfxEngine from './audio/SfxEngine.js'          // 3.5 音效与音乐（程序化合成引擎）
 import { VOLUME_NAMES, nextTier, gainOfTier, DEFAULT_TIER } from './data/sfx.js'
 import { collectBonusLines, recomposeBonus } from './systems/BonusLedger.js' // V3.5.3 统一加成接口（聚合账本，纯逻辑）
@@ -194,7 +200,7 @@ const dom = {
   btn: el('btn-breakthrough'),
   btnLabel: el('btn-label'),
   btnRate: el('btn-rate'),
-  bubble: el('confirm-bubble'),
+  bubble: el('trial-bubble'),            // V4.7：渡劫交互气泡（原 #confirm-bubble 位置，兼八关口/准备/史册）
   bubbleRate: el('bubble-rate'),
   bubblePrep: el('bubble-prep'),
   btnStrike: el('btn-strike'),
@@ -215,12 +221,15 @@ const dom = {
   tgTop: el('tg-top'),
   tgAutoBreak: el('tg-autobreak'),
   tgAutoEgg: el('tg-autoegg'),
+  tgAutoHatch: el('tg-autohatch'),       // V4.7 灵兽自动孵化（有空位就入孵、孵满自动破壳）
+  tgAutoBrew: el('tg-autobrew'),         // V4.7 丹房自动补货（每种丹常备 1 枚）
   tgAmbience: el('tg-ambience'),         // 3.3 氛围：自动 / 全开 / 静态 / 关闭
   tgWeather: el('tg-weather'),           // 3.3 天气：自动 / 晴 / 雨 / 雪 / 霞
   tgDayphase: el('tg-dayphase'),         // 3.3 昼夜：自动 / 晨 / 昼 / 暮 / 夜
   vAmbienceLoad: el('v-ambience-load'),  // 3.3 负载档展示（自动降载）
   vMotion: el('v-motion'),               // 3.4 系统「减弱动态」实测值（只读展示）
   tgMotion: el('tg-motion'),             // 3.4 动效总档：全开 / 自动 / 静态
+  tgOvAlpha: el('tg-ovalpha'),           // V4.7 浮层（.ov）底色透明度：不透明 / 微透 / 半透 / 很透
   tgSkin: el('tg-skin'),                 // 3.4 皮肤：鎏金 / 朱砂 / 玄墨 / 月白 / 随世界
   tgVolSfx: el('tg-vol-sfx'),            // 3.5 音效音量：低 / 中 / 高
   tgVolBgm: el('tg-vol-bgm'),            // 3.5 音乐音量：低 / 中 / 高
@@ -248,6 +257,8 @@ const dom = {
   alchemyMats: el('alchemy-mats'),
   brewList: el('brew-list'),
   brewNote: el('brew-note'),
+  tgBrewAuto: el('tg-brew-auto'),         // V4.7 丹房面板内的「自动炼制」直观开关
+  brewAutoNote: el('brew-auto-note'),     // V4.7 该行说明
   btnTech: el('btn-tech'),
   techOverlay: el('tech-overlay'),
   btnTechClose: el('btn-tech-close'),
@@ -264,6 +275,9 @@ const dom = {
   sectLibrary: el('sect-library'),
   sectShop: el('sect-shop'),
   sectNote: el('sect-note'),
+  btnTaskStartall: el('btn-task-startall'),       // V4.7 一键接取
+  btnTaskAutostart: el('btn-task-autostart'),     // V4.7 自动接取（开关）
+  sectAutoNote: el('sect-auto-note'),             // V4.7 自动接取说明行
   // 灵兽（2.8）
   btnBeast: el('btn-beast'),
   beastOverlay: el('beast-overlay'),
@@ -271,6 +285,7 @@ const dom = {
   beastInfo: el('beast-info'),
   beastDispatch: el('beast-dispatch'),
   beastEggs: el('beast-eggs'),
+  beastHatchMode: el('beast-hatch-mode'),   // V4.7：孵化位数量 + 自动孵化开没开
   beastPark: el('beast-park'),
   beastNote: el('beast-note'),
   // 秘境（2.7）
@@ -283,13 +298,17 @@ const dom = {
   dungeonNote: el('dungeon-note'),
   // 事件簿（2.3）
   btnTrial: el('btn-trial'),
+  // V4.7 主人 2026-09-19：**渡劫面板恢复**为独立遮罩 #trial-overlay（八关口 / 准备 / 静养 / 史册）；
+  // #mid 内的 #trial-bubble 回归"角色旁引雷轻提示"（成率 / 已备 / 引雷 / 再等等 / 看八关口）
   trialOverlay: el('trial-overlay'),
   btnTrialClose: el('btn-trial-close'),
+  btnTrialGo: el('btn-trial-go'),          // 面板内「前去引雷」
+  btnTrialOpen: el('btn-trial-open'),      // 气泡内「看八关口 · 做准备」→ 打开面板
   btnTrialCure: el('btn-trial-cure'),
-  btnTrialGo: el('btn-trial-go'),
   trialNode: el('trial-node'),
   trialPreps: el('trial-preps'),
   trialNote: el('trial-note'),
+  trialHistoryBody: el('trial-history-body'),   // 战绩史册（V4.7 首次接上 history；面板内折叠区）
   // 事件并入「事件与纪事」一册（主人 2026-09-18/19）：原 #event-overlay 与页签制已撤，同页呈现
   eventLuck: el('event-luck'),
   eventPending: el('event-pending'),
@@ -312,14 +331,15 @@ const dom = {
   btnChronicle: el('btn-chronicle'),
   chronicleOverlay: el('chronicle-overlay'),
   btnChronicleClose: el('btn-chronicle-close'),
-  btnGotoAchv: el('btn-goto-achv'),
-  btnAchv: el('btn-achv'),
+  // V4.7 主人：撤掉快捷条「成就」键与纪事册抬头「成就与称号 ›」两处按钮 ——
+  //   成就册入口只留立绘头顶称号牌（#title-chip）与成就达成提示（#achv-toast）
   achvOverlay: el('achv-overlay'),
   btnAchvClose: el('btn-achv-close'),
   achvTabs: Array.from(document.querySelectorAll('.bag-tab[data-achvtab]')),
   achvNote: el('achv-note'),
   chrFilter: el('chr-filter'),
   chrFilterPills: Array.from(document.querySelectorAll('.chr-pill')),
+  evtList: el('evt-list'),        // V4.7：事件近事录单列（消息与事件不再混排）
   logMeta: el('log-meta'),
   logOffline: el('log-offline'),
   powerWrap: el('power-wrap'),
@@ -1267,8 +1287,9 @@ function render () {
     lastMarketRender = now
     renderMarket()
   }
-  // 渡劫面板（2.5）：成率与可备状态每 ~1 秒跟一拍
-  if (dom.trialOverlay.classList.contains('show') && now - lastTrialRender >= PANEL_MS) {
+  // 渡劫（2.5）：面板或引雷气泡任一开着，成率与可备状态每 ~1 秒跟一拍
+  if ((dom.trialOverlay.classList.contains('show') || dom.bubble.classList.contains('show')) &&
+      now - lastTrialRender >= PANEL_MS) {
     lastTrialRender = now
     renderTrial()
   }
@@ -1287,17 +1308,11 @@ function render () {
     const marks = []
     if (unread > 0) marks.push(`${unread} 条新消息未看`)
     if (openAct > 0) marks.push(`${openAct} 条互动纪事等你出手`)
-    if (pend > 0) marks.push(`${pend} 起绝/仙事件待抉择`)
+    if (pend > 0) marks.push(`${pend} 起事件超出自动档、待抉择`)
     dom.btnChronicle.classList.toggle('attn', marks.length > 0)
     dom.btnChronicle.title = marks.length
       ? `纪事：${marks.join(' · ')}`
-      : '纪事（关键事件须亲断 · 三频道纪事流）'
-    if (dom.btnAchv) {
-      dom.btnAchv.classList.toggle('attn', unread > 0)
-      dom.btnAchv.title = unread > 0
-        ? `成就与称号：${unread} 个新成就未看`
-        : '成就与称号（成就墙 · 称号佩戴）'
-    }
+      : '纪事（超出自动档的须亲断 · 消息按等级着色）'
   }
   if (dom.chronicleOverlay.classList.contains('show') && now - lastChrRender >= PANEL_MS) {
     lastChrRender = now
@@ -1752,14 +1767,18 @@ function renderRootResult ({ displayName, color, trait, tag, mods, hardGuarantee
 
 // ── 渡劫确认气泡（设计稿「本次精修 · 三处」之二）─────────────────────────
 function showBubble (preview) {
+  // V4.7 主人：气泡＝完整渡劫面板（八关口 / 准备 / 战绩史册），弹出前先画全一遍
+  renderTrial()
   dom.bubbleRate.textContent = `${(preview.probability * 100).toFixed(1)}%`
   renderBubblePrep(preview)   // 2.5：这一眼要看得见"自己备了什么"
   dom.bubble.classList.add('show')
+  dom.btnTrial.classList.add('on')
   syncDragRegions()
 }
 
 function hideBubble () {
   dom.bubble.classList.remove('show')
+  dom.btnTrial.classList.remove('on')
   syncDragRegions()
 }
 
@@ -1875,6 +1894,7 @@ function doBreakthrough (auto = false) {
 // 口径：主循环每 100ms 问一次；「修为已满 + 非渡劫」→ 直接冲关；
 //       缺破境丹先请丹房自动开炉（炼成即冲）。渡劫 / 飞升永不自动 —— 引雷要玩家亲自按。
 let autoBreakNoteLv = 0   // 已在日志里解释过"为何没自动冲关"的等级（防刷屏）
+let restockFailLogged = false   // 丹房自动补炼"本串失败"是否已报过（V4.7 批 1；成功即重置）
 
 function noteAutoBreakBlocked (reason) {
   const lv = state.player.realm.level
@@ -1909,7 +1929,9 @@ function autoBreakTick () {
 // ═══════════════════════════════════════════════════════════════════════════
 // ══ 2.5 渡劫 装配区（改动仅限本区块内；逻辑全在 CultivationSystem 的 2.5 区块）
 // ═══════════════════════════════════════════════════════════════════════════
-// 宿主：渡劫遮罩 #trial-overlay（八关口全览 / 准备加成 / 静养）+ 既有引雷气泡。
+// 双宿主（V4.7 主人 2026-09-19：面板恢复）：
+//   · #trial-overlay（独立 .ov）＝面板本体：八关口全览 / 准备加成 / 静养疗伤 / 前去引雷 / 战绩史册；
+//   · #trial-bubble（#mid 内、非 .ov）＝角色旁引雷轻提示：成率 / 已备 / 引雷 / 再等等 / 看八关口。
 // 本区块只做「读系统 → 渲染 → 把点击交回系统」，不藏任何规则。
 
 // V3.5.6 拆分：渡劫面板本体迁至 src/ui/TrialPanel.js；只留「薄委托」。
@@ -1952,6 +1974,7 @@ function closeAllOverlays (except = '') {
     tech: closeTech,
     sect: closeSect,
     trial: closeTrial,
+    bubble: hideBubble,        // V4.7：引雷气泡不是 .ov，但开面板时也该让位（同一件事不必两处占屏）
 
     market: closeMarket,
     dungeon: closeDungeon,
@@ -2096,11 +2119,23 @@ function renderEvents () {
   // 顶栏气运摘要（悬停看五档口径）
   dom.eventLuck.textContent = `气运 ${v.luck} · ${v.tierName}`
   dom.eventLuck.title = `好事件概率 ${Math.round(v.goodPct * 100)}% ｜ 品质系数 ×${v.qualCoef} ｜ 频率系数 ×${v.freqCoef}（增补 v1.1 §三）`
-  for (const b of dom.stratPills) b.classList.toggle('on', b.dataset.strategy === v.strategy)
+  // V4.7 主人：三档各自能自动处置到哪个等级，直接写进悬停（与纪事消息同一套口径）
+  for (const b of dom.stratPills) {
+    b.classList.toggle('on', b.dataset.strategy === v.strategy)
+    const autoLabel = STRATEGY_AUTO[b.dataset.strategy] && STRATEGY_AUTO[b.dataset.strategy].label
+    const tag = (STRATEGY_PREF[b.dataset.strategy] || [])[0]
+    if (autoLabel) {
+      b.title = `${b.textContent}：自动处置「${autoLabel}」` +
+        (tag ? ` · 偏好${OPT_TAG_NAME[tag] || tag}` : '') +
+        `\n超出该范围的条目一律置顶，等你亲自决断`
+    }
+  }
 
-  // 关键事件（V3.5.1 · 主人：绝/仙级强制亲断，不决不走、角标常亮）
+  // 关键事件（V4.7 · 主人：不再固定"绝/仙"，而是**超出自动策略处置范围**的才在此等亲断）
   if (!v.pending.length) {
-    dom.eventPending.innerHTML = '<div class="bag-empty">无事待断 · 凡 / 良 / 珍按自动策略随缘结算并入纪事流</div>'
+    dom.eventPending.innerHTML =
+      `<div class="bag-empty">无事待断 · 当前「${v.strategyName}」自动处置 ${v.strategyAutoLabel}，` +
+      `超出该范围的才会在此等你亲断</div>`
   } else {
     const frag = document.createDocumentFragment()
     for (const p of v.pending) {
@@ -2264,13 +2299,13 @@ function openAchv (tab) {
   achv.markSeen(Date.now())
   renderAchv()
   ovShow(dom.achvOverlay)
-  dom.btnAchv.classList.add('on')
+  if (dom.btnAchv) dom.btnAchv.classList.add('on')   // V4.7：快捷条「成就」键已撤，仅可能由外部注入
   syncDragRegions()
 }
 
 function closeAchv () {
   ovHide(dom.achvOverlay)
-  dom.btnAchv.classList.remove('on')
+  if (dom.btnAchv) dom.btnAchv.classList.remove('on')
   syncDragRegions()
 }
 
@@ -2452,22 +2487,24 @@ function renderTitleChip () {
 }
 
 /**
- * 「纪事」整页渲染（V3.5.1 · 主人：事件与纪事合并为一册「纪事」，格式统一）
- *   版面自上而下：气运 / 策略行 → 频道筛选 → 关键事件（绝 / 仙置顶，强制亲断）→ 纪事流（事件同列）
- *   成就与称号在独立遮罩（#achv-overlay，见 renderAchv）
+ * 「纪事」整页渲染（V4.7 主人 2026-09-18 重构：消息与事件**分区**、按等级划分、待决断置顶）
+ *   版面自上而下：气运 / 策略行 → 频道筛选 → 关键事件（超出自动档的，须亲断）
+ *   → 消息流（四频道，按等级着色，待你决断的置顶）→ 事件近事录（单列一区）
+ *   成就与称号在独立遮罩（#achv-overlay，入口＝人物头顶称号牌，见 renderAchv）
  */
 function renderChronicle () {
   if (!state || !achv) return
   for (const b of dom.chrFilterPills) b.classList.toggle('on', b.dataset.chrfilter === chrFilter)
-  renderEvents()          // 关键事件（绝 / 仙级待抉择）
-  renderChronicleList()   // 纪事流（已结算事件按统一格式并入）
+  renderEvents()          // 关键事件（超出自动策略处置范围的，待亲断）
+  renderChronicleList()   // 消息流 + 事件近事录（两区分离）
   if (dom.chrNote) {
     dom.chrNote.textContent =
-      `一册纪事：天下消息（你 / 本界 / 宗门 / 天下四频道）与遭遇过的事件同列一流，时间按游戏历显示；` +
-      `凡 / 良 / 珍事件按自动策略随缘结算后入流，绝 / 仙级置顶为「关键事件」——强制亲断，不决不走、角标常亮。` +
-      `带金边的是「互动纪事」——可当场择一个处置，择过即定，所得入囊。互动概率按频道：` +
-      achv.interactChances.map((c) => `${c.name} ${Math.round(c.chance * 100)}%`).join(' ｜ ') +
-      `（「你」频道是你自己的里程碑，无待抉择）。成就墙与称号在另一册（右上「成就与称号 ›」）。`
+      `一册纪事，分两区：上面是「消息」（你 / 本界 / 宗门 / 天下四频道，逐条标等级 凡/良/珍/绝/仙 并着色），` +
+      `下面单列「事件近事录」（你自己遭遇过、已结算的事件）。时间按游戏历显示。` +
+      `自动策略当前为「${events ? events.view().strategyName : ''}」，自动处置到 ${achv.strategyAutoLabel}：` +
+      `范围内的消息与事件由系统按偏好替你选定并落档；超出范围的（含待你出手的互动）一律置顶，不决不走、角标常亮。` +
+      `互动概率按频道：` + achv.interactChances.map((c) => `${c.name} ${Math.round(c.chance * 100)}%`).join(' ｜ ') +
+      `（「你」频道是你自己的里程碑，无待抉择）。成就与称号在另一册（点人物头顶的称号牌进入）。`
   }
 }
 
@@ -2499,115 +2536,115 @@ function renderAchv () {
   }
 }
 
-/** 已结算事件 → 纪事条目（与 chr-item 同款：时间行 + 正文；品质色标事件名，V3.5.1） */
-function buildEvtChronRow (m) {
-  const b = m.raw
+/** 已结算事件 → 事件近事录一行（单列区：#evt-list；品质色标事件名） */
+function buildEvtRow (b) {
   const item = document.createElement('div')
   item.className = 'chr-item chr-evt'
   const l1 = document.createElement('div')
   l1.className = 'chr-line1'
-  const qName = { fan: '凡', liang: '良', zhen: '珍', jue: '绝', xian: '仙' }[b.q] || ''
-  l1.textContent = `${fmtGameClock(b.at)} · 事件${qName ? ` · ${qName}级` : ''}`
+  const qName = QUALITY_NAME[b.q] || ''
+  l1.textContent = `${fmtGameClock(b.at)} · 事件${qName ? ` · ${qName}级` : ''}${b.auto ? ' · 自动处置' : ''}`
   const tx = document.createElement('div')
   tx.className = 'chr-text'
-  tx.textContent = m.text
-  tx.style.color = QUALITY_COLOR[b.q] || (m.good ? 'var(--gold)' : 'var(--warn)')
+  tx.textContent = `【${b.name}】${b.opt ? b.opt + '——' : ''}${b.text}`
+  tx.style.color = QUALITY_COLOR[b.q] || (b.good ? 'var(--gold)' : 'var(--warn)')
   item.append(l1, tx)
   return item
 }
 
-function renderChronicleList () {
-  // V3.5.1（主人：事件的内容融入到纪事里，格式统一）：
-  // 已结算事件（原近事录）按统一格式 {at, chName, text, note, cls} 并入纪事流，按时间倒序混排。
-  const merged = achv.chronicleView(chrFilter, 80).map((e) => ({
-    kind: 'chr',
-    at: e.at,
-    chName: e.chName,
-    ch: e.ch,
-    text: e.text,
-    note: e.note,
-    raw: e
-  }))
-  if (events && (chrFilter === 'all')) {
-    for (const b of events.view().book.slice(0, 15)) {
-      merged.push({
-        kind: 'evt',
-        at: b.at,
-        chName: '事件',
-        ch: 'evt',
-        text: `【${b.name}】${b.opt ? b.opt + '——' : ''}${b.text}`,
-        note: '',
-        good: b.good,
-        q: b.q,
-        raw: b
-      })
+/** 一条纪事消息 → 一行（等级着色 + 待决断角标 + 专属选项/已决结果） */
+function buildChrRow (e) {
+  const item = document.createElement('div')
+  item.className = 'chr-item chr-' + e.ch + (e.interactive ? ' chr-act' : '') + (e.pending ? ' chr-pending' : '')
+
+  const l1 = document.createElement('div')
+  l1.className = 'chr-line1'
+  // 时间戳＝游戏历（主人 2026-09-17：纪事时间也用游戏时间）；V4.7 起附等级
+  l1.textContent = `${fmtGameClock(e.at)} · ${e.chName} · ${e.qName}级`
+  l1.style.color = e.qColor || ''
+  if (e.pending) {
+    const tag = document.createElement('span')
+    tag.className = 'chr-pendtag'
+    tag.textContent = '待你决断'
+    l1.appendChild(tag)
+  }
+  item.appendChild(l1)
+
+  const tx = document.createElement('div')
+  tx.className = 'chr-text'
+  tx.textContent = e.text
+  tx.style.color = QUALITY_COLOR[e.q] || ''
+  item.appendChild(tx)
+
+  if (e.note) {
+    const nt = document.createElement('div')
+    nt.className = 'chr-note'
+    nt.textContent = e.note
+    item.appendChild(nt)
+  }
+
+  // 互动选项：未抉择给按钮；已抉择落一句结果（选项只可择一次）
+  if (e.interactive) {
+    if (e.resolved) {
+      const done = document.createElement('div')
+      done.className = 'chr-result' + (e.options.some((o) => o.id === e.resolved && !o.good) ? ' gap' : '')
+      done.textContent = `（已决${e.auto ? ' · 自动策略代选' : ''}）${e.result || '此事已了。'}`
+      item.appendChild(done)
+    } else {
+      const box = document.createElement('div')
+      box.className = 'chr-opts'
+      for (const o of e.options) {
+        const btn = document.createElement('button')
+        btn.className = 'mini'
+        const needStones = o.costStones | 0
+        const lackStones = needStones > 0 && (state.resources.stones | 0) < needStones
+        const lackItems = (o.needItems || []).filter((n) => ((state.inventory.items[n.id] | 0) < n.n))
+        const poor = lackStones || lackItems.length > 0
+        if (poor) btn.classList.add('poor')
+        btn.textContent = o.label
+        btn.dataset.chrResolve = `${e.uid}|${o.id}`
+        btn.disabled = poor
+        const gains = []
+        if (needStones > 0) gains.push(`需灵石 ${needStones}`)
+        if (o.needItems && o.needItems.length) gains.push(`需${o.needItems.map((n) => `${getItem(n.id).name}×${n.n}`).join('、')}`)
+        if (o.stones) gains.push(`灵石 +${o.stones}`)
+        if (o.items && o.items.length) gains.push(o.items.map((n) => `${getItem(n.id).name}×${n.n}`).join('、'))
+        btn.title = `${o.hint}${gains.length ? `（${gains.join('｜')}）` : ''}`
+        box.appendChild(btn)
+      }
+      item.appendChild(box)
     }
   }
-  merged.sort((a, b) => b.at - a.at)
-  const list = merged.slice(0, 90)
+  return item
+}
+
+/**
+ * 纪事流两区（V4.7 主人：**消息与事件分开**，不再混排）
+ *   ① 消息流 #chr-list：四频道消息，按等级着色；**待决断的置顶**，其余按时间倒序；
+ *   ② 事件近事录 #evt-list：已结算事件单列一区（自动策略处置过的也在此可回看）。
+ */
+function renderChronicleList () {
+  const view = achv.chronicleView(chrFilter, 80)
+  const pend = view.filter((e) => e.pending)
+  const rest = view.filter((e) => !e.pending)
+  const list = pend.concat(rest)      // 待你决断的放最上（主人 2026-09-18）
   if (!list.length) {
     dom.chrList.innerHTML = '<div class="bag-empty">此处尚无消息 —— 每过一阵，天下自会有新的传闻传来。</div>'
+  } else {
+    const frag = document.createDocumentFragment()
+    for (const e of list) frag.appendChild(buildChrRow(e))
+    dom.chrList.replaceChildren(frag)
+  }
+  // ② 事件近事录（单列；与消息不再同列）
+  if (!dom.evtList) return
+  const book = events ? events.view().book.slice(0, 15) : []
+  if (!book.length) {
+    dom.evtList.innerHTML = '<div class="bag-empty">尚无遭遇记录 —— 遇上事件后会在此留档（含自动策略替你结算的）。</div>'
     return
   }
-  const frag = document.createDocumentFragment()
-  for (const m of list) {
-    if (m.kind === 'evt') { frag.appendChild(buildEvtChronRow(m)); continue }
-    const e = m.raw
-    const item = document.createElement('div')
-    item.className = 'chr-item chr-' + e.ch + (e.interactive ? ' chr-act' : '')
-
-    const l1 = document.createElement('div')
-    l1.className = 'chr-line1'
-    // 时间戳＝游戏历（主人 2026-09-17：纪事时间也用游戏时间）
-    l1.textContent = `${fmtGameClock(e.at)} · ${e.chName}`
-
-    const tx = document.createElement('div')
-    tx.className = 'chr-text'
-    tx.textContent = e.text
-
-    item.append(l1, tx)
-    if (e.note) {
-      const nt = document.createElement('div')
-      nt.className = 'chr-note'
-      nt.textContent = e.note
-      item.appendChild(nt)
-    }
-
-    // 互动选项：未抉择给按钮；已抉择落一句结果（选项只可择一次）
-    if (e.interactive) {
-      if (e.resolved) {
-        const done = document.createElement('div')
-        done.className = 'chr-result' + (e.resolved === 'wait' || e.resolved === 'ignore' || e.resolved === 'pass' || e.resolved === 'stay' || e.resolved === 'later' ? ' gap' : '')
-        done.textContent = `（已决）${e.result || '此事已了。'}`
-        item.appendChild(done)
-      } else {
-        const box = document.createElement('div')
-        box.className = 'chr-opts'
-        for (const o of e.options) {
-          const btn = document.createElement('button')
-          btn.className = 'mini'
-          const needStones = o.costStones | 0
-          const lackStones = needStones > 0 && (state.resources.stones | 0) < needStones
-          const lackItems = (o.needItems || []).filter((n) => ((state.inventory.items[n.id] | 0) < n.n))
-          const poor = lackStones || lackItems.length > 0
-          if (poor) btn.classList.add('poor')
-          btn.textContent = o.label
-          btn.dataset.chrResolve = `${e.uid}|${o.id}`
-          btn.disabled = poor
-          const gains = []
-          if (needStones > 0) gains.push(`需灵石 ${needStones}`)
-          if (o.needItems && o.needItems.length) gains.push(`需${o.needItems.map((n) => `${getItem(n.id).name}×${n.n}`).join('、')}`)
-          if (o.stones) gains.push(`灵石 +${o.stones}`)
-          if (o.items && o.items.length) gains.push(o.items.map((n) => `${getItem(n.id).name}×${n.n}`).join('、'))
-          btn.title = `${o.hint}${gains.length ? `（${gains.join('｜')}）` : ''}`
-          box.appendChild(btn)
-        }
-        item.appendChild(box)
-      }
-    }
-    frag.appendChild(item)
-  }
-  dom.chrList.replaceChildren(frag)
+  const f2 = document.createDocumentFragment()
+  for (const b of book) f2.appendChild(buildEvtRow(b))
+  dom.evtList.replaceChildren(f2)
 }
 
 function renderAchvWall () {
@@ -2755,10 +2792,10 @@ if (dom.achvToast) {
 if (dom.titleChip) {
   dom.titleChip.addEventListener('click', () => openAchv('title'))
 }
-// 成就册入口：快捷条「成就」键 + 事件纪事册右上角「成就与称号 ›」
+// V4.7 主人：成就册入口只留「称号牌点按」（上面）+「成就达成提示点按」两处 ——
+//   快捷条「成就」键与纪事册抬头「成就与称号 ›」已撤（旧 id 若被外部还原，仍可开）
 if (dom.btnAchv) dom.btnAchv.addEventListener('click', toggleAchv)
 if (dom.btnAchvClose) dom.btnAchvClose.addEventListener('click', closeAchv)
-if (dom.btnGotoAchv) dom.btnGotoAchv.addEventListener('click', () => openAchv('wall'))
 
 function openPanel (tab = 'settings') {
   closeAllOverlays('panel')
@@ -2807,12 +2844,15 @@ async function renderPanel () {
   // 自动化开关（主人 2026-09-18）：未写过字段即视为"开"（老档无需迁移）
   setToggle(dom.tgAutoBreak, s.autoBreak !== false)
   setToggle(dom.tgAutoEgg, s.autoEgg !== false)
+  if (dom.tgAutoHatch) setToggle(dom.tgAutoHatch, s.autoHatch !== false)
+  setToggle(dom.tgAutoBrew, s.autoBrew !== false)
   dom.tgAvatar.textContent = s.avatar === 'female' ? '女修' : '男修'
   dom.tgAvatar.classList.toggle('on', s.avatar === 'female')
   applyWinStateToUI()
   syncAmbienceUI()   // 3.3 氛围：总档 / 天气 / 昼夜 / 负载档四行
   syncSkinUI()       // 3.4 皮肤：色板名与循环顺序
   syncMotionUI()     // 3.4 动效：总档与系统实测值
+  syncOvAlphaUI()    // V4.7 浮层透明度：不透明 / 微透 / 半透 / 很透
   syncAudioUI()      // 3.5 音效：音量两行
   syncEconUI()       // V3.5.4 今日收益归因
   syncAutoLaunchUI() // P4.2 开机自启：浏览器模式置灰
@@ -2917,6 +2957,30 @@ dom.tgAutoEgg.addEventListener('click', () => {
   state.settings.autoEgg = next
   setToggle(dom.tgAutoEgg, next)
   pushLog(next ? '已开启自动寻蛋：灵鹰得空即入万兽林，蛋归来自动收笼。' : '已关闭自动寻蛋：寻蛋改由你手动派遣。', 'sys')
+  persist('settings')
+})
+
+// 自动孵化（V4.7 主人 2026-09-19，默认开）：有待孵的蛋、且孵化位有空即自动入孵，孵满自动破壳收兽
+if (dom.tgAutoHatch) {
+  dom.tgAutoHatch.addEventListener('click', () => {
+    const next = state.settings.autoHatch === false
+    state.settings.autoHatch = next
+    setToggle(dom.tgAutoHatch, next)
+    pushLog(next
+      ? '已开启自动孵化：有空孵位就自动入孵、孵满自动破壳收兽（灵兽园满或孵位满时自动停下等你腾位）。'
+      : '已关闭自动孵化：入孵与破壳都改由你手动点。', 'sys')
+    persist('settings')
+  })
+}
+
+// 丹房自动炼制（V4.7 主人 2026-09-18，默认开）：开启后每种丹常备 1 枚，用掉自动补
+dom.tgAutoBrew.addEventListener('click', () => {
+  const next = state.settings.autoBrew === false
+  state.settings.autoBrew = next
+  setToggle(dom.tgAutoBrew, next)
+  pushLog(next
+    ? '已开启丹房自动炼制：每种丹常备 1 枚，用掉就自动开炉补上（材料不足则等有料再补）。'
+    : '已关闭丹房自动炼制：丹药不再自动补货，需要时去丹房手动开炉。', 'sys')
   persist('settings')
 })
 
@@ -3218,6 +3282,45 @@ if (dom.tgMotion) {
     syncMotionUI()
   })
 }
+
+// ── V4.7 浮层透明度（主人 2026-09-18）：.ov 底色与背景模糊按 --ov-alpha 取值 ────
+// 动机：.ov 遮罩只盖住修行日志那一块（既定口径），于是丹方 / 宗门 / 纪事天然压在日志之上；
+//       调低底色不透明度即可一边开炉一边看日志（模糊同步减弱，否则字仍被糊掉）。
+// 边界：只写 <html> 上的一个运行期变量 + 一个偏好叶子（settings.ovAlpha）；档位表在 data/overlay.js。
+
+/** 应用浮层透明度（运行期变量，不入存档语义） */
+function applyOvAlpha ({ silent = false, persistIt = false } = {}) {
+  if (!state) return 1
+  const id = state.settings.ovAlpha
+  const alpha = resolveOvAlpha(id)
+  document.documentElement.style.setProperty('--ov-alpha', String(alpha))
+  if (!silent) {
+    pushLog(`浮层透明度：${ovAlphaName(id)}（${Math.round(alpha * 100)}%），丹方 / 宗门 / 纪事等面板的底色。`, 'sys')
+  }
+  if (persistIt) persist('settings')
+  return alpha
+}
+
+/** 设置面板「浮层透明度」一行（点按循环四档） */
+function syncOvAlphaUI () {
+  if (!state || !dom.tgOvAlpha) return
+  const id = state.settings.ovAlpha
+  const alpha = resolveOvAlpha(id)
+  dom.tgOvAlpha.textContent = ovAlphaName(id)
+  dom.tgOvAlpha.classList.toggle('on', alpha < 1)
+  dom.tgOvAlpha.title = `浮层（丹方 / 宗门 / 纪事…）底色不透明度：${ovAlphaName(id)}（${Math.round(alpha * 100)}%）\n`
+    + `点按循环：${OVERLAY_ALPHA_LEVELS.map((l) => l.name).join(' → ')}\n`
+    + '调低即可让底下的修行日志透出来（背景模糊同步减弱）。'
+}
+
+if (dom.tgOvAlpha) {
+  dom.tgOvAlpha.addEventListener('click', () => {
+    if (!state) return
+    state.settings.ovAlpha = nextOvAlpha(state.settings.ovAlpha)
+    applyOvAlpha({ persistIt: true })
+    syncOvAlphaUI()
+  })
+}
 // ══ 3.4 UI 动效与主题 装配区结束 ═════════════════════════════════════════
 
 // ══ 3.5 音效与音乐 装配区 ═════════════════════════════════════════════════
@@ -3490,6 +3593,11 @@ dom.btnBeastClose.addEventListener('click', closeBeast)
 // ── 渡劫（独立遮罩；入口在突破按钮上方）─────────────────────────────────
 dom.btnTrial.addEventListener('click', toggleTrial)
 dom.btnTrialClose.addEventListener('click', closeTrial)
+if (dom.btnTrialGo) dom.btnTrialGo.addEventListener('click', doBreakthrough)          // 面板内「前去引雷」
+if (dom.btnTrialOpen) {
+  // 气泡 → 面板：先把气泡收掉（同一件事不必两处同时占屏），再开面板
+  dom.btnTrialOpen.addEventListener('click', () => { hideBubble(); openTrial() })
+}
 
 // ── 坊市（独立遮罩；入口在突破按钮上方）─────────────────────────────────
 dom.btnMarket.addEventListener('click', toggleMarket)
@@ -3528,7 +3636,8 @@ window.addEventListener('keydown', (e) => {
   else if (dom.alchemyOverlay.classList.contains('show')) closeAlchemy()
   else if (dom.marketOverlay.classList.contains('show')) closeMarket()
   else if (dom.sectOverlay.classList.contains('show')) closeSect()
-  else if (dom.trialOverlay.classList.contains('show')) closeTrial()
+  else if (dom.trialOverlay.classList.contains('show')) closeTrial()   // V4.7：渡劫面板（遮罩）
+  else if (dom.bubble.classList.contains('show')) hideBubble()          // 引雷气泡（非 .ov，另收）
   else if (dom.techOverlay.classList.contains('show')) closeTech()
   else if (dom.dungeonOverlay.classList.contains('show')) closeDungeon()
   else if (dom.beastOverlay.classList.contains('show')) closeBeast()
@@ -3564,6 +3673,7 @@ async function boot () {
   tech = new TechniqueSystem(state)
   alchemy = new AlchemySystem(state)
   beasts = new BeastSystem(state)   // 2.8 灵兽：懒建 state.beast 子树，先建好供下面两处注入
+  beasts.ensure()                   // V4.7：老档补字段（辅助位名单 assistUids / 星级 star / 成长计数 exp·gf）
   // 战力乘区闭包（功法 × 灵兽）：宗门战力校验与秘境战力门槛共用同一口径（2026-09-19）
   sect = new SectSystem(state, tech, powerMulClosure())
   events = new EventSystem(state)
@@ -3582,8 +3692,10 @@ async function boot () {
   // V3.5.6 拆分：渡劫面板（src/ui/TrialPanel.js）
   trialPanel = createTrialPanel({
     state,
-    cult,
-    alchemy,
+    // V4.7 批 0：系统一律以 getter 注入——本面板建在 cult 实例化之前（见下方 cult = new CultivationSystem），
+    // 直传实例会被捕获成 null，面板静默全空（实测 bug：渡劫面板八关口/准备/说明三块永远空）
+    cult: () => cult,
+    alchemy: () => alchemy,
     dom,
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, fmt, fmtDuration, render: () => render(), onBreakthrough }
   })
@@ -3610,8 +3722,9 @@ async function boot () {
   // V3.5.6 拆分：丹房面板（src/ui/AlchemyPanel.js）
   alchemyPanel = createAlchemyPanel({
     state,
-    alchemy,
-    cult,
+    // V4.7 批 0：同上，getter 注入（本面板也建在 cult 实例化之前）
+    alchemy: () => alchemy,
+    cult: () => cult,
     dom,
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, onPress, render: () => render(), renderBag: () => renderBag() }
   })
@@ -3728,6 +3841,9 @@ async function boot () {
   // 3.4 动效总档落档生效：给 <html> 挂类（index.html 的 RM 降级块按 :not(.motion-full) 让路）
   applyMotion({ silent: true })
 
+  // V4.7 浮层透明度落档生效（写 <html> 上的 --ov-alpha，index.html 的 .ov 按它取值）
+  applyOvAlpha({ silent: true })
+
   // 3.5 音效落档生效：总开关 / 音量档 / 环境音。
   // ⚠ 此时还没有用户手势，AudioContext 尚未建（浏览器自动播放策略），
   //   真正出声要等主人第一次点按窗口（见 3.5 装配区的 document 级 pointerdown）。
@@ -3799,6 +3915,16 @@ async function boot () {
         // 3.5 音效：宗门任务到点交差（一批只响一声，不按条数连响）
         if (claims.some((c) => c.success)) sfx('sect_done', { throttleMs: 400 })
       }
+      // 自动接取（V4.7 主人 2026-09-18：任务板一刷新就自动接下；交差仍由上面「到点自动交差」负责）
+      // 内部 1.5s 节流：只在真有活可接时才有动作与日志（一刷新报一条，不刷屏）
+      if (state.settings.autoSect !== false) {
+        const as = sect.autoStartTick(Date.now())
+        if (as) {
+          const inst = as.instant > 0 ? `，其中 ${as.instant} 件战力达标当场办妥（贡献 +${as.contrib}）` : ''
+          pushLog(`【宗门·自动】接下 ${as.started} 件活儿${inst}。`, as.instant > 0 ? 'ok' : 'info')
+          persist('sect-auto-accept')
+        }
+      }
     }
     // 功法长期参悟（主人 2026-09-19）：装备中的功法随在线时长自行精进（免费，不耗灵气 / 灵石）
     if (tech && dt > 0) {
@@ -3834,6 +3960,34 @@ async function boot () {
         if (a.ok && a.kind === 'egg') emitFloat({ text: '灵兽蛋入笼', kind: 'info' })
       }
       if (acts.some((a) => a.ok)) persist('beast-auto')
+    }
+    // 自动孵化（V4.7 主人 2026-09-19，默认开）：孵位有空即入孵、孵满自动破壳收兽
+    //   —— 园满 / 孵位满 / 没蛋时不做事（不报错不刷屏），只在真正有动作时打日志
+    if (beasts && state.settings.autoHatch !== false) {
+      const acts = beasts.autoHatchTick(Date.now())
+      for (const a of acts) {
+        pushLog(a.message, a.ok ? 'ok' : 'info')
+        if (a.ok && a.kind === 'hatch') emitFloat({ text: '破壳 · 灵兽入园', kind: 'ok' })
+      }
+      if (acts.some((a) => a.ok)) persist('beast-auto-hatch')
+    }
+    // 丹房自动补货（V4.7 主人 2026-09-18：丹房自动炼制改成开关）——开关开启时每种丹常备 1 枚，
+    // 库存见底且材料够就自动开炉补上；限流在 AlchemySystem.restockTick 内（3s 一次、每拍 1 种、单次最多 3 炉）
+    if (alchemy && state.settings.autoBrew !== false) {
+      const rs = alchemy.restockTick(Date.now())
+      if (rs && rs.attempts > 0) {
+        // 未成丹会 3 秒一补 —— 只报「首次失败」防刷屏（成功了再重置，下次失败还会报）
+        if (rs.success) {
+          pushLog(rs.message, 'ok')
+          // 多炉才铺开细节（单炉时汇总行已说清，不再重复一行）
+          if (rs.details.length > 1) for (const d of rs.details) pushLog(d, 'info')
+          restockFailLogged = false
+          persist('alchemy-restock')
+        } else if (!restockFailLogged) {
+          pushLog(rs.message, 'fail')
+          restockFailLogged = true
+        }
+      }
     }
     if (market) market.ensureDaily(Date.now())  // 坊市（2.6）：每日 5 点刷新货品/拍卖（同日幂等）
     // 秘境（2.7）：派遣到期结算（真实时间驱动，离线照算）+ 每周一自动扫荡

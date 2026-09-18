@@ -41,6 +41,46 @@ export const CAT_NAME = { jiyuan: '机缘', richang: '日常', enyuan: '恩怨',
 /** 品质当量基准（世界事件库 v1 §一·2；平衡核对与护栏校验用） */
 export const EQUIV_H = { fan: 0.5, liang: 2, zhen: 8, jue: 24, xian: 72 }
 
+/**
+ * 品质档序（低 → 高）—— V4.7 主人：**纪事消息与事件共用同一套等级语言**
+ * （消息逐条标等级、按等级着色与置顶，口径与事件的 quality 一致）
+ */
+export const QUALITY_ORDER = ['fan', 'liang', 'zhen', 'jue', 'xian']
+
+/**
+ * 自动策略 → 可自动处置的最高等级（V4.7 主人 2026-09-18 拍板「全自动激进」）
+ *   稳健＝只自动处理 凡 / 良（珍起亲断）｜均衡＝凡 / 良 / 珍（绝 / 仙亲断）｜激进＝凡 ~ 仙全自动
+ *   这条口径**同时管事件与纪事消息**：超出范围的条目一律置顶，等玩家亲自决断。
+ */
+export const STRATEGY_AUTO = {
+  steady: { maxQ: 'liang', label: '凡 / 良' },
+  balanced: { maxQ: 'zhen', label: '凡 / 良 / 珍' },
+  aggressive: { maxQ: 'xian', label: '凡 ~ 仙（全自动）' }
+}
+
+/**
+ * 自动策略 → 选项偏好序（增补 v1.1 §三：稳健＝保底项 / 均衡＝期望项 / 激进＝高波动项）
+ * 事件与纪事消息共用同一张表（纪事选项的 tag 同取 safe / balanced / risky）。
+ */
+export const STRATEGY_PREF = {
+  steady: ['safe', 'balanced', 'risky'],
+  balanced: ['balanced', 'safe', 'risky'],
+  aggressive: ['risky', 'balanced', 'safe']
+}
+
+/** 该等级是否落在自动策略的处置范围内（超范围 → 置顶等玩家决断；未知档按均衡兜底） */
+export function isAutoQuality (quality, strategy) {
+  const conf = STRATEGY_AUTO[strategy] || STRATEGY_AUTO.balanced
+  const max = QUALITY_ORDER.indexOf(conf.maxQ)
+  const i = QUALITY_ORDER.indexOf(quality)
+  return i >= 0 && i <= max
+}
+
+/** 自动策略可自动处置的等级文案（面板展示用） */
+export function strategyAutoLabel (strategy) {
+  return (STRATEGY_AUTO[strategy] || STRATEGY_AUTO.balanced).label
+}
+
 /** 触发与累积参数（⚖ 数值可调；频率口径见文件头注） */
 export const TRIGGER = {
   onlinePerHour: 0.2,        // 在线基准频率：期望 1 起 / 5 小时（护栏校准值）

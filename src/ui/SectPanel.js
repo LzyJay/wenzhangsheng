@@ -54,6 +54,32 @@ function fmtTaskLeft (ms) {
   return `${H.fmtGameDuration(ms)}（现实 ${sec} 秒）`
 }
 
+/**
+ * V4.7 主人：一键接取 / 一键提交的可用态与计数
+ *   无待接的活儿 → 「一键接取」置灰；无到点的活儿 → 「一键提交」置灰（未到期不替你折损）
+ */
+function syncTaskBulkBtns (taskList) {
+  const live = Array.isArray(taskList) ? taskList.filter((t) => !t.broken) : []
+  const openCnt = live.filter((t) => t.state === 'open').length
+  if (dom.btnTaskStartall) {
+    dom.btnTaskStartall.disabled = openCnt === 0
+    dom.btnTaskStartall.textContent = openCnt ? `一键接取 (${openCnt})` : '一键接取'
+  }
+  // 自动接取开关（V4.7 主人修订：取代原「一键提交」按钮 —— 提交交给主循环的「到点自动交差」）
+  const autoOn = !!(state.settings && state.settings.autoSect !== false)
+  if (dom.btnTaskAutostart) {
+    dom.btnTaskAutostart.textContent = autoOn ? '开' : '关'
+    dom.btnTaskAutostart.classList.toggle('on', autoOn)
+    dom.btnTaskAutostart.disabled = !Array.isArray(taskList)   // 未入宗时置灰
+    dom.btnTaskAutostart.title = autoOn
+      ? '自动接取：开 —— 任务板一刷新就自动把活儿接下来（战力达标的当场办妥）（点按关闭）'
+      : '自动接取：关 —— 需自行点「接取」或「一键接取」（点按开启）'
+  }
+  if (dom.sectAutoNote) {
+    dom.sectAutoNote.textContent = autoOn ? '刷新即接下，到点自动交差' : '已关闭：需手动接取'
+  }
+}
+
 function render () {
   if (!state || !sect) return
   const info = sect.infoView()
@@ -96,9 +122,11 @@ function render () {
   // ② 任务板
   if (!info.joined) {
     dom.sectTasks.innerHTML = '<div class="bag-empty">入宗后开放</div>'
+    syncTaskBulkBtns(null)
   } else {
+    const taskList = sect.tasksView()
     const frag = document.createDocumentFragment()
-    for (const t of sect.tasksView()) {
+    for (const t of taskList) {
       if (t.broken) continue
       const row = document.createElement('div')
       row.className = 'sect-row' + (t.state === 'empty' ? ' locked' : '')
@@ -184,6 +212,7 @@ function render () {
       frag.appendChild(row)
     }
     dom.sectTasks.replaceChildren(frag)
+    syncTaskBulkBtns(taskList)
   }
 
   // ③ 藏经阁
@@ -264,6 +293,33 @@ function render () {
 
 // 宗门面板动作（事件委托：面板每次重绘不丢监听）
 dom.sectOverlay.addEventListener('click', (e) => {
+  // V4.7 主人：一键接取 / 一键提交（回执合并成一条，避免逐槽刷屏）
+  const tsa = e.target.closest('[data-task-startall]')
+  if (tsa && !tsa.disabled) {
+    const res = sect.startAllOpen()
+    if (res.started > 0) {
+      const inst = res.instant > 0 ? `，其中 ${res.instant} 件战力达标、当场办妥（贡献 +${res.contrib}）` : ''
+      H.pushLog(`一键接取：接下 ${res.started} 件活儿${inst}。`, res.instant > 0 ? 'ok' : 'info')
+      if (res.instant > 0) H.emitFloat({ text: `当场办妥 ×${res.instant}`, kind: 'gold' })
+      H.persist('sect-task-startall')
+    } else {
+      H.pushLog('一键接取：眼下没有待接的活儿。', 'info')
+    }
+    render()
+    return
+  }
+  // 自动接取开关（V4.7 主人修订：取代原「一键提交」按钮）
+  const tas = e.target.closest('[data-task-autostart]')
+  if (tas && !tas.disabled) {
+    const next = state.settings.autoSect === false
+    state.settings.autoSect = next
+    H.pushLog(next
+      ? '宗门自动接取：开 —— 任务板一刷新就自动把活儿接下来（到点仍自动交差）。'
+      : '宗门自动接取：关 —— 任务改由你手动接取。', 'sys')
+    H.persist('settings')
+    render()
+    return
+  }
   const join = e.target.closest('[data-join]')
   if (join) {
     const res = sect.join()

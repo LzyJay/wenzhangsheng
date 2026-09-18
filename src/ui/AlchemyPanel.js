@@ -10,14 +10,19 @@
 export function createAlchemyPanel (ctx) {
   const dom = ctx.dom
   const state = ctx.state
-  const alchemy = ctx.alchemy
-  const cult = ctx.cult
+  // 系统实例一律取 getter（() => alchemy / () => cult）：本面板在 boot 里**先于 cult 实例化**，
+  // 直取会捕获到 null（V4.7 批 0 修复的实测 bug：neededPills 静默抛错被 catch 吃掉，
+  // → 丹方行的「当前所需」标记永远不出现）
+  const getAlchemy = ctx.alchemy
+  const getCult = ctx.cult
   const H = ctx.helpers
   if (!dom.alchemyOverlay) return null
 
   /** 当下"正缺"的丹药清单（纯读；判定归各系统，此处只做汇总） */
   function neededPills () {
     const out = []
+    const cult = getCult()
+    if (!cult) return out
     try {
       const pv = cult.getBreakthroughPreview(Date.now())
       if (pv.pillRequired && pv.pillMissing && pv.plan && pv.plan.pill) out.push(pv.plan.pill)
@@ -31,7 +36,20 @@ export function createAlchemyPanel (ctx) {
   }
 
   function render () {
+    const alchemy = getAlchemy()
     if (!alchemy) return
+    // V4.7 主人：面板内「自动炼制」直观开关（与设置面板同一个叶子 settings.autoBrew，两处同步显示）
+    const autoOn = !!(state.settings && state.settings.autoBrew !== false)
+    if (dom.tgBrewAuto) {
+      dom.tgBrewAuto.textContent = autoOn ? '开' : '关'
+      dom.tgBrewAuto.classList.toggle('on', autoOn)
+      dom.tgBrewAuto.title = autoOn
+        ? '自动炼制：开 —— 每种丹常备 1 枚，库存见底且材料够就自动开炉补上（点按关闭）'
+        : '自动炼制：关 —— 丹药不再自动补货，缺丹需手动开炉（点按开启）'
+    }
+    if (dom.brewAutoNote) {
+      dom.brewAutoNote.textContent = autoOn ? '每种丹常备 1 枚，用掉自动补' : '已关闭：缺丹需手动开炉'
+    }
     const needed = neededPills()
     const views = alchemy.recipesView({ needed })
 
@@ -45,9 +63,10 @@ export function createAlchemyPanel (ctx) {
     }
 
     dom.brewNote.textContent =
-      '材料齐即可开炉；炼失败不白烧，收回一半材料。' +
-      '标「当前所需」的是眼下卡关的那味丹：点「自动炼制」会一直开炉到成丹或材料耗尽（成丹率不足 100%，可能连炼数炉）。' +
-      '突破 / 渡劫时若发现缺丹，丹房也会自动开炉一次。'
+      '材料齐即可开炉（一次一炉）；炼失败不白烧，收回一半材料。' +
+      '标「当前所需」的是眼下卡关的那味丹。' +
+      '上面开着「自动炼制」时，每种丹常备 1 枚、用掉自动补（材料不足则等有料再补）；' +
+      '突破 / 渡劫时若发现缺丹，不管开关如何都会自动开炉一次。'
 
     const QUALITY_COLOR = { fan: '#b9b3a8', liang: '#e8b96a', zhen: '#7fd6a8', jue: '#b98cff', xian: '#9fd6ff' }
     const frag = document.createDocumentFragment()
@@ -98,16 +117,7 @@ export function createAlchemyPanel (ctx) {
       btn.disabled = !r.canBrew
       btn.title = r.canBrew ? `开炉炼制${r.name}（1 炉）` : `材料不足：${r.missing.join('、')}`
 
-      const auto = document.createElement('button')
-      auto.className = 'mini'
-      auto.textContent = '自动炼制'
-      auto.dataset.autobrew = r.pillId
-      auto.disabled = !r.canBrew
-      auto.title = r.canBrew
-        ? `自动开炉，直到炼出${r.name}或材料耗尽`
-        : `材料不足：${r.missing.join('、')}`
-
-      row.append(bn, bi, btn, auto)
+      row.append(bn, bi, btn)
       frag.appendChild(row)
     }
     dom.brewList.replaceChildren(frag)
@@ -116,8 +126,24 @@ export function createAlchemyPanel (ctx) {
   // ── 界面事件绑定 ──────────────────────────────────────────────────────────
 
   // 坊市页签监听已随面板迁入 src/ui/MarketPanel.js（V3.5.5）
-  // 丹房：炼制 / 自动炼制（事件委托：面板每次重绘，避免丢监听）
+  // 丹房：自动炼制开关 / 单炉炼制（事件委托：面板每次重绘，避免丢监听）
   H.onPress(dom.alchemyOverlay, (e) => {
+    const alchemy = getAlchemy()
+    if (!alchemy) return
+    // 自动炼制开关（面板内直观开关；与设置面板同一叶子）
+    const ba = e.target.closest('[data-brew-auto]')
+    if (ba) {
+      if (!state.settings) state.settings = {}
+      const next = state.settings.autoBrew === false
+      state.settings.autoBrew = next
+      H.pushLog(next
+        ? '丹房自动炼制：开 —— 每种丹常备 1 枚，用掉就自动补上。'
+        : '丹房自动炼制：关 —— 丹药不再自动补货，缺丹需手动开炉。', 'sys')
+      H.persist('settings')
+      render()
+      H.render()
+      return
+    }
     const b = e.target.closest('[data-brew]')
     if (b && !b.disabled) {
       const res = alchemy.brew(b.dataset.brew)
@@ -128,15 +154,7 @@ export function createAlchemyPanel (ctx) {
       }
       return
     }
-    const auto = e.target.closest('[data-autobrew]')
-    if (auto && !auto.disabled) {
-      const ab = alchemy.autoBrewFor(auto.dataset.autobrew)
-      H.pushLog(ab.message, ab.success ? 'ok' : 'fail')
-      for (const d of ab.details) H.pushLog(d, 'info')
-      if (ab.attempts > 0) H.persist('alchemy-autobrew')
-      render()
-      H.render()
-    }
+    // 每行「自动炼制」按钮已撤（V4.7 主人 2026-09-18：改由上方开关常驻补货，按需开炉走「炼制」）
   })
 
 

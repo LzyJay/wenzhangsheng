@@ -189,6 +189,11 @@ let lastDungeonRender = 0 // 秘境面板轻刷节拍（V3.5.2：时间驱动，
 
 // 秘境面板动作（事件委托：面板每次重绘不丢监听）
 H.onPress(dom.dungeonOverlay, (e) => {
+  // 系统实例必须在回调内取：render() 里的 system 是局部变量，回调作用域链上没有它。
+  // （V3.5.5 拆分遗留：引用了裸标识符 → 每次点击抛 ReferenceError，四个按钮全哑；
+  //   烟测只断言遮罩开合、不点面板内按钮，故一直没暴露。V4.7 批 0 修复）
+  const system = getSystem()
+  if (!system) return
   const tc = e.target.closest('[data-tower-challenge]')
   if (tc && !tc.disabled) {
     const res = system.challengeTower()

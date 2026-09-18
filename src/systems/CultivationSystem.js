@@ -649,12 +649,16 @@ class CultivationSystem {
         // 2.8 灵兽助战已实装：出战灵兽即自动生效（hold 性质，不必点「备妥」）
         if (p.id === 'beast' && this.beast) {
           const pet = this.beast.activePet
+          // V4.7 主人：助战＝主战 +7% + 辅助各 +3.5%（合计受 TRIAL_BEAST.cap +14% 封顶）；
+          // 只带 1 只时逐位等于表内的 0.07（旧档口径不变）
+          const aid = this.beast.trialAidPct()
           v.active = !!pet
-          v.appliedPct = v.active ? p.bonusPct : 0
+          v.appliedPct = v.active ? aid : 0
+          if (v.active) v.bonusPct = aid          // 让 prepSummary 聚到实际助战值（含辅助）
           v.state = v.active ? 'active' : 'locked'
           v.message = v.active
-            ? `「${this.beast.petName(pet)}」随行护法 · 单雷 +${pct}`
-            : '灵兽园空空：孵出灵兽并设为出战后自动生效（见「灵兽」面板）'
+            ? `「${this.beast.petName(pet)}」随行护法 · 单雷 +${Math.round(aid * 1000) / 10}%`
+            : '灵兽园空空：孵出灵兽并设为主战后自动生效（见「灵兽」面板）'
         } else {
           v.state = 'locked'
           v.message = `${p.module} 上线后开放`

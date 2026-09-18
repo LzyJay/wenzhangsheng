@@ -15,9 +15,10 @@
  *   事件增益以 evtbuff_* id 写入，与突破/渡劫条目互不冲突。
  *
  * 频率口径：TRIGGER.onlinePerHour（护栏校准值，见 data/events.js 头注）。
- * 结算规则：
- *   · 在线每秒按期望概率滚动触发；凡/良/珍按自动策略即时结算并记近事录；
- *   · 绝/仙级一律入 pending"暂缓等玩家"（事件簿点选，自动策略只作按钮推荐）；
+ * 结算规则（V4.7 主人 2026-09-18 修订：**按等级**决定自动与否）：
+ *   · 在线每秒按期望概率滚动触发；落在自动策略处置范围内的等级即时结算并记近事录
+ *     （稳健＝凡/良｜均衡＝凡/良/珍｜激进＝凡~仙，见 data/events.js STRATEGY_AUTO）；
+ *   · 超出范围的等级入 pending"暂缓等玩家"（事件簿点选，自动策略只作按钮推荐）；
  *   · 离线按 50% 累积（上限 12 起）回归时批量结算（settleOffline）；
  *   · 延迟兑现挂账到期即自动入账（现实时间）。
  * ═══════════════════════════════════════════════════════════════════════════
@@ -25,17 +26,13 @@
 
 import {
   WORLD_POOLS, getEvent, getLuckTier, TRIGGER, QUALITY_NAME, CAT_NAME,
-  LUCK_TIERS, nominalH
+  LUCK_TIERS, nominalH,
+  // V4.7：策略 → 等级处置范围 / 选项偏好序，与纪事消息共用同一张表（data 层单一真源）
+  STRATEGY_PREF, isAutoQuality, strategyAutoLabel
 } from '../data/events.js'
 
 const clamp = (v, a, b) => Math.min(Math.max(v, a), b)
 
-/** 自动策略 → 选项偏好序（v1.1 §三：稳健＝保底 / 均衡＝期望 / 激进＝高波动） */
-const STRATEGY_PREF = {
-  steady: ['safe', 'balanced', 'risky'],
-  balanced: ['balanced', 'safe', 'risky'],
-  aggressive: ['risky', 'balanced', 'safe']
-}
 export const STRATEGY_NAME = { steady: '稳健', balanced: '均衡', aggressive: '激进' }
 
 /** 小数字格式化（消息文案用；与 main.js 的 fmt 同口径但不依赖 DOM 层） */
@@ -238,13 +235,16 @@ class EventSystem {
     this.es.dedupe[ev.id] = nowMs
     this.state.stats.eventCount = (this.state.stats.eventCount | 0) + 1
 
-    if (ev.quality === 'jue' || ev.quality === 'xian') {
+    // V4.7 主人（拍板「全自动激进」）：能不能被自动消化，改由 **自动策略 × 事件等级** 决定 ——
+    //   稳健＝自动处理 凡/良（珍起亲断）｜均衡＝凡/良/珍（绝/仙亲断）｜激进＝凡~仙全自动
+    //   超出范围的一律入簿置顶，等玩家亲自决断（事件簿按钮仍按策略给推荐）。
+    if (!isAutoQuality(ev.quality, this.strategy)) {
       this.es.seq = (this.es.seq | 0) + 1
       this.es.pending.push({ uid: this.es.seq, eventId: ev.id, at: nowMs })
       return [{
         kind: 'hold',
         good: true,
-        message: `【${ev.name}·${QUALITY_NAME[ev.quality]}级】事涉重大，已记入事件簿，待你亲自抉择。`
+        message: `【${ev.name}·${QUALITY_NAME[ev.quality]}级】超出「${STRATEGY_NAME[this.strategy]}」自动处置范围（自动档：${strategyAutoLabel(this.strategy)}），已记入事件簿，待你亲自抉择。`
       }]
     }
     const opt = this._pickAuto(ev, stoneRate)
@@ -458,6 +458,7 @@ class EventSystem {
       freqCoef: tier.freqCoef,
       strategy: this.strategy,
       strategyName: STRATEGY_NAME[this.strategy],
+      strategyAutoLabel: strategyAutoLabel(this.strategy),   // V4.7：该档能自动处置的等级（面板写明）
       pendingCount: es.pending.length,
       pending: es.pending.slice().reverse().map((p) => {
         const ev = getEvent(p.eventId)

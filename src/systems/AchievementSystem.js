@@ -15,6 +15,9 @@
  *   · 成就 90 个（境界18/秘境15/宗门12/灵兽10/事件因果12/探索收集13/隐藏10），5~50 点
  *   · 五档阶梯（凡/灵/玄/王/皇）按累计成就点发放称号 + 外观碎片 + 少量材料；称号纯展示
  *   · 纪事：三频道（本界/宗门/天下）+「你」频道；定时汇总一批，玩家里程碑即时插入
+ *   · V4.7 主人 2026-09-18 重构：消息逐条带**等级**（凡/良/珍/绝/仙，与事件同源）＋
+ *     **逐条专属选项**（选项写在模板里，不再按频道套壳）；命中且等级在自动策略范围内时
+ *     由系统按策略偏好代选并落档，超范围的一条都不动、置顶等玩家决断
  *   · 隐藏成就未解锁只显示「???」与 hint，不剧透条件
  * ═══════════════════════════════════════════════════════════════════════════
  */
@@ -28,6 +31,10 @@ import {
 import { REALM_META } from '../data/realms.js'
 import { SECT } from '../data/sect.js'
 import { getItem } from '../data/items.js'
+// V4.7：等级语言与自动策略与事件系统同源（data 层单一真源，系统之间不互相 import）
+import {
+  QUALITY_ORDER, QUALITY_NAME, QUALITY_COLOR, STRATEGY_PREF, isAutoQuality, strategyAutoLabel
+} from '../data/events.js'
 
 const DAY_MS = 24 * 3600 * 1000
 
@@ -66,6 +73,8 @@ class AchievementSystem {
     const a = this.s
     if (!a.chronicle.length) this.seed(now)
     if (!a.nextBatchAt) a.nextBatchAt = now + CHRONICLE.batchMs
+    // V4.7 主人 2026-09-19：把老档里"按频道套壳"的互动条目换挂回它自己的模板选项（零错配）
+    this._migrateLegacyInteractions()
     // 凡档（need 0）人人有份：称号「初入道途」在建档时即入袋
     this._checkTier(now)
     return a
@@ -271,28 +280,137 @@ class AchievementSystem {
 
   _makeEntry (at) {
     const t = CHRONICLE_TEMPLATES[Math.floor(Math.random() * CHRONICLE_TEMPLATES.length)]
-    return this.push(this._withInteract(t.ch, t), at)
+    return this._withInteract(t, at)
   }
 
   /** 提到「你」的条目（隐藏成就「无名之辈」的来源） */
   _makeMention (at) {
     const t = CHRONICLE_MENTIONS[Math.floor(Math.random() * CHRONICLE_MENTIONS.length)]
     this.note('mention')
-    return this.push(this._withInteract(t.ch, t), at)
+    return this._withInteract(t, at)
   }
 
   /**
-   * 按频道概率决定这条消息是否"可择"（主人 2026-09-18：所有类型都可能互动，但只按概率出现）
-   * 命中则挂上一组该频道的通用选项；未命中就是一条普通新闻。
+   * 挂上**该条模板自带的专属选项**（V4.7 主人 2026-09-18：逐条专属，根治"牛头不对马嘴"）
+   *   · 概率：按频道 chance（本界 0.45 / 宗门 0.40 / 天下 0.50），每批至多 1 条（防刷屏）；
+   *   · 等级：命中后若该条等级落在**自动策略的处置范围**内，就按策略偏好替玩家选定并落档；
+   *     超范围（或选项一个都付不起）则留在原位、置顶等玩家亲自决断 —— 与事件同一套口径。
    */
-  _withInteract (ch, base) {
-    const conf = CHRONICLE_INTERACT[ch]
-    if (!conf || !(conf.chance > 0) || !Array.isArray(conf.sets) || !conf.sets.length) return base
-    if (this._batchInteractUsed) return base            // 本批已有一条互动，不再叠加
-    if (Math.random() >= conf.chance) return base
+  _withInteract (tpl, at) {
+    const base = { ch: tpl.ch, text: tpl.text, note: tpl.note, q: tpl.q }
+    const conf = CHRONICLE_INTERACT[tpl.ch]
+    const choices = Array.isArray(tpl.choices) ? tpl.choices : []
+    // 不互动就是一条普通消息（**照常入库**）；命中才多挂该条模板自己的专属选项
+    const canPick = !!(conf && conf.chance > 0 && choices.length) &&
+      !this._batchInteractUsed &&                              // 本批已有一条互动，不再叠加
+      Math.random() < conf.chance
+    if (!canPick) return this.push(base, at)
     this._batchInteractUsed = true
-    const set = conf.sets[Math.floor(Math.random() * conf.sets.length)]
-    return { ch: base.ch, text: base.text, note: base.note, options: set.options }
+    const item = this.push(Object.assign({}, base, { options: choices, tid: tpl.id }), at)
+    if (!isAutoQuality(tpl.q, this.strategy)) return item   // 超范围 → 置顶等玩家
+    const opt = this._pickChoice(choices)
+    if (!opt) return item                                   // 都付不起 → 留给玩家
+    const res = this.resolveChronicle(item.uid, opt.id)
+    if (res.ok) item.autoResolved = true                    // 自动处置：UI 标注一句
+    return item
+  }
+
+  /** 当前自动策略（未落档/脏值 → 均衡；与 EventSystem 同一兜底口径） */
+  get strategy () {
+    const s = this.state.settings && this.state.settings.autoStrategy
+    return STRATEGY_PREF[s] ? s : 'balanced'
+  }
+
+  /** 自动策略能自动处置到哪个等级（面板写明给玩家看） */
+  get strategyAutoLabel () {
+    return strategyAutoLabel(this.strategy)
+  }
+
+  /** 自动策略挑纪事选项：按偏好序取首个"现有资源付得起"的；都付不起返回 null（留给玩家） */
+  _pickChoice (choices) {
+    const pref = STRATEGY_PREF[this.strategy] || STRATEGY_PREF.balanced
+    const afford = (o) => {
+      const stones = (this.state.resources && this.state.resources.stones) | 0
+      if ((o.costStones | 0) > 0 && stones < (o.costStones | 0)) return false
+      const inv = (this.state.inventory && this.state.inventory.items) || {}
+      for (const n of o.needItems || []) if ((inv[n.id] | 0) < n.n) return false
+      return true
+    }
+    for (const tag of pref) {
+      const opt = choices.find((o) => o.tag === tag && afford(o))
+      if (opt) return opt
+    }
+    return choices.find((o) => afford(o)) || null
+  }
+
+  /** 选项打包（结果文案随条目落档：占位符在此一次性填充，选定后再显示） */
+  _packOptions (options) {
+    return options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      hint: o.hint || '',
+      good: !!o.good,
+      costStones: o.costStones | 0,
+      needItems: (o.needItems || []).map((x) => ({ id: x.id, n: x.n | 0 })),
+      stones: o.stones | 0,
+      items: (o.items || []).map((x) => ({ id: x.id, n: x.n | 0 })),
+      result: this._fill(o.result || '')
+    }))
+  }
+
+  /**
+   * 老档一次性迁移（V4.7 主人 2026-09-19：「你目前的消息互动还是牛头不对马嘴」）
+   *   病根不在新逻辑，而在**存档里旧条目的旧选项**：那批条目是"按频道整组套壳"时代生成的，
+   *   选项（如「出手相帮 / 事不关己」）连同正文一起落了档，重启后照旧显示 —— 所以看着仍错配。
+   * 处置：按**正文**匹配回它自己那条模板 → 换挂该模板的专属选项（零错配）；
+   *   匹配不上的（文案后来改过）→ 摘掉选项、降级为普通旧闻，绝不硬配；
+   *   换挂后再照新口径过一遍自动策略：落在自动档内的直接由系统代选并落档。
+   * 幂等：带 tid 的条目（新生成的）直接跳过。
+   * @returns {number} 被处置的条目数
+   */
+  _migrateLegacyInteractions () {
+    const a = this.s
+    const all = CHRONICLE_TEMPLATES.concat(CHRONICLE_MENTIONS)
+    let changed = 0
+    for (const e of a.chronicle) {
+      if (!Array.isArray(e.options) || !e.options.length) continue
+      if (e.tid) continue
+      const tpl = all.find((t) => this._templateMatches(t.text, e.text))
+      if (!tpl) {
+        // 认不出是哪条模板 → 只留正文（旧闻），不再挂任何选项
+        e.options = []
+        e.resolved = null
+        e.result = ''
+        changed++
+        continue
+      }
+      e.tid = tpl.id
+      e.q = tpl.q
+      e.options = this._packOptions(tpl.choices)
+      e.resolved = null
+      e.result = ''
+      changed++
+      if (!isAutoQuality(tpl.q, this.strategy)) continue   // 超出自动档 → 留给你决断
+      const opt = this._pickChoice(tpl.choices)
+      if (!opt) continue
+      const r = this.resolveChronicle(e.uid, opt.id)
+      if (r.ok) e.autoResolved = true
+    }
+    return changed
+  }
+
+  /** 模板正文 → 同源条目正则（占位符按"任意非空"通吃；编译结果缓存，迁移只在启动时跑一遍） */
+  _templateMatches (tplText, text) {
+    if (!this._tplRes) this._tplRes = new Map()
+    let re = this._tplRes.get(tplText)
+    if (!re) {
+      const src = String(tplText)
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')      // 先转义字面量
+        .replace(/\\\{(\w+)\\}/g, '[\\s\\S]+?')       // 占位符 → 通吃（正文已被填充过）
+      re = new RegExp('^' + src + '$')
+      this._tplRes.set(tplText, re)
+    }
+    return re.test(String(text || ''))
   }
 
   /** 各频道互动概率（面板要把概率写明给玩家看） */
@@ -311,6 +429,8 @@ class AchievementSystem {
     const item = {
       at: now,
       ch,
+      // V4.7：消息也带等级（凡/良/珍/绝/仙），与事件同一套语言；脏值兜底为凡
+      q: QUALITY_ORDER.includes(entry.q) ? entry.q : 'fan',
       text: this._fill(entry.text || ''),
       note: entry.note ? this._fill(entry.note) : ''
     }
@@ -318,18 +438,8 @@ class AchievementSystem {
       a.chronicleSeq = (a.chronicleSeq | 0) + 1
       item.uid = a.chronicleSeq
       item.eventId = entry.eventId || ''
-      item.options = entry.options.map((o) => ({
-        id: o.id,
-        label: o.label,
-        hint: o.hint || '',
-        good: !!o.good,
-        costStones: o.costStones | 0,
-        needItems: (o.needItems || []).map((x) => ({ id: x.id, n: x.n | 0 })),
-        stones: o.stones | 0,
-        items: (o.items || []).map((x) => ({ id: x.id, n: x.n | 0 })),
-        // 结果文案要随条目落档：选定后再显示（占位符在此一次性填充）
-        result: this._fill(o.result || '')
-      }))
+      item.tid = entry.tid || ''          // V4.7：记住出自哪条模板（老档迁移与自查都靠它）
+      item.options = this._packOptions(entry.options)
       item.resolved = null
       item.result = ''
     }
@@ -420,12 +530,18 @@ class AchievementSystem {
       ch: e.ch,
       chName: (CHRONICLE_CHANNELS.find((c) => c.id === e.ch) || {}).name || e.ch,
       shichen: shichenOf(e.at),
+      // V4.7：等级（缺省凡）＋等级名/色，UI 按等级着色与置顶
+      q: QUALITY_ORDER.includes(e.q) ? e.q : 'fan',
+      qName: QUALITY_NAME[QUALITY_ORDER.includes(e.q) ? e.q : 'fan'] || '凡',
+      qColor: QUALITY_COLOR[QUALITY_ORDER.includes(e.q) ? e.q : 'fan'] || '',
       text: e.text,
       note: e.note,
       interactive: !!(Array.isArray(e.options) && e.options.length),
       options: Array.isArray(e.options) ? e.options : [],
       resolved: e.resolved || null,
-      result: e.result || ''
+      result: e.result || '',
+      auto: !!e.autoResolved,          // 自动策略替你定的（UI 会标一句）
+      pending: !!(Array.isArray(e.options) && e.options.length && !e.resolved)   // 待决断 → 置顶
     }))
   }
 
