@@ -219,6 +219,51 @@ export function getWorld (id) {
   return WORLDS.find((w) => w.id === id) || null
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// V5.1 · 招牌秘境 ↔ 十二界 本源映射（内容批次 3 世界篇首步）
+//   规则（口径已拍板）：12 条招牌按原著出处（proto ↔ source）映射到 12 界；
+//     ① origin ＝ 本源招牌：产出 100%、unlockRealm 提前 1 大境界；
+//     ② local  ＝ 空缺界的「本界游历洞天」：产出 60%、门槛同样提前 1 境
+//        （只享受提前便利，不享受全额）；
+//     ③ 其余 ＝ 他界洞天：产出 60%、按 unlockRealm 原门槛；
+//     ④ 全 12 条对任何世界**始终可见**（三态标签由本表推导）。
+//   实现方式：12 条已被 6 界占用完（本源 12 条 = 1+5+1+1+1+3），另 6 界各领 1 处游历洞天。
+//   ⚙ 主题贴合为软约束：要「每界都有专属」需新增 6 条招牌数据（下一批次，V5.1 不做）。
+// ═════════════════════════════════════════════════════════════════════════════
+export const SIGNATURE_ORIGIN = {
+  qinglan: { origin: ['sig_qiling'], local: [] },                                   // 凡人修仙传
+  poxiao: { origin: [], local: ['sig_minghe'] },                                    // 仙逆 → 游历·冥河
+  denghuo: { origin: ['sig_tianhe', 'sig_yaochi', 'sig_shijian', 'sig_tianting', 'sig_hualing'], local: [] },
+  qingyun: { origin: ['sig_huanyue'], local: [] },                                  // 诛仙
+  wangzu: { origin: [], local: ['sig_zhongsheng'] },                                // 玄鉴仙族 → 游历·众生（集市/交易）
+  younuo: { origin: [], local: ['sig_xitian'] },                                    // 道诡异仙 → 游历·西天（心境/心魔）
+  tongtian: { origin: ['sig_minghe'], local: [] },                                  // 一念永恒
+  tiangong: { origin: [], local: ['sig_hualing'] },                                 // 仙工开物 → 游历·化灵（古修机关/传承）
+  liumian: { origin: ['sig_xitian'], local: [] },                                   // 谁让他修仙的！
+  jiuding: { origin: ['sig_dongxu', 'sig_zhongsheng', 'sig_yinlv'], local: [] },    // 大乘期才有逆袭系统
+  wuyuan: { origin: [], local: ['sig_huanyue'] },                                   // 没钱修什么仙？→ 游历·幻月（武道/剑意）
+  xianghuo: { origin: [], local: ['sig_yinlv'] }                                    // 我本无意成仙 → 游历·音律（雅趣/香火）
+}
+
+/** 空映射兜底（世界未登记 / 老档 world 为 null 时按「他界」口径） */
+const NO_SIG_MAP = { origin: [], local: [] }
+
+/**
+ * 某世界下某招牌洞天的三态
+ * @returns {'origin'|'local'|'foreign'} origin 本源洞天 ｜ local 本界游历洞天 ｜ foreign 他界洞天
+ */
+export function signatureStateOf (worldId, sigId) {
+  const m = SIGNATURE_ORIGIN[worldId] || NO_SIG_MAP
+  if (m.origin.includes(sigId)) return 'origin'
+  if (m.local.includes(sigId)) return 'local'
+  return 'foreign'
+}
+
+/** 某世界的本源招牌 id 列表（成就「集齐本界本源招牌」用） */
+export function originSignaturesOf (worldId) {
+  return ((SIGNATURE_ORIGIN[worldId] || NO_SIG_MAP).origin || []).slice()
+}
+
 /** 按随机数 roll 世界（等概率 1/12；r ∈ [0,1) 映射到 index） */
 export function rollWorldIndex (r = Math.random()) {
   return Math.min(WORLDS.length - 1, Math.floor(r * WORLDS.length))
@@ -231,4 +276,7 @@ export function rerollWorldIndex (excludeId, r = Math.random()) {
   return WORLDS.indexOf(pool[idx])
 }
 
-export default { WORLDS, MASTERY, DRAW, getWorld, rollWorldIndex, rerollWorldIndex }
+export default {
+  WORLDS, MASTERY, DRAW, getWorld, rollWorldIndex, rerollWorldIndex,
+  SIGNATURE_ORIGIN, signatureStateOf, originSignaturesOf
+}

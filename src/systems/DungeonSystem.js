@@ -23,16 +23,25 @@
  *   stars:   { 'res_xxx:深度': 评星 1~3 }
  *   dispatch: { runs: [{ id, dungeonId, depth, hours, startAt, renew }] }
  *   lastSweepWeek: 上次周扫荡周键（周一为界）
+ *   —— V5.1 招牌秘境三叶子（ensure() 懒建，老档零迁移）：
+ *   points:   秘境积分余额（试炼塔 30 层里程碑 / 招牌首通 / 招牌周期 / 周轮换产出）
+ *   sig:      { 'sig_xxx': { first: true, cycleKey: '<轮键>' }, weekly: { week, id } }
+ *   shopWeek: 商店购买计数（按周期键留痕，为后续限购/统计预留）
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 import {
   TOWER, DEPTH_TABLE, RESOURCE_DUNGEONS, DISPATCH, STAR_RULE,
   TECH_BY_DEPTH, TECH_DROP_PCT, TECH_DUP_STONES_H, SURPRISE,
+  SIGNATURE, SIGNATURE_DUNGEONS, DUNGEON_SHOP,
   towerPower, towerFirstClearH, towerWeeklyH, towerMilestone,
-  getDungeon, getDepth, slotCountFor, dispatchHours, techPoolOf, rollSurprise
+  getDungeon, getDepth, slotCountFor, dispatchHours, techPoolOf, rollSurprise,
+  getSignature, sigFirstClearH, sigCycleH, sigCycleKey, sigCycleMsToNext,
+  weeklySignatureId, getShopItem, shopCostOf
 } from '../data/dungeon.js'
 import { getLevelInfo, getRealmMeta, REALM_META } from '../data/realms.js'
+// V5.1 招牌秘境：十二界本源映射（data→data 直读，纯函数；不 import 任何 system）
+import { signatureStateOf, originSignaturesOf } from '../data/worlds.js'
 import { getItem } from '../data/items.js'
 import { stoneHourly } from '../data/events.js'
 // 游戏历（主人 2026-09-17）：面板与日志里的时长一律游戏历文案
@@ -40,6 +49,9 @@ import { fmtGameDuration } from '../data/gametime.js'
 
 const HOUR_MS = 3600 * 1000
 const MIN_SETTLE_MS = 60 * 1000   // 召回低于 1 分钟按 0 结算（防刷）
+
+/** 招牌洞天三态标签（V5.1；口径见 data/worlds.js SIGNATURE_ORIGIN） */
+const SIG_STATE_NAME = { origin: '本源洞天', local: '游历洞天', foreign: '他界洞天' }
 
 class DungeonSystem {
   /**
@@ -67,6 +79,10 @@ class DungeonSystem {
     if (!ds.dispatch || typeof ds.dispatch !== 'object') ds.dispatch = {}
     if (!Array.isArray(ds.dispatch.runs)) ds.dispatch.runs = []
     if (!('lastSweepWeek' in ds)) ds.lastSweepWeek = ''
+    // V5.1 招牌秘境：三个懒建叶子（老档零迁移，不动 SaveSystem 迁移链）
+    if (!ds.sig || typeof ds.sig !== 'object') ds.sig = {}
+    if (typeof ds.points !== 'number' || !Number.isFinite(ds.points)) ds.points = 0
+    if (!ds.shopWeek || typeof ds.shopWeek !== 'object') ds.shopWeek = {}
     return this
   }
 
@@ -213,16 +229,21 @@ class DungeonSystem {
 
     const ms = towerMilestone(next)
     let milestoneText = ''
+    let milestonePoints = 0
     if (ms) {
       const bonus = this.hToStones(TOWER.milestoneBonusH)
       this.state.resources.stones += bonus
       stones += bonus
-      milestoneText = `，${ms}：灵石 +${bonus}`
+      // V5.1：第 30 层里程碑文案「秘境积分 ×100」接线（招牌积分商店的上游）
+      milestonePoints = (TOWER.milestonePoints && TOWER.milestonePoints[next]) || 0
+      if (milestonePoints > 0) this._addPoints(milestonePoints)
+      milestoneText = `，${ms}：灵石 +${bonus}${milestonePoints ? `、秘境积分 +${milestonePoints}` : ''}`
     }
 
     this.ds.cleared.tower = next
     return {
-      ok: true, floor: next, needPower: power, stones, milestone: ms || null,
+      ok: true, floor: next, needPower: power, stones, milestone: ms || null, milestonePoints,
+      points: this.points,
       message: `试炼塔第 ${next} 层已通：灵石 +${stones}${milestoneText}。`
     }
   }
@@ -451,6 +472,245 @@ class DungeonSystem {
       ok: true, partial: true, h, stones, mats, matId: d.material,
       techId: drop ? drop.id : null, techName: drop ? drop.name : null, surprise: sup.id,
       message: `分身召回：${d.name}（驻留 ${fmtGameDuration(elapsedMs)}）灵石 +${stones}，${getItem(d.material).name} +${mats}${techText}。${supText}`
+    }
+  }
+
+  // ── 招牌秘境（V5.1 · 内容批次 3 世界篇首步）────────────────────────────
+  //  口径（已拍板，见 data/dungeon.js SIGNATURE 与 data/worlds.js SIGNATURE_ORIGIN）：
+  //    本源洞天＝本界招牌（产出 100% + 门槛提前 1 大境界）；游历洞天＝空缺界的本界洞天
+  //    （产出 60% + 门槛提前 1 境）；他界洞天＝其余（产出 60% + 原门槛）；12 条始终可见。
+  //  四条链路：首通（一次性）/ 周期（每 30 游戏天一轮，每洞天每轮一次）/
+  //           周轮换（当周限时秘境，产出 ×1.5，过期作废不可补打）/ 积分商店。
+  // ────────────────────────────────────────────────────────────────────────
+
+  /** 当前世界 id（只读直读，**不经懒建**——查询不该长出子树，照 WorldSystem.bonusView 惯例） */
+  get worldId () {
+    const w = this.state.world
+    return (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : null
+  }
+
+  /** 招牌进度叶子（懒建；键为招牌 id，另有保留键 weekly＝当周限时秘境已探记录） */
+  get sigState () {
+    return this.ds.sig
+  }
+
+  /** 秘境积分余额 */
+  get points () {
+    return Math.max(0, Math.round(Number(this.ds.points) || 0))
+  }
+
+  /** 加减积分（内部；不做余额校验，校验在调用点） */
+  _addPoints (n) {
+    const ds = this.ds
+    ds.points = Math.max(0, Math.round((Number(ds.points) || 0) + (Number(n) || 0)))
+    return ds.points
+  }
+
+  /**
+   * 某招牌洞天在当前世界下的入场口径
+   * @returns {{state:'origin'|'local'|'foreign', stateName:string, mul:number, unlockRealm:number, unlocked:boolean}}
+   */
+  sigEntryOf (d) {
+    const st = signatureStateOf(this.worldId, d.id)
+    // 本源（提前 1 大境界）与游历（同样提前 1 境）都享门槛便利；他界按原门槛
+    const unlockRealm = st === 'foreign'
+      ? d.unlockRealm
+      : Math.max(0, d.unlockRealm - SIGNATURE.localUnlockDiscount)
+    return {
+      state: st,
+      stateName: SIG_STATE_NAME[st] || '他界洞天',
+      mul: st === 'origin' ? SIGNATURE.originMul : SIGNATURE.foreignMul,
+      unlockRealm,
+      unlocked: this.realmIndex >= unlockRealm
+    }
+  }
+
+  /** 招牌首通（一次性：本源全额 / 游历与他界六折；赠积分） */
+  signatureFirstClear (id, now = Date.now()) {
+    const d = getSignature(id)
+    if (!d) return { ok: false, message: '没有这座洞天。' }
+    const e = this.sigEntryOf(d)
+    const s = this.sigState
+    if (s[id] && s[id].first) return { ok: false, message: `${d.name}已首通过，不必再探。` }
+    if (!e.unlocked) {
+      return { ok: false, message: `${d.name}（${e.stateName}）需 ${getRealmMeta(e.unlockRealm).name}期方可入内。` }
+    }
+
+    const h = sigFirstClearH(d) * e.mul
+    const stones = this.hToStones(h)
+    const mats = this.hToMats(d, h)
+    this.state.resources.stones += stones
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    const points = SIGNATURE.points.firstClear
+    this._addPoints(points)
+    s[id] = { first: true, cycleKey: sigCycleKey(now) }
+
+    return {
+      ok: true, kind: 'sig-first', id, dungeon: d, state: e.state, mul: e.mul, h, stones, mats,
+      matId: d.material, matName: getItem(d.material).name, points,
+      message: `首通${d.name}（${e.stateName} · 产出 ${Math.round(e.mul * 100)}%）：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。`
+    }
+  }
+
+  /** 招牌周期结算（每 30 游戏天一轮；每洞天每轮一次，需已首通） */
+  signatureCycle (id, now = Date.now()) {
+    const d = getSignature(id)
+    if (!d) return { ok: false, message: '没有这座洞天。' }
+    const s = this.sigState
+    const cur = s[id]
+    if (!cur || !cur.first) return { ok: false, message: `${d.name}尚未首通——先首通，再来按轮探取。` }
+    const e = this.sigEntryOf(d)
+    const key = sigCycleKey(now)
+    if (cur.cycleKey === key) {
+      return { ok: false, waitMs: sigCycleMsToNext(now), message: `${d.name}本轮已探过，${fmtGameDuration(sigCycleMsToNext(now))}后再来。` }
+    }
+
+    const h = sigCycleH(d) * e.mul
+    const stones = this.hToStones(h)
+    const mats = this.hToMats(d, h)
+    this.state.resources.stones += stones
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    const points = SIGNATURE.points.cycle
+    this._addPoints(points)
+    cur.cycleKey = key
+
+    return {
+      ok: true, kind: 'sig-cycle', id, dungeon: d, state: e.state, mul: e.mul, h, stones, mats,
+      matId: d.material, matName: getItem(d.material).name, points,
+      message: `${d.name}本轮探获：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。`
+    }
+  }
+
+  /** 当周「限时秘境」条目（纯读；周 key 与试炼塔周扫荡同源，按 id 稳定哈希轮换） */
+  weeklySignatureView (now = Date.now()) {
+    const week = this.weekKey(now)
+    const id = weeklySignatureId(week)
+    const d = getSignature(id)
+    const e = d ? this.sigEntryOf(d) : null
+    const rec = this.sigState.weekly
+    const done = !!(rec && typeof rec === 'object' && rec.week === week)
+    const h = d && e ? sigCycleH(d) * e.mul * SIGNATURE.weeklyMul : 0
+    return {
+      week, id, name: d ? d.name : id, theme: d ? d.theme : '',
+      state: e ? e.state : 'foreign', stateName: e ? e.stateName : '他界洞天',
+      unlocked: e ? e.unlocked : false,
+      unlockRealmName: e ? getRealmMeta(e.unlockRealm).name : '',
+      done, mul: SIGNATURE.weeklyMul,
+      stones: this.hToStones(h), mats: this.hToMats(d || { matPerH: 0 }, h),
+      matName: d ? getItem(d.material).name : '',
+      points: SIGNATURE.points.weekly,
+      // 当周限定 · 过期作废不可补打：到期＝下次周扫荡边界
+      nextInMs: this.nextSweepInMs(now)
+    }
+  }
+
+  /** 打当周限时秘境（每周一次，产出 ×1.5；过期作废，不可补打） */
+  signatureWeekly (now = Date.now()) {
+    const v = this.weeklySignatureView(now)
+    if (!v.unlocked) {
+      return { ok: false, message: `${v.name}（本体为${v.stateName}）需 ${v.unlockRealmName}期方可入内。` }
+    }
+    if (v.done) return { ok: false, message: `本周的限时秘境（${v.name}）已探过，下周自会换一处。` }
+
+    const d = getSignature(v.id)
+    const e = this.sigEntryOf(d)
+    const h = sigCycleH(d) * e.mul * SIGNATURE.weeklyMul
+    const stones = this.hToStones(h)
+    const mats = this.hToMats(d, h)
+    this.state.resources.stones += stones
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    const points = SIGNATURE.points.weekly
+    this._addPoints(points)
+    this.sigState.weekly = { week: v.week, id: v.id }
+
+    return {
+      ok: true, kind: 'sig-weekly', id: v.id, dungeon: d, h, stones, mats,
+      matId: d.material, matName: getItem(d.material).name, points,
+      message: `限时秘境「${d.name}」已探（产出 ×${SIGNATURE.weeklyMul}）：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。`
+    }
+  }
+
+  /** 积分商店货架（含定价与「买不买得起」） */
+  shopView () {
+    return DUNGEON_SHOP.map((e) => {
+      const cost = shopCostOf(e)
+      return {
+        id: e.id, name: e.name, cost, kind: e.kind,
+        itemId: e.item, itemName: e.item ? getItem(e.item).name : '', n: Math.max(1, e.n | 0),
+        affordable: this.points >= cost
+      }
+    })
+  }
+
+  /** 购买货架项（积分只扣不返还；物品直接入行囊） */
+  buyShopItem (id, now = Date.now()) {
+    const e = getShopItem(id)
+    if (!e) return { ok: false, message: '货架上没有这件东西。' }
+    const cost = shopCostOf(e)
+    if (this.points < cost) {
+      return { ok: false, need: cost, have: this.points, message: `秘境积分不足：需 ${cost}，现有 ${this.points}。` }
+    }
+    this._addPoints(-cost)
+    const n = Math.max(1, e.n | 0)
+    this.items[e.item] = (this.items[e.item] | 0) + n
+    return {
+      ok: true, kind: 'shop', id, cost, itemId: e.item, itemName: getItem(e.item).name, n,
+      points: this.points,
+      message: `秘境积分 −${cost}，得${getItem(e.item).name} ×${n}（余额 ${this.points}）。`
+    }
+  }
+
+  /** 招牌全景视图（面板用；纯读） */
+  signatureView (now = Date.now()) {
+    const s = this.sigState
+    const key = sigCycleKey(now)
+    const cycleInMs = sigCycleMsToNext(now)
+    const rows = SIGNATURE_DUNGEONS.map((d) => {
+      const e = this.sigEntryOf(d)
+      const cur = s[d.id] || {}
+      const firstH = sigFirstClearH(d) * e.mul
+      const cycH = sigCycleH(d) * e.mul
+      const item = getItem(d.material)
+      return {
+        id: d.id, name: d.name, theme: d.theme, source: d.source, desc: d.desc,
+        state: e.state, stateName: e.stateName, mul: e.mul, mulPct: Math.round(e.mul * 100),
+        unlocked: e.unlocked,
+        unlockRealm: e.unlockRealm, unlockRealmName: getRealmMeta(e.unlockRealm).name,
+        first: !!cur.first,
+        firstH, firstStones: this.hToStones(firstH), firstMats: this.hToMats(d, firstH),
+        materialName: item.name, matPerH: d.matPerH,
+        cycleH: cycH, cycleStones: this.hToStones(cycH), cycleMats: this.hToMats(d, cycH),
+        cycleReady: !!cur.first && cur.cycleKey !== key,
+        cycleInMs,
+        points: SIGNATURE.points
+      }
+    })
+    return {
+      rows,
+      stateNames: SIG_STATE_NAME,
+      cycleInMs,
+      points: this.points,
+      cleared: rows.filter((r) => r.first).length,
+      total: rows.length,
+      weekly: this.weeklySignatureView(now),
+      shop: this.shopView()
+    }
+  }
+
+  /** 招牌统计快照（装配层喂成就 metric 用；纯读） */
+  signatureStats (now = Date.now()) {
+    const s = this.sigState
+    const cleared = SIGNATURE_DUNGEONS.filter((d) => s[d.id] && s[d.id].first).length
+    const origins = originSignaturesOf(this.worldId)
+    const originDone = origins.length > 0 && origins.every((id) => s[id] && s[id].first)
+    const week = this.weekKey(now)
+    const weeklyDone = !!(s.weekly && typeof s.weekly === 'object' && s.weekly.week === week)
+    return {
+      sigCleared: cleared,
+      sigOriginTotal: origins.length,
+      sigOriginDone: originDone ? 1 : 0,
+      sigPoints: this.points,
+      sigWeeklyDone: weeklyDone ? 1 : 0
     }
   }
 

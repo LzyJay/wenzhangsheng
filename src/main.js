@@ -294,6 +294,8 @@ const dom = {
   btnDungeonClose: el('btn-dungeon-close'),
   dungeonTower: el('dungeon-tower'),
   dungeonRes: el('dungeon-res'),
+  dungeonSig: el('dungeon-sig'),         // V5.1 招牌秘境（12 界洞天 · 首通/周期/周轮换）
+  dungeonShop: el('dungeon-shop'),       // V5.1 秘境积分商店
   dungeonDispatch: el('dungeon-dispatch'),
   dungeonNote: el('dungeon-note'),
   // 事件簿（2.3）
@@ -2377,6 +2379,8 @@ function collectMetrics () {
     resStars,
     dispatchSlots: dungeon.slotCount,
     dispatchRunning: dungeon.dispatchView(now).used,
+    // 招牌秘境（V5.1）：首通数 / 本源集齐 / 积分 / 当周限时 —— 由系统现算快照
+    ...dungeon.signatureStats(now),
     // 宗门（2.4）
     joined: info.joined ? 1 : 0,
     sectRank: info.joined ? ((info.rank && info.rank.idx) | 0) : 0,
@@ -3740,7 +3744,9 @@ async function boot () {
     state: () => state,
     system: () => dungeon,
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, fmtHoursLeft, onPress }
+    // V5.1：面板里点出来的招牌秘境 / 积分商店收益，也要落进 §七 归因的 dungeon 线
+    //   （主循环的段间快照只覆盖自动结算，点出来的这一份由面板回传）
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, fmtHoursLeft, onPress, noteDungeon: (gain) => noteGain(state, 'dungeon', gain) }
   })
   achv = new AchievementSystem(state, { grant: grantAchvReward })  // 2.10：奖励发放经装配层回调落到 resources / inventory
   achv.ensure()            // 老档补字段 + 新档播种纪事 + 凡档称号入袋

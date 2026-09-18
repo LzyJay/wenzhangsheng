@@ -74,7 +74,7 @@ export const ACHIEVEMENTS = [
   { id: 'achv_shoubi', cat: 'realm', name: '寿比南山', desc: '余寿达到 500 年。', points: 15, metric: 'lifespanRemain', need: 500 },
   { id: 'achv_tuna', cat: 'realm', name: '吐纳如潮', desc: '有效产出达到 100 灵气/秒。', points: 15, metric: 'qiRate', need: 100 },
 
-  // ── 秘境（15）─────────────────────────────────────────────────────────
+  // ── 秘境（19：15 条既有 + V5.1 招牌秘境 4 条）──────────────────────────
   { id: 'achv_chudeng', cat: 'dungeon', name: '初登塔', desc: '试炼塔通过第 1 层。', points: 5, metric: 'towerFloor', need: 1 },
   { id: 'achv_tashi', cat: 'dungeon', name: '塔上十层', desc: '试炼塔通过第 10 层。', points: 10, metric: 'towerFloor', need: 10 },
   { id: 'achv_tashang25', cat: 'dungeon', name: '塔上二十五', desc: '试炼塔通过第 25 层。', points: 20, metric: 'towerFloor', need: 25 },
@@ -90,6 +90,11 @@ export const ACHIEVEMENTS = [
   { id: 'achv_fenshen3', cat: 'dungeon', name: '三身并用', desc: '解锁 3 个分身派遣槽。', points: 20, metric: 'dispatchSlots', need: 3 },
   { id: 'achv_fenshen5', cat: 'dungeon', name: '五身同遣', desc: '解锁 5 个分身派遣槽（满）。', points: 30, metric: 'dispatchSlots', need: 5 },
   { id: 'achv_mijingchangzhu', cat: 'dungeon', name: '秘境常驻', desc: '同时在派 3 支分身。', points: 15, metric: 'dispatchRunning', need: 3 },
+  // V5.1 招牌秘境（12 条招牌洞天 · 内容批次 3 世界篇首步）
+  { id: 'achv_sigfirst', cat: 'dungeon', name: '入得洞天', desc: '首通一处招牌洞天。', points: 15, metric: 'sigCleared', need: 1 },
+  { id: 'achv_sigorigin', cat: 'dungeon', name: '本界洞天', desc: '集齐本界全部本源招牌洞天。', points: 30, metric: 'sigOriginDone', need: 1, chronicle: '本界压箱底的几处洞天，被你一一走遍——界碑上的名字，从此算你一个。' },
+  { id: 'achv_sigpoints', cat: 'dungeon', name: '积分为凭', desc: '秘境积分累计到 300。', points: 20, metric: 'sigPoints', need: 300 },
+  { id: 'achv_sigweekly', cat: 'dungeon', name: '限时一趟', desc: '探过一次当周限时秘境。', points: 15, metric: 'sigWeeklyDone', need: 1 },
 
   // ── 宗门（12）─────────────────────────────────────────────────────────
   { id: 'achv_yunlan', cat: 'sect', name: '云岚弟子', desc: '拜入云岚宗。', points: 10, metric: 'joined', need: 1, chronicle: '你在云岚宗的山门前递了名帖——从此有处可回，也有人等你交差。' },

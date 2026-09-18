@@ -8,7 +8,8 @@
  *   ① 试炼塔 1~60 层：战力校验爬塔，首通当量 h + 周常扫荡
  *   ② 资源秘境 4 主题 × 4 深度：首通（一次性当量）+ 分身派遣（常驻产出）
  *   ③ 分身派遣：金丹解锁 1 槽，每晋一大境界 +1（合体 5 槽封顶）
- *   ——世界专属秘境（12 个招牌）/ 限时秘境（周轮换）/ 秘境积分商店＝内容批次 3（世界篇），不在本表。
+ *   ④ 世界专属秘境（12 个招牌洞天）+ 限时秘境（周轮换）+ 秘境积分商店
+ *      ——内容批次 3（世界篇）首步，**V5.1 实装**（此前为纯登记；本源界映射见 worlds.js）。
  *
  * 口径（以《秘境奖励曲线与事件 v1》为准，取代《秘境副本设计 v1》的估算值）：
  *   · 试炼塔推荐战力 = 1.15 × power(m)（power(m)=35×1.40^(m-1)，与 CSV 取整一致）
@@ -24,6 +25,8 @@
  */
 
 import { FORMULA } from './realms.js'
+// V5.1 招牌秘境：周期与「每 30 游戏天（＝坊市/寻蛋同一轮『日』）」同源，不另立时钟
+import { refreshMs, periodKeyOf, msToNextPeriod } from './gametime.js'
 
 /** 战力公式常量（与 realms.FORMULA 同源，此处只读引用，不改数值） */
 const powerBase = FORMULA.powerBase        // 35
@@ -38,7 +41,9 @@ export const TOWER = {
   weeklyPer: 0.2,             // 周扫荡 = m × 0.2h
   weeklyCap: 20,              // 周扫荡上限 20h
   milestoneEvery: 10,         // 每 10 层里程碑
-  milestoneBonusH: 5          // 里程碑「材料箱」≈ +5h 当量（外观/灵兽蛋等后续模块接入）
+  milestoneBonusH: 5,         // 里程碑「材料箱」≈ +5h 当量（外观/灵兽蛋等后续模块接入）
+  // V5.1：里程碑文案里本就预留的「秘境积分 ×100」接线（招牌积分商店的上游来源）
+  milestonePoints: { 30: 100 }
 }
 
 /** 试炼塔第 m 层推荐战力（= 1.15 × power(m)，与 CSV 逐层取整一致） */
@@ -157,34 +162,136 @@ export function techPoolOf (depth) {
  */
 export const SIGNATURE_DUNGEONS = [
   { id: 'sig_tianhe', name: '天河秘境', theme: '水行 · 灵泉产出', source: '《修真聊天群》', unlockRealm: 2,
+    material: 'mat_lingcao', matPerH: 2,
     desc: '一川星辉垂落如瀑，掬一捧便是半瓶灵液。' },
   { id: 'sig_yaochi', name: '瑶池秘境', theme: '灵药 · 灵圃产出', source: '《修真聊天群》', unlockRealm: 2,
+    material: 'mat_lingcao', matPerH: 2,
     desc: '池畔仙桃三千年一熟，药香隔十里可闻。' },
   { id: 'sig_minghe', name: '冥河禁地', theme: '高危 · 绝品产出', source: '《一念永恒》', unlockRealm: 4,
+    material: 'mat_yaodan', matPerH: 1,
     desc: '河面无风起浪，渡得起者得造化，渡不起者喂鱼虾。' },
   { id: 'sig_huanyue', name: '幻月洞府', theme: '洞府 · 传承', source: '《诛仙》', unlockRealm: 3,
+    material: 'frag_canjuan', matPerH: 1,
     desc: '月上中天时石门自开，雾里看剑，剑里看心。' },
   { id: 'sig_shijian', name: '时间秘境', theme: '时间 · 挂机倍速', source: '《修真聊天群》', unlockRealm: 3,
+    material: 'mat_lingcao', matPerH: 2,
     desc: '洞中一日，世上……不，是洞中一日，世上才一时。' },
   { id: 'sig_tianting', name: '天庭碎片秘境', theme: '遗迹 · 仙品产出', source: '《修真聊天群》', unlockRealm: 5,
+    material: 'mat_kuang', matPerH: 2,
     desc: '旧日天庭崩碎后的残垣，断瓦里偶见仙家气度。' },
   { id: 'sig_hualing', name: '化灵遗迹', theme: '古修 · 功法残卷', source: '《修真聊天群》', unlockRealm: 3,
+    material: 'frag_canjuan', matPerH: 2,
     desc: '古修坐化之地，灵气化了形，会在廊下走来走去。' },
   { id: 'sig_qiling', name: '泣灵秘藏', theme: '宝藏 · 一次性', source: '《凡人修仙传》', unlockRealm: 3,
+    material: 'mat_yaodan', matPerH: 2,
     desc: '开门七日，过时不候——古人留下的库房不等人。' },
   { id: 'sig_xitian', name: '西天秘境', theme: '佛门 · 心境', source: '《谁让他修仙的！》', unlockRealm: 4,
+    material: 'mat_lingcao', matPerH: 1,
     desc: '钟声一响，心魔退散；可惜钟声也不常响。' },
   { id: 'sig_dongxu', name: '洞虚秘境', theme: '虚空 · 机缘', source: '《大乘期才有逆袭系统》', unlockRealm: 5,
+    material: 'mat_yaodan', matPerH: 1,
     desc: '虚空中裂开的一线，钻进去的人各说各话。' },
   { id: 'sig_zhongsheng', name: '众生秘境', theme: '人烟 · 交易', source: '《大乘期才有逆袭系统》', unlockRealm: 2,
+    material: 'mat_kuang', matPerH: 2,
     desc: '秘境里开着集市，修士散修摩肩接踵，倒像个凡间庙会。' },
   { id: 'sig_yinlv', name: '音律秘境', theme: '雅趣 · 悟性', source: '《大乘期才有逆袭系统》', unlockRealm: 3,
+    material: 'frag_canjuan', matPerH: 1,
     desc: '风中自有人抚琴，听懂了，道行便长一分。' }
 ]
 
-/** 招牌位按 id 取（内容批次 3 实装用；未登记返回 null） */
+/** 招牌位按 id 取（未登记返回 null） */
 export function getSignature (id) {
   return SIGNATURE_DUNGEONS.find((d) => d.id === id) || null
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V5.1 · 招牌秘境实装（内容批次 3 世界篇首步）
+//   解锁 / 产出曲线 / 周轮换 / 积分商店 —— 与 12 界本源映射（worlds.js）配合。
+//   三态：本源洞天（本界招牌 · 全额）｜游历洞天（空缺界的本界洞天 · 门槛提前）
+//         他界洞天（其余 · 六折且按原门槛）；全 12 条对任何世界始终可见。
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 招牌秘境口径（⚙ 可调旋钮集中于此，只改这一处）
+ *   · 首通当量 h = firstClearBase + firstClearPer × unlockRealm（金丹 2 → 14h / 炼虚 5 → 23h）
+ *   · 周期当量 h = cycleHPer × unlockRealm（金丹 2 → 2.4h / 炼虚 5 → 6h）；每轮 = 30 游戏天
+ *   · originMul 本源洞天系数 / foreignMul 他界与游历洞天系数（六折）
+ *   · localUnlockDiscount 游历洞天门槛提前的大境界数（只提前门槛，不给全额）
+ *   · weeklyMul 周轮换「限时秘境」产出倍率（当周限定 · 过期作废不可补打）
+ *   · points 积分数值：招牌首通 / 招牌周期 / 周轮换
+ *   · pointsPerH 积分定价率（1 h 当量 = N 积分）——**不用 stoneHourly 定价**：
+ *     积分收入是平坦的（+30/+5/+20 不随境界涨），若按时薪定价，价格会指数上涨
+ *     而收入不变，商店中期即彻底失效；故此率固定、随境界不浮动。
+ */
+export const SIGNATURE = {
+  firstClearBase: 8,
+  firstClearPer: 3,
+  cycleHPer: 1.2,
+  originMul: 1.0,
+  foreignMul: 0.6,
+  localUnlockDiscount: 1,
+  weeklyMul: 1.5,
+  points: { firstClear: 30, cycle: 5, weekly: 20, towerMilestone30: 100 },
+  pointsPerH: 100
+}
+
+/** 招牌首通当量 h（未乘本源/他界系数） */
+export function sigFirstClearH (d) {
+  return SIGNATURE.firstClearBase + SIGNATURE.firstClearPer * Math.max(0, d.unlockRealm | 0)
+}
+
+/** 招牌周期当量 h（未乘系数） */
+export function sigCycleH (d) {
+  return SIGNATURE.cycleHPer * Math.max(0, d.unlockRealm | 0)
+}
+
+/** 招牌周期轮键（每轮 = 30 游戏天，与坊市 / 寻蛋同一「日」同源） */
+export function sigCycleKey (ts) {
+  return periodKeyOf(ts, refreshMs())
+}
+
+/** 距下一轮招牌周期边界的现实毫秒（面板倒计时用游戏历呈现） */
+export function sigCycleMsToNext (ts) {
+  return msToNextPeriod(ts, refreshMs())
+}
+
+/**
+ * 当周「限时秘境」id —— 顺序按 id 稳定哈希（可预测、可复现，不随进程/时区漂）
+ * @param {number|string} weekKey DungeonSystem.weekKey(now) 的返回值（周一为界）
+ */
+export function weeklySignatureId (weekKey) {
+  const ids = SIGNATURE_DUNGEONS.map((d) => d.id).sort()
+  const s = String(weekKey)
+  let h = 7
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 2147483647
+  return ids[h % ids.length]
+}
+
+/**
+ * 招牌秘境积分商店货架（V5.1）
+ *   只卖**现有物品**（不新增物品条目）；价格 = round(entry.h × SIGNATURE.pointsPerH)。
+ *   h 为「当量」口径：与秘境产出同一把尺子（1 h 当量 ≈ 该物品的收益量级）。
+ *   kind: 'item' 直接入行囊 ｜ 'techDup' 功法池已满时的灵石折算（接 TECH_DUP_STONES_H 同族）
+ */
+export const DUNGEON_SHOP = [
+  { id: 'shop_lingcao', name: '灵草 ×5', kind: 'item', item: 'mat_lingcao', n: 5, h: 0.5 },
+  { id: 'shop_kuang', name: '玄铁 ×5', kind: 'item', item: 'mat_kuang', n: 5, h: 0.5 },
+  { id: 'shop_yaodan', name: '妖丹 ×3', kind: 'item', item: 'mat_yaodan', n: 3, h: 0.8 },
+  { id: 'shop_ningshen', name: '凝神丹 ×1', kind: 'item', item: 'pill_ningshen', n: 1, h: 1.2 },
+  { id: 'shop_hujie', name: '护劫丹 ×1', kind: 'item', item: 'pill_hujie', n: 1, h: 2.0 },
+  { id: 'shop_xisui', name: '洗髓丹 ×1', kind: 'item', item: 'pill_xisui', n: 1, h: 3.0 },
+  { id: 'shop_waiguan', name: '外观碎片 ×1', kind: 'item', item: 'frag_waiguan', n: 1, h: 4.0 },
+  { id: 'shop_canjuan', name: '功法残卷 ×1', kind: 'item', item: 'frag_canjuan', n: 1, h: TECH_DUP_STONES_H }
+]
+
+/** 取货架项；未登记返回 null */
+export function getShopItem (id) {
+  return DUNGEON_SHOP.find((s) => s.id === id) || null
+}
+
+/** 货架项的积分定价（随境界不浮动：理由见 SIGNATURE 注释） */
+export function shopCostOf (entry) {
+  return Math.max(1, Math.round(entry.h * SIGNATURE.pointsPerH))
 }
 
 /** roll 一次「惊喜与意外」；返回配置项（random 注入便于自测） */
@@ -239,7 +346,9 @@ export function dispatchHours (hours, coef, stars = 0) {
 export default {
   TOWER, DEPTH_TABLE, RESOURCE_DUNGEONS, DISPATCH, STAR_RULE,
   TECH_BY_DEPTH, TECH_DROP_PCT, TECH_DUP_STONES_H, SURPRISE,
-  SIGNATURE_DUNGEONS, getSignature,
+  SIGNATURE_DUNGEONS, getSignature, SIGNATURE, DUNGEON_SHOP,
   towerPower, towerFirstClearH, towerWeeklyH, towerMilestone,
-  getDungeon, getDepth, slotCountFor, dispatchHours, techPoolOf, rollSurprise
+  getDungeon, getDepth, slotCountFor, dispatchHours, techPoolOf, rollSurprise,
+  sigFirstClearH, sigCycleH, sigCycleKey, sigCycleMsToNext, weeklySignatureId,
+  getShopItem, shopCostOf
 }

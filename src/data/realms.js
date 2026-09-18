@@ -3,7 +3,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * 生成命令：npm run gen:values   （= node scripts/gen_values.mjs）
  * 数值源　：data-source/72级数值表.csv（设计库《72级数值表.csv》原样副本，唯一数值源）
- * 生成时间：2026-09-17 19:31
+ * 生成时间：2026-09-18 08:51
  * 上游文档：《数值与公式手册》§1.1、《数据模型》§3、《设计增补 v1.1》（寿元）、《挂机修仙游戏设定书》§4
  *
  * 改数值的正确姿势：改 data-source 里的 CSV → 重跑 npm run gen:values → 全表刷新。
@@ -114,9 +114,23 @@ export const OFFLINE = {
   minAwaySec: 10       // 低于该时长的隐藏不做结算
 }
 
-/** 突破成功奖励灵石（MVP 简化：阶段二接入坊市/秘境后由内容线产出） */
+/**
+ * 突破成功奖励灵石（V5.1 批 1 · 开发册 §4.4 遗留待办 1 收官）
+ * ── 旧口径 10×1.12^(L-1) 是"秘境 / 坊市未上线"时的过渡逻辑：L47 单次 ≈ 1836 灵石，
+ *    比同期任何内容线都高一个量级，已成"主要来源"。现降为**早期起步补贴**——
+ *    只保开局起步，不再随境界指数膨胀；主线灵石改由秘境（含招牌秘境）/ 宗门 / 事件供给。
+ *   ⚙ 可调旋钮（**单点**，只改下面这一行）：base 起步底数 / per 每级线性增量 / cap 满级封顶。
+ *     实测点：L1=3 · L9=9 · L19=17 · L28=24 · L37=32 · L47=40 · L64=53 · L72=60(封顶)
+ *   ⚠ 改这里后必须重跑：npm run gen:values → node scripts/audit_values.mjs
+ *     （realms.js 是生成物禁手改；调用点 CultivationSystem.doBreakthrough 签名与调用方式不变）
+ */
+export const BREAKTHROUGH_STONES = { base: 2, per: 0.8, cap: 60 }
+
+/** 突破成功奖励灵石 = min(cap, round(base + per × level))；越界收敛到 1 ~ 正无穷 */
 export function breakthroughStoneReward (level) {
-  return Math.round(10 * Math.pow(1.12, level - 1))
+  const L = Math.max(1, Math.round(Number(level)) || 1)
+  const { base, per, cap } = BREAKTHROUGH_STONES
+  return Math.min(cap, Math.round(base + per * L))
 }
 
 /** 72 级逐级表（下标 = level - 1） */
@@ -553,6 +567,6 @@ export function trialNodeIndex (level) {
 
 export default {
   FORMULA, REALM_META, LEVELS, LEVEL_MAX, ASCENSION, TRIBULATION, TRIAL_NODES, TRIAL_PREPS, TRIAL_AID,
-  SUCCESS_RATE, FAILURE_PLAN, OFFLINE,
+  SUCCESS_RATE, FAILURE_PLAN, OFFLINE, BREAKTHROUGH_STONES,
   getLevelInfo, getRealmMeta, getNextBreakthrough, trialNodeIndex, breakthroughStoneReward
 }

@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '4.1.0'                                // V4.7 修订版（主人体验修订轮收口：丹房/宗门/灵兽/渡劫/纪事）；与 package.json 同步
+const APP_VERSION = '5.1.0'                                // V5.1（阶段五首批：招牌秘境接线 + 遗留待办 1 收官）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
