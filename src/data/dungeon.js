@@ -2,13 +2,13 @@
  * dungeon.js —— 秘境表（只读配置层）（2.7）
  * ═══════════════════════════════════════════════════════════════════════════
  * 来源：《秘境副本设计 v1》+《秘境奖励曲线与事件 v1》+ data-source/秘境奖励表.csv
- *       + 开发计划 V2 模块 2.7（试炼塔 1~60 层 + 灵药谷 + 分身派遣 1 槽起步）。
+ *       + 开发计划 模块 2.7（试炼塔 1~60 层 + 灵药谷 + 分身派遣 1 槽起步）。
  *
  * 范围（本模块）：
  *   ① 试炼塔 1~60 层：战力校验爬塔，首通当量 h + 周常扫荡
  *   ② 资源秘境 4 主题 × 4 深度：首通（一次性当量）+ 分身派遣（常驻产出）
  *   ③ 分身派遣：金丹解锁 1 槽，每晋一大境界 +1（合体 5 槽封顶）
- *   ——世界专属秘境（12 个招牌）/ 限时秘境（周轮换）/ 秘境积分商店＝版本 3，不在本表。
+ *   ——世界专属秘境（12 个招牌）/ 限时秘境（周轮换）/ 秘境积分商店＝内容批次 3（世界篇），不在本表。
  *
  * 口径（以《秘境奖励曲线与事件 v1》为准，取代《秘境副本设计 v1》的估算值）：
  *   · 试炼塔推荐战力 = 1.15 × power(m)（power(m)=35×1.40^(m-1)，与 CSV 取整一致）
@@ -31,7 +31,7 @@ const powerGrowth = FORMULA.powerGrowth    // 1.40
 
 /** 试炼塔（MVP 1~60 层；层数上限 floors 可扩到 100） */
 export const TOWER = {
-  floors: 60,                 // MVP 首版层数（设计全量 100 层，随版本扩）
+  floors: 60,                 // MVP 首版层数（设计全量 100 层，随后续版本扩）
   powerMul: 1.15,             // 敌战力 = 1.15 × power(m)
   firstClearBase: 1.5,        // 首通当量 h = 1.5 + 0.15×m
   firstClearPer: 0.15,
@@ -105,7 +105,7 @@ export const RESOURCE_DUNGEONS = [
 ]
 
 /**
- * 秘境功法池（按深度档位）：与技术表 source.type === 'dungeon' 的 8 本同源。
+ * 秘境功法池（按深度档位）：与技术表 source.type === 'dungeon' 的 9 本同源（V3.5.7 起含青元剑诀）。
  * 口径（V3.3.1，主人「秘境也获取不了功法」）：
  *   · 首通某深度 → 必得该档一本（未持有优先；全持有则折算灵石）
  *   · 派遣每趟 → 低概率拾得残卷（古修遗迹概率更高）
@@ -113,7 +113,7 @@ export const RESOURCE_DUNGEONS = [
  */
 export const TECH_BY_DEPTH = {
   1: ['tech_liuyun', 'tech_liyan'],
-  2: ['tech_hanbing', 'tech_jingang'],
+  2: ['tech_hanbing', 'tech_jingang', 'tech_qingyuan'],   // V3.5.7 原著首批：玄阶档补木属性
   3: ['tech_zhoutian', 'tech_bumie'],
   4: ['tech_taixu', 'tech_huntian']
 }
@@ -146,6 +146,45 @@ export const SURPRISE = {
 export function techPoolOf (depth) {
   const i = Math.min(Math.max(Math.round(depth) | 0, 1), 4)
   return TECH_BY_DEPTH[i] || []
+}
+
+/**
+ * 世界专属秘境 · 12 招牌位（内容批次 3 实装位，本表先行登记——V3.5.10 原著第四批）
+ * 来源：《设计库/07-原著/提炼-数据库素材/05-秘境洞府》命名池，出处见各条 source。
+ * 口径：**纯登记**——解锁条件 / 奖励曲线 / 周轮换 / 积分商店由内容批次 3「世界专属秘境」（世界篇）模块实装；
+ *   本表不接线、不参与 autoTick 与派遣结算，不动上方四主题资源秘境。
+ * 字段：unlockRealm 为建议门槛（对齐 REALM_META 下标：2 金丹 3 元婴 4 化神 …），内容批次 3 实装时可调。
+ */
+export const SIGNATURE_DUNGEONS = [
+  { id: 'sig_tianhe', name: '天河秘境', theme: '水行 · 灵泉产出', source: '《修真聊天群》', unlockRealm: 2,
+    desc: '一川星辉垂落如瀑，掬一捧便是半瓶灵液。' },
+  { id: 'sig_yaochi', name: '瑶池秘境', theme: '灵药 · 灵圃产出', source: '《修真聊天群》', unlockRealm: 2,
+    desc: '池畔仙桃三千年一熟，药香隔十里可闻。' },
+  { id: 'sig_minghe', name: '冥河禁地', theme: '高危 · 绝品产出', source: '《一念永恒》', unlockRealm: 4,
+    desc: '河面无风起浪，渡得起者得造化，渡不起者喂鱼虾。' },
+  { id: 'sig_huanyue', name: '幻月洞府', theme: '洞府 · 传承', source: '《诛仙》', unlockRealm: 3,
+    desc: '月上中天时石门自开，雾里看剑，剑里看心。' },
+  { id: 'sig_shijian', name: '时间秘境', theme: '时间 · 挂机倍速', source: '《修真聊天群》', unlockRealm: 3,
+    desc: '洞中一日，世上……不，是洞中一日，世上才一时。' },
+  { id: 'sig_tianting', name: '天庭碎片秘境', theme: '遗迹 · 仙品产出', source: '《修真聊天群》', unlockRealm: 5,
+    desc: '旧日天庭崩碎后的残垣，断瓦里偶见仙家气度。' },
+  { id: 'sig_hualing', name: '化灵遗迹', theme: '古修 · 功法残卷', source: '《修真聊天群》', unlockRealm: 3,
+    desc: '古修坐化之地，灵气化了形，会在廊下走来走去。' },
+  { id: 'sig_qiling', name: '泣灵秘藏', theme: '宝藏 · 一次性', source: '《凡人修仙传》', unlockRealm: 3,
+    desc: '开门七日，过时不候——古人留下的库房不等人。' },
+  { id: 'sig_xitian', name: '西天秘境', theme: '佛门 · 心境', source: '《谁让他修仙的！》', unlockRealm: 4,
+    desc: '钟声一响，心魔退散；可惜钟声也不常响。' },
+  { id: 'sig_dongxu', name: '洞虚秘境', theme: '虚空 · 机缘', source: '《大乘期才有逆袭系统》', unlockRealm: 5,
+    desc: '虚空中裂开的一线，钻进去的人各说各话。' },
+  { id: 'sig_zhongsheng', name: '众生秘境', theme: '人烟 · 交易', source: '《大乘期才有逆袭系统》', unlockRealm: 2,
+    desc: '秘境里开着集市，修士散修摩肩接踵，倒像个凡间庙会。' },
+  { id: 'sig_yinlv', name: '音律秘境', theme: '雅趣 · 悟性', source: '《大乘期才有逆袭系统》', unlockRealm: 3,
+    desc: '风中自有人抚琴，听懂了，道行便长一分。' }
+]
+
+/** 招牌位按 id 取（内容批次 3 实装用；未登记返回 null） */
+export function getSignature (id) {
+  return SIGNATURE_DUNGEONS.find((d) => d.id === id) || null
 }
 
 /** roll 一次「惊喜与意外」；返回配置项（random 注入便于自测） */
@@ -200,6 +239,7 @@ export function dispatchHours (hours, coef, stars = 0) {
 export default {
   TOWER, DEPTH_TABLE, RESOURCE_DUNGEONS, DISPATCH, STAR_RULE,
   TECH_BY_DEPTH, TECH_DROP_PCT, TECH_DUP_STONES_H, SURPRISE,
+  SIGNATURE_DUNGEONS, getSignature,
   towerPower, towerFirstClearH, towerWeeklyH, towerMilestone,
   getDungeon, getDepth, slotCountFor, dispatchHours, techPoolOf, rollSurprise
 }

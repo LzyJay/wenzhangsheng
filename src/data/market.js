@@ -32,9 +32,12 @@ export const GOODS = [
   { id: 'pill_ningshen', base: 260 },  // 凝神丹（限时增益，V3.5.1）
   { id: 'pill_pojing', base: 320 },   // 破境丹（小瓶颈必需）
   { id: 'pill_hujie', base: 480 },    // 护劫丹（渡劫准备）
+  { id: 'pill_hujie2', base: 1500 },  // 九转护劫丹（护劫升档，V3.5.9 原著第三批）
   { id: 'pill_xisui', base: 600 },    // 洗髓丹（重掷灵根）
   { id: 'pill_yanshou', base: 540 },  // 延寿丹（续命）
   { id: 'mat_wannianru', base: 900 }, // 千年灵乳（珍稀药引，V3.5.1）
+  { id: 'mat_jiuqu', base: 1100 },    // 九曲灵参（绝品主料，V3.5.7 原著首批）
+  { id: 'talisman_jiangling', base: 200 }, // 降灵符（可焚符增益，V3.5.7 原著首批）
   { id: 'treasure_zhenlei', base: 1000 } // 镇雷法宝（渡劫准备；主线暂未产出，先走拍卖/回收）
 ]
 
@@ -55,7 +58,9 @@ export const AUCTION_POOL = [
   { id: 'pill_yanshou', minRealm: 2 },    // 延寿丹（金丹可拍）
   { id: 'treasure_zhenlei', minRealm: 2 }, // 镇雷法宝（金丹可拍）
   { id: 'mat_wannianru', minRealm: 2 },   // 千年灵乳（金丹可拍，V3.5.1）
+  { id: 'mat_jiuqu', minRealm: 2 },       // 九曲灵参（金丹可拍，V3.5.7 原著首批）
   { id: 'pill_ningshen', minRealm: 2 },   // 凝神丹（金丹可拍，V3.5.1）
+  { id: 'pill_hujie2', minRealm: 2 },     // 九转护劫丹（金丹可拍，V3.5.9 原著第三批）
   { id: 'pill_xisui', minRealm: 3 }       // 洗髓丹（元婴起，更稀有）
 ]
 /** 拍卖价在区间内浮动（设计"抢拍稀有物"的价格感） */

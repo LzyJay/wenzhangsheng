@@ -1,9 +1,10 @@
 {
   "name": "wenzhangsheng",
   "productName": "问长生",
-  "version": "3.5.6",
+  "version": "4.0.0",
   "description": "问长生 —— 桌面常驻挂机修仙小窗（阶段一 MVP · 设计库 v1.0）",
   "author": "问长生项目组",
+  "copyright": "MIT License © 问长生项目组",
   "private": true,
   "license": "MIT",
   "main": "dist-electron/main.js",
@@ -62,6 +63,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "问长生",
+      "uninstallDisplayName": "问长生 ${version}",
       "deleteAppDataOnUninstall": false
     },
     "portable": {

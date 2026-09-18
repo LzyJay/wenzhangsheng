@@ -43,6 +43,32 @@ export function createBagPanel (ctx) {
     H.render()
   }
 
+  // ── 降灵符（V3.5.7 原著首批：符箓线第一张实装符）——同走 state.buffs 公共乘区 ──
+  const JIANGLING = { itemId: 'talisman_jiangling', buffId: 'buff_jiangling', pct: 0.10, durSec: 300 }
+
+  /** 焚降灵符：现实 5 分钟修为产出 +10%（与凝神丹可叠加；再焚只刷新时长） */
+  function useJiangling () {
+    if (!state) return
+    const inv = state.inventory.items
+    const have = inv[JIANGLING.itemId] | 0
+    if (have <= 0) { H.pushLog('降灵符不足。', 'info'); return }
+    inv[JIANGLING.itemId] = have - 1
+    const now = Date.now()
+    const i = (state.buffs || []).findIndex((b) => b.id === JIANGLING.buffId)
+    if (i >= 0) state.buffs.splice(i, 1)
+    state.buffs.push({
+      id: JIANGLING.buffId,
+      name: '降灵符',
+      kind: 'buff',
+      mods: { qiRatePct: JIANGLING.pct },
+      endsAt: now + JIANGLING.durSec * 1000,
+      source: { type: 'talisman', ref: JIANGLING.itemId }
+    })
+    H.pushLog('降灵符焚起，天地灵气应召而来——现实 5 分钟内修为产出 +10%。', 'ok')
+    H.persist('talisman-jiangling')
+    H.render()
+  }
+
   function render () {
     if (!state) return
     const items = (state.inventory && state.inventory.items) || {}
@@ -99,6 +125,7 @@ export function createBagPanel (ctx) {
         btn.disabled = H.rootBusy()
         btn.addEventListener('click', () => {
           if (it.id === 'pill_ningshen') { useNingshen(); render(); return }
+          if (it.id === 'talisman_jiangling') { useJiangling(); render(); return }
           close(); H.doReroll()
         })
         row.appendChild(btn)

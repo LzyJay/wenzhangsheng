@@ -56,6 +56,7 @@ import { createTechPanel } from './ui/TechPanel.js'                         // V
 import { createSectPanel } from './ui/SectPanel.js'                         // V3.5.6 拆分：宗门面板（src/ui/ 新层）
 import { createBagPanel } from './ui/BagPanel.js'                           // V3.5.6 拆分：行囊面板（src/ui/ 新层）
 import { createAlchemyPanel } from './ui/AlchemyPanel.js'                   // V3.5.6 拆分：丹房面板（src/ui/ 新层）
+import { pickRenderMs } from './data/powersave.js'                          // P4.4 性能与省电：渲染间隔决策（纯函数）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
@@ -66,6 +67,10 @@ const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + �
 //   不再随 render 拍数缩放。
 const RENDER_MS = 250          // 主循环里 DOM 面板刷新的最低间隔（肉眼光滑下限之内）
 const PANEL_MS = 1000          // 开着的遮罩面板轻刷节拍（原「每 10 拍 ≈ 1 秒」改时间驱动）
+// P4.4 性能与省电：渲染间隔三档（结算拍 TICK_MS 不受影响，挂机产出分毫不变）
+const IDLE_AFTER_MS = 120000   // 最后一次用户输入距今超过 2 分钟 → 空闲档
+const RENDER_IDLE_MS = 2000    // 空闲档渲染间隔（可见但没人用：省电降帧，面板倒计时仍按 PANEL_MS 跟拍）
+const RENDER_HIDDEN_MS = 5000  // 不可见档（藏进托盘）：DOM 刷新纯浪费，5s 兜底；回来时离线结算会即时 render
 const STARTUP_DELAY = 900      // 等场景订阅完成后再补发启动演出
 const TRIBULATION_FX_MS = 1560 // 三道天雷演出时长（3×460ms 劈落 + 收势），飘字与结算余韵在此之后
 const RETURN_CARD_MS = 5000    // 闭关归来结算卡自动收起时长
@@ -205,6 +210,8 @@ const dom = {
   tgPause: el('tg-pause'),
   tgSound: el('tg-sound'),
   tgAvatar: el('tg-avatar'),
+  tgAutoLaunch: el('tg-autolaunch'),     // P4.2 开机自启
+  vRuntime: el('v-runtime'),             // P4.5 当前运行版本
   tgTop: el('tg-top'),
   tgAutoBreak: el('tg-autobreak'),
   tgAutoEgg: el('tg-autoegg'),
@@ -646,7 +653,7 @@ const TIP_BUILDERS = {
       masteryLine +
       tipRow('专属', v.exclusive) +
       tipRow('摩擦', v.friction) +
-      `<span class="t-note">同界轮回熟练度每世 +3%（封顶 +15%）；界游符可换界（版本 2）。</span>`
+      `<span class="t-note">同界轮回熟练度每世 +3%（封顶 +15%）；界游符可换界（内容批次 2）。</span>`
   },
 
   /** 修为：产出乘区拆解 + 还差多久（限时增益的明细也在这里，不再占顶栏小牌） */
@@ -2808,6 +2815,11 @@ async function renderPanel () {
   syncMotionUI()     // 3.4 动效：总档与系统实测值
   syncAudioUI()      // 3.5 音效：音量两行
   syncEconUI()       // V3.5.4 今日收益归因
+  syncAutoLaunchUI() // P4.2 开机自启：浏览器模式置灰
+  if (dom.vRuntime) {
+    const dv = (desktop && desktop.versions) || {}
+    dom.vRuntime.textContent = `v${APP_VERSION}` + (dv.electron ? ` · Electron ${dv.electron}` : ' · 浏览器模式')
+  }
 
   // ② 存档
   const info = await save.info()
@@ -2907,6 +2919,62 @@ dom.tgAutoEgg.addEventListener('click', () => {
   pushLog(next ? '已开启自动寻蛋：灵鹰得空即入万兽林，蛋归来自动收笼。' : '已关闭自动寻蛋：寻蛋改由你手动派遣。', 'sys')
   persist('settings')
 })
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ══ 阶段四 · 桌面常驻优化 装配区（P4.2 自启与托盘增强 / P4.4 空闲降帧）══════
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── P4.2 开机自启：settings.autoLaunch 是唯一真源，主进程只负责落到系统登录项 ──
+// 浏览器开发模式没有 desktop 桥，开关置灰（syncAutoLaunchUI 在 renderPanel 里跟拍）。
+function syncAutoLaunchUI () {
+  if (!dom.tgAutoLaunch) return
+  const off = !(desktop && desktop.app && desktop.app.setAutoLaunch)
+  dom.tgAutoLaunch.disabled = off
+  if (off) dom.tgAutoLaunch.title = '浏览器开发模式不支持开机自启（桌面端才可用）'
+}
+dom.tgAutoLaunch.addEventListener('click', async () => {
+  const next = state.settings.autoLaunch !== true
+  state.settings.autoLaunch = next
+  setToggle(dom.tgAutoLaunch, next)
+  if (desktop && desktop.app && desktop.app.setAutoLaunch) {
+    const res = await desktop.app.setAutoLaunch(next)
+    if (res && res.ok) pushLog(next ? '已开启开机自启：随系统登录常驻托盘。' : '已关闭开机自启。', 'sys')
+    else pushLog(`开机自启写入失败：${(res && res.error) || '未知错误'}`, 'fail')
+  }
+  persist('settings-autolaunch')
+})
+
+// ── P4.2 托盘 tooltip 增强：显示「境界 + 产出/秒」（每 2 秒跟拍一次，只改文字不改图标）──
+const TRAY_STATUS_MS = 2000
+let lastTrayStatus = 0
+function trayStatusText () {
+  if (!state || !cult) return ''
+  const drawn = !!(roots && roots.drawn)
+  const rate = drawn ? cult.getEffRate(Date.now()).eff : 0
+  const info = getLevelInfo(state.player.realm.level)
+  return `问长生 · ${info.displayName} · ${drawn ? '+' + fmtRate(rate) + '/秒' : '待测灵根'}（双击显示/隐藏）`
+}
+function updateTrayStatus (now = Date.now()) {
+  if (now - lastTrayStatus < TRAY_STATUS_MS) return
+  lastTrayStatus = now
+  if (desktop && desktop.tray && desktop.tray.setStatus) desktop.tray.setStatus(trayStatusText())
+}
+
+// ── P4.4 空闲降帧：最后一次用户输入距今超过 IDLE_AFTER_MS 即进省电档 ──
+// 主进程已关 backgroundThrottling（计时照跑、产出不变）；窗口藏进托盘时
+// document.hidden 为真，DOM 刷新再降一档（对不可见窗口是纯浪费）。
+let lastInputAt = Date.now()
+let lastInputStamp = 0
+function noteInput () {
+  const now = Date.now()
+  if (now - lastInputStamp < 1000) return   // pointermove 高频，1 秒记一次足够
+  lastInputStamp = now
+  lastInputAt = now
+}
+window.addEventListener('pointerdown', noteInput, { passive: true })
+window.addEventListener('pointermove', noteInput, { passive: true })
+window.addEventListener('keydown', noteInput, true)
+window.addEventListener('wheel', noteInput, { passive: true })
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ══ 3.3 氛围系统 装配区（改动仅限本区块 + 启动下发一行 + renderPanel 一行）══
@@ -3665,6 +3733,12 @@ async function boot () {
   //   真正出声要等主人第一次点按窗口（见 3.5 装配区的 document 级 pointerdown）。
   applyAudio({ silent: true })
 
+  // P4.2 开机自启落档生效：以档内设置为准写一次系统登录项
+  // （主人手工在系统里改过自启项时，启动会被纠回档口径；浏览器模式无桥跳过）
+  if (desktop && desktop.app && desktop.app.setAutoLaunch) {
+    desktop.app.setAutoLaunch(state.settings.autoLaunch === true).catch(() => {})
+  }
+
   // ③ 启动 Phaser（画布透明，叠在窗体上与桌面融合）
   game = new Phaser.Game({
     type: Phaser.AUTO,
@@ -3793,9 +3867,15 @@ async function boot () {
     achvTick = (achvTick + 1) % 10
     if (achvTick === 0) runAchvCheck(Date.now())
     notifyMatDrops()
-    // V3.5.2 渲染节流：结算每拍照跑，render 最低间隔 RENDER_MS（事件触发处仍即时）
+    // V3.5.2 渲染节流：结算每拍照跑，render 最低间隔 RENDER_MS（事件触发处仍即时）。
+    // P4.4 性能与省电：间隔档随「可见性 / 空闲」变化——可见且活跃 → RENDER_MS（250ms），
+    // 空闲 ≥ IDLE_AFTER_MS → RENDER_IDLE_MS（2s），藏进托盘 → RENDER_HIDDEN_MS（5s）。
     const loopNow = Date.now()
-    if (loopNow - lastLoopRender >= RENDER_MS) { lastLoopRender = loopNow; render() }
+    if (loopNow - lastLoopRender >= pickRenderMs({
+      visible: !document.hidden, idleMs: loopNow - lastInputAt,
+      base: RENDER_MS, idle: RENDER_IDLE_MS, hidden: RENDER_HIDDEN_MS, idleAfterMs: IDLE_AFTER_MS
+    })) { lastLoopRender = loopNow; render() }
+    updateTrayStatus(loopNow)   // P4.2：托盘 tooltip「境界 + 产出/秒」2 秒一拍
     refreshAmbient()   // 3.5：环境音自愈（暂停挂机 / 灵根刚测完 / 窗口可见性变化都会被纠回）
   }, TICK_MS)
 
@@ -3803,6 +3883,7 @@ async function boot () {
   setInterval(() => persist('auto'), AUTOSAVE_MS)
 
   render()
+  updateTrayStatus()  // P4.2：托盘 tooltip 首拍（主循环里每 2 秒自愈跟拍）
   syncOverlayZone()   // 遮罩落点按日志面板实测矩形写入（避免首帧用默认值闪一下）
 
   // ⑦ 新档：先抽世界（2.9）→ 再测灵根（灵根未测完不开始挂机产出加成）

@@ -1,9 +1,9 @@
 /**
  * beasts.js —— 灵兽表（只读配置层）（2.8）
  * ═══════════════════════════════════════════════════════════════════════════
- * 来源：设计库《灵兽兽潮与大比 v1》§1.1~§1.4 +《问长生-开发计划 V2》§四 模块 2.8
+ * 来源：设计库《灵兽兽潮与大比 v1》§1.1~§1.4 +《问长生-开发计划》§四 模块 2.8
  * 范围（首发 MVP）：万兽林寻蛋 + 孵化 + 出战 1 只；被动产出 + 战力加成 + 渡劫助战。
- *       血脉觉醒 / 化形 / 灵兽园扩容 / 待命 50% 被动 / 代采 / 兽潮线 ＝ 版本 2/3，不进本表。
+ *       血脉觉醒 / 化形 / 灵兽园扩容 / 待命 50% 被动 / 代采 / 兽潮线 ＝ 内容批次 2/3，不进本表。
  *
  * 口径：
  *   · 品级（血脉）四档：凡/灵/王/皇 —— 产出系数 ×1.0/×1.2/×1.5/×2.0（设计库 §1.1）
@@ -11,7 +11,7 @@
  *     产灵兽蛋一枚（品级 70/22/7/1，设计库 §1.2）
  *   · 孵化：蛋 → 灵兽，4~12h 按品级递增（设计库 §1.2）；妖丹可加速 −1h/枚
  *   · 出战节奏：设计库原文「元婴正式出战」，本 MVP 采开发计划验收口径
- *     「孵出灵兽并生效加成」——金丹寻蛋、孵出即可出战 1 只；元婴起 2 只留版本 2
+ *     「孵出灵兽并生效加成」——金丹寻蛋、孵出即可出战 1 只；元婴起 2 只留内容批次 2
  *   · 喂养：妖丹 → 等级（1~9 级），每级 +10% 全属性；小概率悟性爆发跳级（设计库 §1.3）
  *   · 出战·产出：0.2h/日 × 品级系数 × 等级系数，上限 0.6h/只（设计库 §1.4）
  *   · 出战·战力：+4%/只（皇品 +8%）（设计库 §1.4）
@@ -29,7 +29,7 @@ export const GRADES = [
   { id: 'huang', name: '皇品', coef: 2.0, powerPct: 0.08, hatchHours: 12, color: '#9fd6ff' }
 ]
 
-/** 万兽林派遣（设计库 §1.2 获取渠道一；兽潮掉蛋＝版本 2 不进本表） */
+/** 万兽林派遣（设计库 §1.2 获取渠道一；兽潮掉蛋＝内容批次 2 不进本表） */
 export const WANSHOU = {
   unlockRealmIndex: 2,                              // 金丹期可寻蛋（§1.1 节奏）
   hours: 1,                                         // 每次派遣 1 小时
@@ -39,7 +39,7 @@ export const WANSHOU = {
 
 /** 孵化与加速（设计库 §1.2「4~12h，可加速」；加速介质用妖丹，与喂养同源） */
 export const HATCH = {
-  slots: 1,                                         // 孵化位 1 个（多蛋排队，版本 2 扩容）
+  slots: 1,                                         // 孵化位 1 个（多蛋排队，内容批次 2 扩容）
   speed: { itemId: 'mat_yaodan', hoursPer: 1 }      // 1 枚妖丹 −1 小时
 }
 
@@ -60,23 +60,35 @@ export const FEED = {
  */
 export const GROWTH = { activeSecPerPoint: 600, parkSecPerPoint: 1800, expPerLevel: 12 }
 
-/** 出战产出与栏位（设计库 §1.4；待命 50% 被动＝版本 2） */
+/** 出战产出与栏位（设计库 §1.4；待命 50% 被动＝内容批次 2） */
 export const OUTPUT = { baseHours: 0.2, capHours: 0.6 }
 export const PARK_CAP = 6                           // 灵兽园 6 格（出战 1 + 待命 5）
 
-/** 渡劫助战（设计库 §1.4：+7%/只，上限 +14%＝元婴起 2 只的版本 2 口径） */
+/** 渡劫助战（设计库 §1.4：+7%/只，上限 +14%＝元婴起 2 只的内容批次 2 口径） */
 export const TRIAL_BEAST = { pctPer: 0.07, cap: 0.14 }
 
-/** 种类池（roll 品级后在同档种类里随机；id 带 beast_ 域前缀） */
+/** 种类池（roll 品级后在同档种类里随机；id 带 beast_ 域前缀）
+ *  V3.5.8 原著第二批扩容（出处：《设计库/07-原著/提炼-数据库素材/04-灵兽妖兽》）：
+ *    黑魔鼠←《没钱修什么仙？》｜血玉蜘蛛/火蟾兽/冰凤←《凡人修仙传》｜
+ *    炎雷兽←《没钱修什么仙？》｜幽冥兽←《仙逆》｜地火炎龙←《没钱修什么仙？》
+ *  数值零改动——种类只定「名字与风味」，产出/战力/渡劫仍由品级 GRADES 决定。
+ */
 export const SPECIES = [
   { id: 'beast_qingyuque',  grade: 'fan',   name: '青羽雀', desc: '山门外最常见的灵雀，胜在亲近人。' },
   { id: 'beast_huiyanshu',  grade: 'fan',   name: '灰岩鼠', desc: '打洞一绝，偶尔能叼回点零碎矿渣。' },
+  { id: 'beast_heimoshu',   grade: 'fan',   name: '黑魔鼠', desc: '通体墨黑、昼伏夜出，远祖据说沾过一丝魔血，惯会刨藏灵物的地窖。' },
   { id: 'beast_chiyanhu',   grade: 'ling',  name: '赤焰狐', desc: '尾尖一点火苗，入夜便烧得通红。' },
   { id: 'beast_bishuijiao', grade: 'ling',  name: '碧水蛟', desc: '水缸里孵出的蛟苗，怕是要占一方灵潭。' },
+  { id: 'beast_xueyuzhizhu', grade: 'ling', name: '血玉蜘蛛', desc: '甲壳莹白如玉、纹路似血丝，结出的网能凝灵气成露。' },
+  { id: 'beast_huoshanshou', grade: 'ling', name: '火蟾兽', desc: '肚皮一鼓便喷火星，蹲在丹炉边最是暖脚。' },
   { id: 'beast_shuangyuelang', grade: 'wang', name: '霜月狼', desc: '对月长嗥时，霜华随声而落。' },
   { id: 'beast_leilinmang', grade: 'wang',  name: '雷鳞蟒', desc: '鳞缝里游走细雷，蜕下的皮是炼器好料。' },
+  { id: 'beast_bingfeng',   grade: 'wang',  name: '冰凤', desc: '尾羽垂着冰绡，长鸣一声，满园落霜。' },
+  { id: 'beast_yanleishou', grade: 'wang',  name: '炎雷兽', desc: '奔跑时蹄下生雷、鬃毛带火，渡劫时随行最是提气。' },
+  { id: 'beast_youmingshou', grade: 'wang', name: '幽冥兽', desc: '影子里养出来的凶物，白日慵懒，入夜护主极凶。' },
   { id: 'beast_moyukilin',  grade: 'huang', name: '墨玉麒麟', desc: '通体如墨玉，踏云无痕。灵兽园有它坐镇，妖邪辟易。' },
-  { id: 'beast_jinchidapeng', grade: 'huang', name: '金翅大鹏', desc: '双翅一振便是三千里云路。' }
+  { id: 'beast_jinchidapeng', grade: 'huang', name: '金翅大鹏', desc: '双翅一振便是三千里云路。' },
+  { id: 'beast_dihuoyanlong', grade: 'huang', name: '地火炎龙', desc: '自地火肺脉里孵出的真龙苗，一声龙吟，地火倒卷。' }
 ]
 
 /**

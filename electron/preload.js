@@ -56,5 +56,16 @@ contextBridge.exposeInMainWorld('desktop', {
     setAlwaysOnTop: (value) => ipcRenderer.invoke('window:set-always-on-top', value),
     getAlwaysOnTop: () => ipcRenderer.invoke('window:get-always-on-top'),
     onStateChanged: (cb) => subscribe('window-state', cb)                       // 托盘/快捷键改动时回调
+  },
+
+  // ── P4.2 开机自启（设置面板「开机自启」开关；浏览器模式无此对象，渲染层置灰）──
+  app: {
+    setAutoLaunch: (open) => ipcRenderer.invoke('app:set-login-item', !!open),
+    getAutoLaunch: () => ipcRenderer.invoke('app:get-login-item')
+  },
+
+  // ── P4.2 托盘增强：tooltip 显示「境界 + 产出/秒」（渲染层每 ~2 秒推纯文本）──
+  tray: {
+    setStatus: (text) => ipcRenderer.invoke('tray:set-status', String(text || ''))
   }
 })

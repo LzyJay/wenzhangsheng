@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '3.5.6'                                // V3.5.6（拆分 main.js 第二批：渡劫/功法/宗门/行囊/丹房五面板迁 src/ui/）；与 package.json 同步
+const APP_VERSION = '4.0.0'                                // V4 整合版（阶段四收口：桌面常驻优化）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
@@ -136,6 +136,7 @@ class SaveSystem {
         volSfx: 'mid',          // 音效音量：low 低 | mid 中（参考增益 0.60）| high 高
         volBgm: 'mid',          // 音乐音量：low | mid（= 3.5 之前写死的 0.35，老档观感不变）| high
         avatar: 'male',         // 立绘化身（V2 立绘 UI）：male 男修·红黑金 | female 女修·月白水蓝
+        autoLaunch: false,      // P4.2 开机自启（真源在档，主进程落到系统登录项；浏览器模式无效）
         alwaysOnTop: true,      // 窗口置顶
         clickThrough: false,    // 鼠标穿透（整窗不接收点击）
         lockPosition: false,    // 锁定位置（禁止拖拽移动窗口）

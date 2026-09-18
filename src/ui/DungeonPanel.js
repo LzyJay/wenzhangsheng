@@ -68,7 +68,7 @@ let lastDungeonRender = 0 // 秘境面板轻刷节拍（V3.5.2：时间驱动，
       `</div>`
   } else {
     towerHtml =
-      `<div class="dungeon-row"><span class="dn">试炼塔</span><span class="dd">已通满 <b>${tv.floors}</b> 层，更高层随版本开放</span>` +
+      `<div class="dungeon-row"><span class="dn">试炼塔</span><span class="dd">已通满 <b>${tv.floors}</b> 层，更高层随后续版本开放</span>` +
       `<span class="ds">周扫荡 <b>+${H.fmt(tv.weekly.stones)}</b> 灵石<br>还差 ${H.fmtGameDuration(tv.weekly.nextInMs)}</span></div>`
   }
   dom.dungeonTower.innerHTML = towerHtml

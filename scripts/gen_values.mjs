@@ -68,7 +68,10 @@ const TRIAL_NODE_META = [
 // 渡劫准备项（《游戏设计文档》§5.3；合计上限 +35%）
 //   kind: consume 服用即消耗 ｜ hold 持有即生效 ｜ stone 花灵石结阵 ｜ system 尚未开放的系统项
 const TRIAL_PREPS = [
+  // V3.5.9 同槽位升档（原著第三批：九曲灵参接丹方）：囊中有九转护劫丹则 prepare 时优先服高档，
+  // 生效加成按 upBonusPct 计——准备项仍一格，护栏合计（prepCap 0.35）与 sum 不变量不动。
   { id: 'hujie', name: '护劫丹', kind: 'consume', itemId: 'pill_hujie', bonusPct: 0.10,
+    upItemId: 'pill_hujie2', upName: '九转护劫丹', upBonusPct: 0.15,
     module: null, from: '丹房炼制（灵草 2 · 玄铁 1 · 妖丹 1）',
     note: '事前服下护住心脉：单雷 +10%。服下即化入经脉，不成也不退还。' },
   { id: 'zhenlei', name: '镇雷法宝', kind: 'hold', itemId: 'treasure_zhenlei', bonusPct: 0.08,
@@ -180,9 +183,13 @@ const trialNodeLines = TRIAL_NODE_META.map((m, i) => {
 const trialPrepLines = TRIAL_PREPS.map((p) => {
   const pairs = [
     `id: ${Q(p.id)}, name: ${Q(p.name)}, kind: ${Q(p.kind)}`,
-    `itemId: ${p.itemId ? Q(p.itemId) : 'null'}, bonusPct: ${p.bonusPct}`,
-    `module: ${p.module ? Q(p.module) : 'null'}, from: ${Q(p.from)}, note: ${Q(p.note)}`
+    `itemId: ${p.itemId ? Q(p.itemId) : 'null'}, bonusPct: ${p.bonusPct}`
   ]
+  // V3.5.9 同槽位升档字段（仅 consume 项按需输出）
+  if (p.upItemId) {
+    pairs.push(`upItemId: ${Q(p.upItemId)}, upName: ${Q(p.upName || p.name)}, upBonusPct: ${p.upBonusPct}`)
+  }
+  pairs.push(`module: ${p.module ? Q(p.module) : 'null'}, from: ${Q(p.from)}, note: ${Q(p.note)}`)
   return `  { ${pairs.join(',\n    ')} }`
 }).join(',\n')
 

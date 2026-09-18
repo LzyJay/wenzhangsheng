@@ -4,11 +4,11 @@
  * 边界（项目文件结构 §三）：禁止 import Phaser、禁止操作 DOM；只读写 state。
  * 数据源：src/data/worlds.js（十二世界 · 熟练度 · 抽取规则）
  *
- * 口径（设计增补 v1.2 + 开发计划 V2 §四 2.9）：
+ * 口径（设计增补 v1.2 + 开发计划 §四 2.9）：
  *   · 开局抽世界：12 池等概率（各 1/12）；开局免费重掷 1 次（重掷排除当前世界）
  *   · 世界修正生效：产出 rateMul（含熟练度）／ 寿元流速 ／ 天劫强度 ／ 灵根突破成本
  *   · 同界轮回熟练度：每世 +3%（封顶 +15%），乘进产出修正；触发点随转世系统（阶段二）
- *   · 界游符换界 / 界镜道具重掷 ＝ 版本 2/3，本模块只建好字段与接口
+ *   · 界游符换界 / 界镜道具重掷 ＝ 内容批次 2/3，本模块只建好字段与接口
  *
  * 存档子树：state.world（null＝尚未抽世界；懒建兜底，老档自动补全）
  * 跨模块接线（13.1②，均由 main.js 中转）：
@@ -36,10 +36,10 @@ class WorldSystem {
         worldId: null,          // 当前世界 id（数据表 id）；null ＝ 尚未抽取
         masteryPct: 0,          // 同界轮回熟练度（0~0.15，直接存百分比）
         runsInWorld: 1,         // 本界第几世（第 1 世起）
-        specialState: {},       // 专属状态（版本 2 专属机制用）
-        frictionState: {},      // 摩擦状态（版本 2 摩擦项用）
+        specialState: {},       // 专属状态（内容批次 2 专属机制用）
+        frictionState: {},      // 摩擦状态（内容批次 2 摩擦项用）
         freeRerollLeft: DRAW.freeRerolls,  // 开局免费重掷剩余次数
-        rerollCount: 0,         // 累计重掷次数（含免费；界镜＝版本 2）
+        rerollCount: 0,         // 累计重掷次数（含免费；界镜＝内容批次 2）
         drawnAt: 0
       }
     }
@@ -154,7 +154,7 @@ class WorldSystem {
   reroll (r = Math.random()) {
     if (!this.drawn) return { ok: false, message: '尚未抽取世界。' }
     if (this.s.freeRerollLeft <= 0) {
-      return { ok: false, message: '免费重掷已用完（「界镜」每日重掷 · 版本 2 上线）。' }
+      return { ok: false, message: '免费重掷已用完（「界镜」每日重掷 · 内容批次 2 上线）。' }
     }
     const prevId = this.s.worldId
     const idx = rerollWorldIndex(prevId, r)

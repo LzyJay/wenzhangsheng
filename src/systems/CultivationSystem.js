@@ -660,12 +660,22 @@ class CultivationSystem {
           v.message = `${p.module} 上线后开放`
         }
       } else if (p.kind === 'consume') {
+        // V3.5.9 同槽位升档：t.preps[p.id] 存实际生效的加成（老档为 true → 按基础档读）；
+        // 未备妥时囊中有升档丹（upItemId）则视图优先展示高档
+        const stored = t.preps[p.id]
+        const storedPct = typeof stored === 'number' ? stored : p.bonusPct
+        const upCount = p.upItemId ? (this.items[p.upItemId] | 0) : 0
+        const showUp = !picked && upCount > 0
         v.active = picked
-        v.appliedPct = picked ? p.bonusPct : 0
-        v.state = picked ? 'active' : (count > 0 ? 'ready' : 'lack')
+        v.appliedPct = picked ? storedPct : 0
+        if (picked) v.bonusPct = storedPct            // 升档丹按高档计入准备合计（prepSummary 聚合此值）
+        if (showUp) { v.count = upCount; v.itemId = p.upItemId }   // 自动炼丹按钮随之指向升档丹
+        v.state = picked ? 'active' : ((showUp ? upCount : count) > 0 ? 'ready' : 'lack')
         v.message = picked
-          ? `已服下 · 单雷 +${pct}`
-          : (count > 0 ? `囊中 ${count} 枚 · 可服下` : '囊中无此丹 · 丹房可炼')
+          ? `已服下${storedPct > p.bonusPct ? `（${p.upName}）` : ''} · 单雷 +${Math.round(storedPct * 100)}%`
+          : (showUp
+            ? `囊中 ${upCount} 枚${p.upName} · 服之单雷 +${Math.round((p.upBonusPct || p.bonusPct) * 100)}%`
+            : (count > 0 ? `囊中 ${count} 枚 · 可服下` : '囊中无此丹 · 丹房可炼'))
       } else {
         v.state = 'locked'
         v.message = '此路尚不可行'
@@ -703,12 +713,22 @@ class CultivationSystem {
     const pct = `${Math.round(p.bonusPct * 100)}%`
 
     if (p.kind === 'consume') {
-      const have = this.items[p.itemId] | 0
-      if (have <= 0) return { ok: false, message: `囊中没有${p.name}（${p.from}）。` }
-      this.items[p.itemId] = have - 1
+      // V3.5.9 同槽位升档：囊中有升档丹（upItemId）则优先服高档，生效加成按 upBonusPct 计
+      let consumedId = p.itemId
+      let consumedName = p.name
+      let usePct = p.bonusPct
+      if (p.upItemId && (this.items[p.upItemId] | 0) > 0) {
+        consumedId = p.upItemId
+        consumedName = p.upName || p.name
+        usePct = p.upBonusPct
+      }
+      const have = this.items[consumedId] | 0
+      if (have <= 0) return { ok: false, message: `囊中没有${consumedName}（${p.from}）。` }
+      this.items[consumedId] = have - 1
       t.total.hujie = (t.total.hujie | 0) + 1
-      t.preps[id] = true
-      return { ok: true, bonusPct: p.bonusPct, message: `服下${p.name}：单雷通过率 +${pct}（已化入经脉，成败皆不退还）。` }
+      t.preps[id] = usePct   // 存实际生效的加成（老档 true 仍兼容：视图按基础档读）
+      const pctUse = `${Math.round(usePct * 100)}%`
+      return { ok: true, bonusPct: usePct, message: `服下${consumedName}：单雷通过率 +${pctUse}（已化入经脉，成败皆不退还）。` }
     }
 
     if (p.kind === 'contrib') {

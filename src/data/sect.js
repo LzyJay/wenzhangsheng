@@ -1,9 +1,9 @@
 /**
  * sect.js —— 宗门表（只读配置层）（2.4）
  * ═══════════════════════════════════════════════════════════════════════════
- * 来源：设计库《宗门与弟子 v1》第一部分 +《问长生-开发计划 V2》§四 模块 2.4
+ * 来源：设计库《宗门与弟子 v1》第一部分 +《问长生-开发计划》§四 模块 2.4
  * 范围：云岚宗（青岚界）· 道统 · 六档职级俸禄 · 任务板 · 藏经阁 · 贡献商店
- *       （弟子线＝设计库版本 2/3 内容，不在本模块；世界名册每界 3 宗＝2.9 世界卡池接入）
+ *       （弟子线＝设计库内容批次 2/3 内容，不在本模块；世界名册每界 3 宗＝2.9 世界卡池接入）
  *
  * 口径：
  *   · 职级门槛＝境界 + 累计贡献（双门槛）；晋升不扣贡献，贡献是可花货币，累计值另记
@@ -42,14 +42,14 @@ export const DAO_TONG = [
 export const RANKS = [
   { idx: 0, id: 'waimen',    name: '外门弟子', realmIndex: 0, realmName: '炼气', contrib: 0,     salaryHours: 0.2, slots: 3, discount: 0,    unlocks: '任务板 3 槽 · 藏经阁一层' },
   { idx: 1, id: 'neimen',    name: '内门弟子', realmIndex: 1, realmName: '筑基', contrib: 300,   salaryHours: 0.5, slots: 5, discount: 0.05, unlocks: '任务板 5 槽 · 藏经阁二层 · 商店 95 折' },
-  { idx: 2, id: 'zhenchuan', name: '真传弟子', realmIndex: 2, realmName: '金丹', contrib: 1200,  salaryHours: 0.9, slots: 5, discount: 0.10, unlocks: '商店 9 折（个人洞府待版本 2）' },
+  { idx: 2, id: 'zhenchuan', name: '真传弟子', realmIndex: 2, realmName: '金丹', contrib: 1200,  salaryHours: 0.9, slots: 5, discount: 0.10, unlocks: '商店 9 折（个人洞府待内容批次 2）' },
   { idx: 3, id: 'zhishi',    name: '执事长老', realmIndex: 3, realmName: '元婴', contrib: 4000,  salaryHours: 1.4, slots: 5, discount: 0.15, unlocks: '商店 85 折' },
-  { idx: 4, id: 'shouzuo',   name: '首座',     realmIndex: 4, realmName: '化神', contrib: 12000, salaryHours: 2.0, slots: 5, discount: 0.15, unlocks: '收徒名额 +2（弟子线待版本 2）' },
-  { idx: 5, id: 'zhangmen',  name: '掌门',     realmIndex: 5, realmName: '炼虚', contrib: 40000, salaryHours: 3.0, slots: 5, discount: 0.15, unlocks: '宗门宣言（轻社交待版本 3）' }
+  { idx: 4, id: 'shouzuo',   name: '首座',     realmIndex: 4, realmName: '化神', contrib: 12000, salaryHours: 2.0, slots: 5, discount: 0.15, unlocks: '收徒名额 +2（弟子线待内容批次 2）' },
+  { idx: 5, id: 'zhangmen',  name: '掌门',     realmIndex: 5, realmName: '炼虚', contrib: 40000, salaryHours: 3.0, slots: 5, discount: 0.15, unlocks: '宗门宣言（轻社交待内容批次 3）' }
 ]
 
 /**
- * 任务池（设计库 §1.3；周常大比/供奉＝版本 2，不进本表）
+ * 任务池（设计库 §1.3；周常大比/供奉＝内容批次 2，不进本表）
  * kind：idle 挂机计时 ｜ power 战力校验（接取时按当时基准战力 × reqMul 定标）
  * 材料：min~max 随机（成功才发）
  * hours：**游戏时辰**（不是现实小时！「巡逻 2」＝两个时辰 ≈ 现实 10 秒，见 taskDurationMs）

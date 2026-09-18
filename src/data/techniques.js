@@ -92,7 +92,7 @@ export function cultivateSecOf (t, level = 1) {
   return Math.round(base * Math.pow(CULTIVATE_GROWTH, lv - 1))
 }
 
-// ── 功法表（18 本：主修线 12 / 辅修线 6）─────────────────────────────────────
+// ── 功法表（22 本：V3.5.7 起含「原著首批」入库，出处见各条注释）──────────────
 export const TECHNIQUES = [
   // ═══ 凡阶（修为 +5%/级 · 战力 +0.4%/级）═══
   {
@@ -219,6 +219,17 @@ export const TECHNIQUES = [
     tags: ['shui', 'bing'],
     source: { type: 'dungeon', label: '秘境 · 寒潭' },
     desc: '极寒凝元，气机澄澈。冰属变异灵根者可修。'
+  },
+  {
+    // V3.5.7 原著首批入库（出处：《凡人修仙传》青元剑诀，跨书高频第一档）——
+    // 补秘境线玄阶档的木属性空位（此前秘境功法池玄阶只有水/炼体两本）；
+    // 数值对齐离炎真解/玄冰凝元功同档预算（0.175 / 0.016，1950 灵气起）
+    id: 'tech_qingyuan', name: '青元剑诀', tier: 'xuan', grade: 7,
+    maxLevel: 9, rateAddPctPerLevel: 0.175, combatAddPctPerLevel: 0.016,
+    cost: { qiBase: 1950, stoneBase: 35, growth: 1.65, stoneGrowth: 1.30 },
+    tags: ['mu'],
+    source: { type: 'dungeon', label: '秘境 · 灵圃古碑' },
+    desc: '木行吐纳古诀，青元入体如春木新发。灵药谷深处的古碑所载，木灵根者修之事半功倍。'
   },
   {
     id: 'tech_jingang', name: '金刚炼体诀', tier: 'xuan', grade: 8,

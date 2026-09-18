@@ -423,6 +423,36 @@ function moveToCorner () {
   saveBounds()
 }
 
+// ── P4.3 多屏与 DPI：显示器拔插 / 分辨率 / 缩放变化后的位置回收 ─────────
+// 基础版（启动时 loadBounds → clampToWorkArea + ready-to-show 的 isOnScreen 兜底）
+// 只覆盖"启动前就变了的布局"；运行期拔掉显示器 / 改分辨率 / 改缩放（DPI）同样会把
+// 小窗甩出可见工作区。这里监听 screen 事件，debounce 300ms 后把窗口夹回
+// "最近的显示器"工作区；实在夹不回（例如只剩一屏且工作区异常）就回右下角。
+// 高 DPI 说明：Windows 下 Chromium 对页面自动按系统缩放因子渲染（矢量与文本不发虚），
+// 画布 / 字号无需手动 zoomFactor 处理；缩放变化带来的 workArea 变化也一并由本兜底回收。
+let displayAdjustTimer = null
+function ensureWindowOnScreen () {
+  if (!win || win.isDestroyed() || win.isMinimized()) return
+  const b = win.getBounds()
+  if (isOnScreen(b)) {
+    // 仍在屏内，但所属显示器工作区可能已变小（如 DPI 调大）：温和夹一次，防半截出屏
+    const clamped = clampToWorkArea(b)
+    if (clamped.width !== b.width || clamped.height !== b.height ||
+        clamped.x !== b.x || clamped.y !== b.y) {
+      win.setBounds(clamped)
+      saveBounds()
+    }
+    return
+  }
+  win.setBounds(clampToWorkArea(b))
+  if (!isOnScreen(win.getBounds())) moveToCorner()
+  console.log('[screen] 显示器布局变化，窗口已夹回：', JSON.stringify(win.getBounds()))
+}
+function scheduleDisplayAdjust () {
+  if (displayAdjustTimer) return
+  displayAdjustTimer = setTimeout(() => { displayAdjustTimer = null; ensureWindowOnScreen() }, 300)
+}
+
 // ── 托盘 ──────────────────────────────────────────────────────────────────
 
 function refreshTrayMenu () {
@@ -511,6 +541,30 @@ ipcMain.handle('window:ignore-mouse-now', (_e, ignore) => {
   return { ok: true, ignore: !!ignore }
 })
 
+// ── P4.2 开机自启与托盘状态 ─────────────────────────────────────────────
+// 开机自启：settings.autoLaunch（渲染层存档）是唯一真源，主进程只负责落到系统登录项
+// （Windows 写 HKCU Run，以 process.execPath 启动；开发模式额外带应用目录参数）。
+// 主人不改档内开关时这里幂等无害；档内开关变化（含启动纠偏）由渲染层推过来。
+ipcMain.handle('app:set-login-item', (_e, open) => {
+  const want = !!open
+  try {
+    const args = isDev ? [path.join(__dirname, '..')] : []
+    app.setLoginItemSettings({ openAtLogin: want, path: process.execPath, args })
+    return { ok: true, openAtLogin: app.getLoginItemSettings().openAtLogin }
+  } catch (err) {
+    return { ok: false, error: String(err && err.message || err) }
+  }
+})
+ipcMain.handle('app:get-login-item', () => {
+  try { return { ok: true, openAtLogin: app.getLoginItemSettings().openAtLogin } }
+  catch (err) { return { ok: false, error: String(err && err.message || err) } }
+})
+// 托盘 tooltip 显示「境界 + 产出/秒」（P4.2 托盘增强）：渲染层每 ~2 秒推一次纯文本
+ipcMain.handle('tray:set-status', (_e, text) => {
+  if (tray && typeof text === 'string' && text) tray.setToolTip(text.slice(0, 128))
+  return { ok: true }
+})
+
 // ── 生命周期 ──────────────────────────────────────────────────────────────
 
 if (!app.requestSingleInstanceLock()) {
@@ -519,6 +573,9 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showWindow())
 
   app.whenReady().then(() => {
+    // P4.3：screen 事件必须在 app ready 之后才能监听（Electron 约定）
+    screen.on('display-removed', scheduleDisplayAdjust)
+    screen.on('display-metrics-changed', scheduleDisplayAdjust)   // 含分辨率 / DPI 缩放变化
     createWindow()
     createTray()
     registerShortcuts()

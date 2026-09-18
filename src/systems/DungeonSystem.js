@@ -4,7 +4,7 @@
  * 边界（项目文件结构 §三）：禁止 import Phaser、禁止操作 DOM；只读写 state。
  * 数据源：src/data/dungeon.js（试炼塔 · 资源秘境 · 分身派遣）
  *
- * 口径（设计库《秘境副本设计 v1》+《秘境奖励曲线与事件 v1》+ 开发计划 V2 §四 2.7）：
+ * 口径（设计库《秘境副本设计 v1》+《秘境奖励曲线与事件 v1》+ 开发计划 §四 2.7）：
  *   · 试炼塔＝战力标尺：第 m 层推荐战力 = 1.15×power(m)，战力达标方可挑战（确定性，不 roll）
  *   · 首通当量 h → 灵石（复用 events.stoneHourly 时薪，与事件系统同口径）；不发境界只发货币/材料
  *   · 资源秘境：先首通（一次性当量 + 评星），再派遣（挂机产出灵石 + 主题材料）
@@ -201,7 +201,7 @@ class DungeonSystem {
   /** 挑战下一层（战力校验，确定性：达标即过） */
   challengeTower (now = Date.now()) {
     const next = this.towerNextFloor()
-    if (next === null) return { ok: false, message: `已通第 ${TOWER.floors} 层，更高层随版本开放。` }
+    if (next === null) return { ok: false, message: `已通第 ${TOWER.floors} 层，更高层随后续版本开放。` }
     const power = towerPower(next)
     if (this.power < power) {
       return { ok: false, needPower: power, message: '战力不足，尚不可挑战此层（回主线提升境界再来）。' }

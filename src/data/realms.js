@@ -3,7 +3,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * 生成命令：npm run gen:values   （= node scripts/gen_values.mjs）
  * 数值源　：data-source/72级数值表.csv（设计库《72级数值表.csv》原样副本，唯一数值源）
- * 生成时间：2026-09-16 16:45
+ * 生成时间：2026-09-17 19:31
  * 上游文档：《数值与公式手册》§1.1、《数据模型》§3、《设计增补 v1.1》（寿元）、《挂机修仙游戏设定书》§4
  *
  * 改数值的正确姿势：改 data-source 里的 CSV → 重跑 npm run gen:values → 全表刷新。
@@ -70,6 +70,7 @@ export const TRIAL_NODES = [
 export const TRIAL_PREPS = [
   { id: 'hujie', name: '护劫丹', kind: 'consume',
     itemId: 'pill_hujie', bonusPct: 0.1,
+    upItemId: 'pill_hujie2', upName: '九转护劫丹', upBonusPct: 0.15,
     module: null, from: '丹房炼制（灵草 2 · 玄铁 1 · 妖丹 1）', note: '事前服下护住心脉：单雷 +10%。服下即化入经脉，不成也不退还。' },
   { id: 'zhenlei', name: '镇雷法宝', kind: 'hold',
     itemId: 'treasure_zhenlei', bonusPct: 0.08,
