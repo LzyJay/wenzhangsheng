@@ -1,5 +1,8 @@
 // 实机点验（V3.5.2~V3.5.4 四条落地 · 真机 CDP）
 // 用法：node scripts/verify_v35x.mjs [port]   （默认 9229；需先 launch-debug 起窗口）
+import { readFileSync } from 'node:fs'
+// 版本断言取 package.json（免手工改钉；此前写死 3.5.6，版本升到 5.x 后必然误报）
+const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const PORT = process.argv[2] || '9229'
 const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()
 const page = list.find((t) => t.type === 'page' && /index\.html/.test(t.url)) || list.find((t) => t.type === 'page')
@@ -71,7 +74,7 @@ console.log('\n【基线：版本与运行状态】')
   // meta.appVersion 在内存里保持"最后一次读档"的版本；落档版本以强制写档后的文件为准
   await evaluate(`__wcs.save.save(__wcs.state, 'verify')`)
   const fileVer = await evaluate(`window.desktop.save.read().then((r) => (JSON.parse(r.data).meta || {}).appVersion)`)
-  ok('实机写档版本 3.5.6', fileVer === '3.5.6', fileVer)
+  ok(`实机写档版本 ${APP_VERSION}`, fileVer === APP_VERSION, fileVer)
   const errs = await evaluate(`window.__wcsErrors ? window.__wcsErrors.length : 0`)
   ok('渲染层零未捕获异常', errs === 0, `${errs} 个`)
 }

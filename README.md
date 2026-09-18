@@ -168,4 +168,22 @@ node tests\wcs_regress.mjs   全量回归（≈2 秒 / 53 份：自动择优解�
 → Electron 充当 node），也可用 `WL_NODE=<node.exe 路径>` 指定。PowerShell 一把梭：
 `powershell -File tests\run_regress.ps1`（参数原样透传）。
 
+**目录约定**（2026-09-18 结构核对后的分层）：
+
+| 目录 | 职责 |
+|---|---|
+| `src\main.js` | 唯一装配层（读档 → 实例化 systems → 装配 UI 面板 → 通知场景；`window.__wcs` 调试出口） |
+| `src\systems\` | 纯逻辑层（14 个玩法系统 + `BonusLedger` / `EconLedger`；禁 DOM / Phaser / 横向 import） |
+| `src\data\` | 纯配置层（改平衡只动这里；`realms.js` 为生成物禁手改） |
+| `src\ui\` | 面板视图层（9 个 `*Panel.js`，只依赖 `data\`） |
+| `src\scenes\` / `src\audio\` | Phaser 表现层 / 程序化音效引擎 |
+| `electron\` | 主进程（窗口 / 托盘 / 存档 IO，无游戏逻辑） |
+| `tests\` | 回归（`wcs_regress.mjs`）与手工 CDP 真机脚本；阶段一遗留调试脚本在 `tests\legacy\` |
+| `scripts\` | 工具链（数值生成 / 对账 / 图标 / MD→HTML / 起窗口 / 真机点验） |
+| `docs\` | 过程文档归档（`回执\` / `改动清单\` / `handoff\` / `进度看板-阶段五.md`） |
+| `design\` | UI 交互稿（改 UI 前先读；`archive\` 为立绘比对过程图） |
+| `data-source\` | 数值源 CSV（改这里 → `npm run gen:values`） |
+
+> 全树与三棵树分工见工作区根 `README.md` §一 / §四。
+
 代码版本 `package.json` 与 `src/systems/SaveSystem.js` 的 `APP_VERSION` 两处同步。
