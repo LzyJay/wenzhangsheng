@@ -80,16 +80,10 @@ import { getLevelInfo, getRealmMeta, TRIAL_AID } from '../data/realms.js'
 import { getItem } from '../data/items.js'
 import { getTechnique, tierLabel } from '../data/techniques.js'
 import { stoneHourly } from '../data/events.js'   // 当量 h → 灵石（与秘境 / 事件同一口径）
-import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
+import { clamp, fmtShort } from '../util/num.js'   // 区间钳制 + 大数简写（零依赖叶子层 src/util/）
 
-/** 大数简写（万 / 亿 / 万亿）——仅用于日志与面板文案，不动任何数值 */
-const fmtBig = (n) => {
-  const v = Math.max(0, Number(n) || 0)
-  if (v >= 1e12) return `${(v / 1e12).toFixed(2)} 万亿`
-  if (v >= 1e8) return `${(v / 1e8).toFixed(2)} 亿`
-  if (v >= 1e4) return `${(v / 1e4).toFixed(2)} 万`
-  return `${Math.round(v)}`
-}
+// 大数简写：本地 fmtBig 已删除，日志与面板文案统一走 util/num.js 的 fmtShort
+//（批2 口径统一：<1万 由四舍五入改为向下取整；单位前的空格一并去掉，与主界面一致；负数归零语义保留）。
 /** 提前提交的最低受理比例：与"至少接手 1 秒"取小 —— 任务只有几个时辰（现实十几秒），
  *  若硬按 10% 算，1 时辰的活要等 0.5 秒、5 时辰的活要等 2.5 秒；取小后"随时可交"名副其实。 */
 const MIN_CLAIM_RATIO = 0.1
@@ -851,7 +845,7 @@ class SectSystem {
     if (!info.ok) return { ok: false, message: '门下没有这名弟子。' }
     if (info.maxed) return { ok: false, message: `${info.name}已至第 ${info.max} 级，进无可进。` }
     if (!info.affordable) {
-      return { ok: false, cost: info.qi, message: `传功需 ${fmtBig(info.qi)} 修为（现有 ${fmtBig(this.state.resources.qi)}）。` }
+      return { ok: false, cost: info.qi, message: `传功需 ${fmtShort(info.qi)} 修为（现有 ${fmtShort(this.state.resources.qi)}）。` }
     }
     this.state.resources.qi -= info.qi
     const d = this.d.list.find((x) => x.uid === uid)
@@ -865,7 +859,7 @@ class SectSystem {
       name: d.name,
       cost: info.qi,
       lv: d.lv,
-      message: `传功毕：${d.name}修为进至第 ${d.lv} 级（耗灵气 ${fmtBig(info.qi)}）。`
+      message: `传功毕：${d.name}修为进至第 ${d.lv} 级（耗灵气 ${fmtShort(info.qi)}）。`
     }
   }
 
@@ -1157,7 +1151,7 @@ class SectSystem {
       contrib,
       title,
       rate,
-      message: `宗门大比：以战力 ${fmtBig(this.power)} 对定标 ${fmtBig(req)}——${title}，贡献 +${contrib}。`
+      message: `宗门大比：以战力 ${fmtShort(this.power)} 对定标 ${fmtShort(req)}——${title}，贡献 +${contrib}。`
     }
   }
 

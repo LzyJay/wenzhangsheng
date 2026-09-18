@@ -30,18 +30,12 @@ import {
   // V4.7：策略 → 等级处置范围 / 选项偏好序，与纪事消息共用同一张表（data 层单一真源）
   STRATEGY_PREF, isAutoQuality, strategyAutoLabel
 } from '../data/events.js'
-import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
+import { clamp, fmtNum } from '../util/num.js'   // 区间钳制 + 大数简写（零依赖叶子层 src/util/）
 
 export const STRATEGY_NAME = { steady: '稳健', balanced: '均衡', aggressive: '激进' }
 
-/** 小数字格式化（消息文案用；与 main.js 的 fmt 同口径但不依赖 DOM 层） */
-function fmtN (n) {
-  const abs = Math.abs(n)
-  if (abs < 1e4) return String(Math.round(n))
-  if (abs < 1e8) return (n / 1e4).toFixed(2) + '万'
-  if (abs < 1e12) return (n / 1e8).toFixed(2) + '亿'
-  return (n / 1e12).toFixed(2) + '万亿'
-}
+// 大数简写：本地 fmtN 已删除，消息与归因文案统一走 util/num.js 的 fmtNum
+//（批2 口径统一：<1万 由四舍五入改为向下取整，与主界面显示层同一把尺）。
 
 class EventSystem {
   constructor (state) {
@@ -302,13 +296,13 @@ class EventSystem {
         const amt = Math.round(fx.qiH * eff * 3600)
         state.resources.qi = Math.max(0, state.resources.qi + amt)
         netH += fx.qiH
-        parts.push(`灵气 ${amt >= 0 ? '+' : '−'}${fmtN(Math.abs(amt))}`)
+        parts.push(`灵气 ${amt >= 0 ? '+' : '−'}${fmtNum(Math.abs(amt))}`)
       }
       if (typeof fx.stonesH === 'number' && fx.stonesH !== 0) {
         const amt = Math.round(fx.stonesH * stoneRate)
         state.resources.stones = Math.max(0, state.resources.stones + amt)
         netH += fx.stonesH
-        parts.push(`灵石 ${amt >= 0 ? '+' : '−'}${fmtN(Math.abs(amt))}`)
+        parts.push(`灵石 ${amt >= 0 ? '+' : '−'}${fmtNum(Math.abs(amt))}`)
       }
       if (typeof fx.luck === 'number' && fx.luck !== 0) {
         const before = this.luck
@@ -407,13 +401,13 @@ class EventSystem {
         const amt = Math.round(r.qiH * eff * 3600)
         this.state.resources.qi = Math.max(0, this.state.resources.qi + amt)
         netH += r.qiH
-        parts.push(`灵气 +${fmtN(amt)}`)
+        parts.push(`灵气 +${fmtNum(amt)}`)
       }
       if (r.stonesH) {
         const amt = Math.round(r.stonesH * stoneRate)
         this.state.resources.stones = Math.max(0, this.state.resources.stones + amt)
         netH += r.stonesH
-        parts.push(`灵石 +${fmtN(amt)}`)
+        parts.push(`灵石 +${fmtNum(amt)}`)
       }
       es.book.push({ at: nowMs, name: r.label, q: null, cat: 'enyuan', opt: '兑现', text: parts.join('，') || '如约而至', good: netH >= 0, auto: true })
       if (es.book.length > TRIGGER.bookCap) es.book = es.book.slice(-TRIGGER.bookCap)

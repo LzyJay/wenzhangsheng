@@ -65,6 +65,7 @@ import { createBagPanel } from './ui/BagPanel.js'                           // V
 import { createAlchemyPanel } from './ui/AlchemyPanel.js'                   // V3.5.6 拆分：丹房面板（src/ui/ 新层）
 import { createWorldPanel } from './ui/WorldPanel.js'                       // V5.2 世界日常面板（#world-overlay 的 daily 态）
 import { pickRenderMs } from './data/powersave.js'                          // P4.4 性能与省电：渲染间隔决策（纯函数）
+import { fmtNum } from './util/num.js'                                      // 显示层数值格式化唯一真源（本地别名 fmt 见下）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
 const AUTOSAVE_MS = 30000      // 自动存档间隔（设计口径：30 秒 + 关键节点）
@@ -400,14 +401,8 @@ const dom = {
 }
 
 // ── 数值格式化（显示层统一：<1万 整数 / ≥1万 X.XX万 / ≥1亿 X.XX亿 / ≥1万亿 X.XX万亿）──
-function fmt (n) {
-  if (!Number.isFinite(n)) return '∞'
-  const abs = Math.abs(n)
-  if (abs < 1e4) return String(Math.floor(n))
-  if (abs < 1e8) return (n / 1e4).toFixed(2) + '万'
-  if (abs < 1e12) return (n / 1e8).toFixed(2) + '亿'
-  return (n / 1e12).toFixed(2) + '万亿'
-}
+// 实现已收敛到 src/util/num.js（fmtNum，本口径为唯一真源）；此处保留本地别名 fmt，全部调用点零改动。
+const fmt = fmtNum
 
 function fmtRate (n) {
   if (!Number.isFinite(n)) return '∞'

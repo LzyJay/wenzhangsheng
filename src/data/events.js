@@ -16,6 +16,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+import { QUALITY_KEYS, QUALITY_NAME, QUALITY_COLOR } from '../util/quality.js'   // 品质 5 档（键序 / 档名 / 色板）唯一真源
+
 /** 气运五档表（增补 v1.1 §三原文数值；luck 0–100 主驱动） */
 export const LUCK_TIERS = [
   { id: 'shuai', name: '衰运', min: 0, max: 20, goodPct: 0.30, qualCoef: 0.8, freqCoef: 1.2 },
@@ -31,9 +33,8 @@ export const CAT_WEIGHTS = { jiyuan: 40, richang: 20, enyuan: 20, zaijie: 20 }
 /** 机缘内品质权重（良 50／珍 30／绝 15／仙 5；气运品质系数按档位指数上移） */
 export const QUALITY_WEIGHTS = { liang: 50, zhen: 30, jue: 15, xian: 5 }
 
-/** 品质档名 / 档色（对外文案；色板与丹房同族） */
-export const QUALITY_NAME = { fan: '凡', liang: '良', zhen: '珍', jue: '绝', xian: '仙' }
-export const QUALITY_COLOR = { fan: '#b9b3a8', liang: '#e8b96a', zhen: '#7fd6a8', jue: '#b98cff', xian: '#9fd6ff' }
+/** 品质档名 / 档色（对外文案；唯一真源已迁 src/util/quality.js，此处再导出以保持导出面不变） */
+export { QUALITY_NAME, QUALITY_COLOR }
 
 /** 类别中文名 */
 export const CAT_NAME = { jiyuan: '机缘', richang: '日常', enyuan: '恩怨', zaijie: '灾劫' }
@@ -45,7 +46,7 @@ export const EQUIV_H = { fan: 0.5, liang: 2, zhen: 8, jue: 24, xian: 72 }
  * 品质档序（低 → 高）—— V4.7 主人：**纪事消息与事件共用同一套等级语言**
  * （消息逐条标等级、按等级着色与置顶，口径与事件的 quality 一致）
  */
-export const QUALITY_ORDER = ['fan', 'liang', 'zhen', 'jue', 'xian']
+export const QUALITY_ORDER = QUALITY_KEYS   // 键序唯一真源：src/util/quality.js
 
 /**
  * 自动策略 → 可自动处置的最高等级（V4.7 主人 2026-09-18 拍板「全自动激进」）

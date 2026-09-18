@@ -31,4 +31,39 @@ export function clamp (v, a, b) {
   return Math.min(Math.max(v, a), b)
 }
 
-export default { clamp }
+/**
+ * 大数简写（**显示层统一口径**）：<1万 取整（向下）／≥1万 保留两位小数加「万 / 亿 / 万亿」。
+ *
+ * 本函数由三处同族实现收敛而来，口径以原 `main.js` 的 `fmt` 为准（floor + 非有限值兜底），
+ * 另两处随之统一（2026-09-19 主人授权「顺手统一口径」）：
+ *   · `main.js fmt`      —— 原本就是此口径（floor ＋ ∞ 保护 ＋ 单位无空格），逐位不变；
+ *   · `EventSystem fmtN` —— 原 <1万 用 **四舍五入** 且无 ∞ 保护 → 现随统一口径改向下取整；
+ *   · `SectSystem fmtBig`—— 原 <1万 用四舍五入、单位带前导空格（「1.23 万」）→ 现去空格并取整。
+ *
+ * 非有限值（NaN / Infinity）返回 `∞`，避免界面出现 "NaN"。
+ *
+ * @param {number} n 待格式化的数值（可为负）
+ * @returns {string} 玩家可读的紧凑数值文案
+ */
+export function fmtNum (n) {
+  if (!Number.isFinite(n)) return '∞'
+  const abs = Math.abs(n)
+  if (abs < 1e4) return String(Math.floor(n))
+  if (abs < 1e8) return (n / 1e4).toFixed(2) + '万'
+  if (abs < 1e12) return (n / 1e8).toFixed(2) + '亿'
+  return (n / 1e12).toFixed(2) + '万亿'
+}
+
+/**
+ * 大数简写（**非负语义薄壳**）：先 `Math.max(0, …)` 归零负数与非法值，再走 `fmtNum`。
+ * 供「只可能为非负量」的文案使用（宗门产值 / 传功开销 / 大比战力等），
+ * 保留原 `SectSystem.fmtBig` 的负数归零行为，避免口径统一时引入新的负数分支。
+ *
+ * @param {number} n 待格式化的数值
+ * @returns {string} 玩家可读的紧凑数值文案
+ */
+export function fmtShort (n) {
+  return fmtNum(Math.max(0, Number(n) || 0))
+}
+
+export default { clamp, fmtNum, fmtShort }

@@ -12,7 +12,8 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { RECIPES, getRecipe, QUALITY_NAME } from '../data/alchemy.js'
+import { RECIPES, getRecipe } from '../data/alchemy.js'
+import { QUALITY_NAME } from '../util/quality.js'   // 品质档名单一真源（批2：全站统一短名）
 import { getItem } from '../data/items.js'
 
 class AlchemySystem {

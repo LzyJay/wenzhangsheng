@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '5.9.0'                                // V5.9.0（阶段五**终版 · 收口**：P5.1 招牌 / A1 / A2 / B1 / C1 / A3 / B2 / C2 / A4a / A4a-补 / A4b / P0 / A4c / C3 共 14 项全交付）；与 package.json 同步
+const APP_VERSION = '5.9.1'                                // V5.9.1（源码去重与口径统一：新增 src/util/ 零依赖叶子层——clamp ×7 / 品质色板副本 / dayKey 包装收敛，品质 5 档词表与大数格式化统一到单一真源）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 

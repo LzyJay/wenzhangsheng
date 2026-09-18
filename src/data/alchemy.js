@@ -86,8 +86,8 @@ export const RECIPE_MAP = RECIPES.reduce((acc, r) => {
 /** 品阶 → 成丹率（总纲「丹方分品」的 MVP 换算） */
 export const QUALITY_RATE = { fan: 0.95, liang: 0.90, zhen: 0.80, jue: 0.70, xian: 0.60 }
 
-/** 品阶名（对齐数据模型通用枚举） */
-export const QUALITY_NAME = { fan: '凡品', liang: '良品', zhen: '珍品', jue: '绝品', xian: '仙品' }
+/** 品阶名（对齐数据模型通用枚举）—— 唯一词表已迁 src/util/quality.js（全站统一短名「凡 / 良 / 珍 / 绝 / 仙」，
+ *  原「凡品」式全名词表删除，避免同一套 5 档出现两种档名；成丹率 QUALITY_RATE 仍属本域平衡数值，留在此处）。 */
 
 /** 挂机材料掉落（每秒概率；离线不掉落；⚖ 数值可调） */
 export const MAT_DROPS = {
@@ -112,4 +112,4 @@ export function expectedMinutes (r) {
   return Math.round(slowest * 10) / 10
 }
 
-export default { RECIPES, RECIPE_MAP, QUALITY_RATE, QUALITY_NAME, MAT_DROPS, getRecipe, expectedMinutes }
+export default { RECIPES, RECIPE_MAP, QUALITY_RATE, MAT_DROPS, getRecipe, expectedMinutes }
