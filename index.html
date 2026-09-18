@@ -853,6 +853,26 @@
     #world-overlay[data-state="result"] #world-intro { display: none; }
     #world-overlay[data-state="result"] #world-result { display: block; }
 
+    /* ═══ V5.2 世界日常态（本遮罩第三个 data-state：词条 + 专属机制 + 摩擦项）═══
+       方案①：不新增遮罩（`.ov` 仍 11）；日常态内容多，故本态改为顶部对齐 + 可滚动。 */
+    #world-daily { display: none; }
+    #world-overlay[data-state="daily"] { align-items: flex-start; overflow-y: auto; padding: 10px 0; }
+    #world-overlay[data-state="daily"] #world-intro { display: none; }
+    #world-overlay[data-state="daily"] #world-result { display: none; }
+    #world-overlay[data-state="daily"] #world-daily { display: block; }
+    #world-overlay[data-state="daily"] #world-card { text-align: left; padding: 0 16px 14px; }
+
+    .world-d-title { font-family: var(--serif); font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+    .world-d-tag { font-family: var(--sans); font-size: 10.5px; letter-spacing: 0; color: var(--dim); }
+    .world-d-line { margin-top: 4px; font-size: 10.5px; line-height: 1.6; color: var(--dim-light); }
+    .world-d-friction, .world-d-tax { color: var(--fail); }
+    .world-d-points { color: var(--gold-light); font-variant-numeric: tabular-nums; }
+    .world-d-points b { color: var(--gold-light); }
+    .world-d-sub { font-size: 9.5px; color: var(--dim); line-height: 1.5; }
+    .world-d-quota { font-size: 9.5px; color: var(--dim); }
+    #world-daily-acts, #world-daily-friction { margin-top: 6px; }
+    #world-daily .world-act { margin-top: 10px; }
+
     #world-result-name {
       margin-top: 10px;
       font-family: var(--serif);
@@ -1611,6 +1631,20 @@
         <div class="world-act">
           <button id="btn-world-reroll">重 掷 此 界</button>
           <button id="btn-world-ok">入 此 界</button>
+        </div>
+      </div>
+
+      <!-- 日常态（V5.2 · 世界专属机制：本界词条 + 核心机制 + 摩擦项） -->
+      <div id="world-daily">
+        <div class="root-title">此 界 日 常</div>
+        <div id="world-daily-head"></div>
+        <div class="tech-sec">核心专属 · 一界一行一按钮（产出不发境界：只给灵石与既有材料）</div>
+        <div id="world-daily-acts"></div>
+        <div class="tech-sec">摩擦项 · 本界特有的代价与约束（已在别处生效的只做展示联动）</div>
+        <div id="world-daily-friction"></div>
+        <div class="bag-note" id="world-daily-note"></div>
+        <div class="world-act">
+          <button id="btn-world-daily-close">收 起</button>
         </div>
       </div>
     </div>

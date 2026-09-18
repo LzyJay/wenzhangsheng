@@ -8,7 +8,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { STAR } from '../data/beasts.js'   // 纯数据（ui 层允许 import data/）：星级上限与每星加成展示
+import { STAR, AWAKEN, MORPH } from '../data/beasts.js'   // 纯数据（ui 层允许 import data/）：星级上限、觉醒/化形参数
 import { WAVE, CONTEST } from '../data/beastWaves.js'   // V5.6：兽潮/大比悬停说明引用的参数（只读）
 
 export function createBeastPanel (ctx) {
@@ -65,7 +65,7 @@ let decomposeTimer = null
       `<div class="si-name">灵兽园 ${ov.pets}/${ov.parkCap}${ov.eggs ? ` · 蛋 ${ov.eggs}` : ''}　孵位 ${ov.hatching}/${ov.hatchSlots}</div>` +
       `<div class="si-line">主战：${ov.activeName ? `<b>${ov.activeName}</b>` : '<span style="color:#8f877c">空缺</span>'}` +
       `　辅助：${ov.assistNames.length ? `<b>${ov.assistNames.join('、')}</b>` : (ov.assistSlots > 0 ? '<span style="color:#8f877c">空缺</span>' : '<span style="color:#8f877c">未解锁（元婴 1 / 合体 2）</span>')}` +
-      `　产出：${ov.productionHours > 0 ? `<span class="jade" title="被动产出＝基准产出 × 0.2 时/日 × 品级系数 × 等级系数 × 星级系数（上限 0.6 时/日 × 星级），随在线秒入账，离线不发；辅助按 50% 计">+${H.fmt(ov.productionPerDay)}/日</span>` : '—'}` +
+      `　产出：${ov.productionHours > 0 ? `<span class="jade" title="被动产出＝基准产出 × 0.2 时/日 × 品级系数 × 等级系数 × 星级系数（上限 0.5 时/日 × 星级，V5.6.1 降档），随在线秒入账，离线不发；辅助按 50% 计">+${H.fmt(ov.productionPerDay)}/日</span>` : '—'}` +
       `　战力 <span title="主战全额、辅助 50%：品级 +4%（皇品 +8%）+ 每星 +0.5 个百分点，计入宗门战力任务定标与秘境门槛">+${Math.round(ov.powerBonusPct * 100)}%</span>` +
       `　渡劫 <span title="渡劫时随行灵兽替你挡一线雷威：主战 +7%、辅助各 +3.5%，合计上限 +14%（持有即生效，不必另备）">+${Math.round(ov.trialAidPct * 100)}%</span></div>`
   }
@@ -186,12 +186,21 @@ let decomposeTimer = null
       const td = document.createElement('span')
       td.className = 'td'
       td.textContent = `${p.gradeName} · Lv.${p.level}/9 · ${p.starText} · ${p.roleText}` +
+        (p.morphed ? ' · 化形' : '') +
         (p.level >= 9 ? ' · 圆满' : ` · 成长 ${Math.round(p.growPct * 100)}%`)
       td.title = `等级系数 ×${p.levelCoef.toFixed(1)}（每级 +10%）· 本兽产出 ${p.outputHours.toFixed(2)} 时/日 · 战力 +${(p.powerPct * 100).toFixed(1)}%\n` +
         `${p.growText} · 在线挂机自动累积\n` +
         `喂养：1 枚妖丹升 1 级（快路），8% 概率悟性爆发连升 2 级\n` +
         `升星：同品级同种 2 合 1（上限 ${p.starMax} 星）\n` +
-        `分解（杀鸡取卵）：返妖丹 + 灵石 —— 随行中不可分解`
+        `分解（杀鸡取卵）：返妖丹 + 灵石 —— 随行中不可分解\n` +
+        `血脉觉醒：${p.awakenNext
+          ? `觉醒石 ${AWAKEN.stoneOf[p.grade] | 0} 枚/次（每次必耗），成率 ${Math.round(p.awakenP * 100)}%` +
+            `${p.awakenFails ? `（已失败 ${p.awakenFails} 次 · 每败 +10%）` : ''}` +
+            `${(AWAKEN.essenceOf[p.grade] | 0) ? `，另需兽王精华 ×${AWAKEN.essenceOf[p.grade] | 0}（成功才扣）` : ''}`
+          : '已至皇品，再无可越之阶'}\n` +
+        `化形：${p.morphed
+          ? `已化形 · 战力 +${Math.round(MORPH.powerPct * 100)}% · 技能位 ${p.skillSlots}（技能实装随版本 3）`
+          : `王品以上 + 兽王精华 ×${MORPH.costEssence} → 外观形态 + 第二技能位 + 战力 +${Math.round(MORPH.powerPct * 100)}%`}`
 
       const tp = document.createElement('span')
       tp.className = 'tp' + (p.active ? '' : ' dim')
@@ -244,7 +253,30 @@ let decomposeTimer = null
         : '随行中（主战 / 辅助）不可分解，先撤下来。'
       if (p.canDecompose) decBtn.dataset.decompose = p.uid
 
-      row.append(tn, td, tp, feedBtn, starBtn, assistBtn, actBtn, decBtn)
+      // V5.6.1 血脉觉醒（觉醒石每次必耗；成率随失败递增）
+      const awkBtn = document.createElement('button')
+      awkBtn.className = 'mini'
+      awkBtn.textContent = '觉醒'
+      awkBtn.disabled = !p.awaken
+      awkBtn.title = p.awaken
+        ? `以觉醒石 ×${p.awakenNeedStone} 引动血脉 → ${p.awakenNextName}（成率 ${Math.round(p.awakenP * 100)}%）` +
+          `${p.awakenNeedEssence ? `，另需兽王精华 ×${p.awakenNeedEssence}（成功才扣）` : ''}`
+        : p.awakenReason
+      if (p.awaken) awkBtn.dataset.awaken = p.uid
+
+      // V5.6.1 化形（王品以上 · 兽王精华 ×1 · 一次性）
+      const mrpBtn = document.createElement('button')
+      mrpBtn.className = 'mini' + (p.morphed ? ' on' : '')
+      mrpBtn.textContent = p.morphed ? '已化形' : '化形'
+      mrpBtn.disabled = p.morphed || !p.morph
+      mrpBtn.title = p.morphed
+        ? `已化形：战力 +${Math.round(MORPH.powerPct * 100)}%、技能位 ${p.skillSlots}（技能实装随版本 3）`
+        : (p.morph
+          ? `耗兽王精华 ×${MORPH.costEssence} 洗炼形骸：外观形态 + 第二技能位 + 战力 +${Math.round(MORPH.powerPct * 100)}%（一次性，永久）`
+          : p.morphReason)
+      if (!mrpBtn.disabled) mrpBtn.dataset.morph = p.uid
+
+      row.append(tn, td, tp, feedBtn, starBtn, assistBtn, actBtn, decBtn, awkBtn, mrpBtn)
       frag.appendChild(row)
     }
     dom.beastPark.replaceChildren(frag)
@@ -330,9 +362,11 @@ let decomposeTimer = null
   if (dom.beastNote) {
     dom.beastNote.textContent = ov.unlocked
       ? '主战 1 只全额生效，辅助位随境界解锁（元婴 1 / 合体 2，产出与战力按 50%）；孵化位 2 个（金丹解锁第 2 位）。' +
-        '被动产出随在线秒入账、离线不发，上限 0.6 时/日 × 星级。升星＝同品级同种 2 合 1；分解＝取妖丹与灵石（随行中不可）。' +
-        '兽潮每轮抵御按高波定档发奖（V5.6）；灵兽大比每届上场评比、领名次赏格。血脉觉醒 / 化形 / 代采随内容批次 2、3 开放。'
-      : '金丹期解锁万兽林；血脉觉醒 / 化形 / 灵兽园扩容 / 代采随内容批次 2、3 开放。'
+        '被动产出随在线秒入账、离线不发，上限 0.5 时/日 × 星级。升星＝同品级同种 2 合 1；分解＝取妖丹与灵石（随行中不可）。' +
+        '兽潮每轮抵御按高波定档发奖，并掉觉醒石 / 兽王精华（V5.6.1）；灵兽大比每届上场评比、领名次赏格。' +
+        '血脉觉醒＝觉醒石掷成败升品级（失败累加保底）；化形＝王品以上 + 兽王精华，开外观与第二技能位（V5.6.1）。' +
+        '灵兽园扩容 / 代采 / 技能实装随内容批次 3 开放。'
+      : '金丹期解锁万兽林；血脉觉醒 / 化形随内容批次 2（V5.6.1 已实装）；灵兽园扩容 / 代采随内容批次 3 开放。'
   }
 }
 
@@ -438,6 +472,30 @@ dom.beastOverlay.addEventListener('click', (e) => {
     const res = system.decompose(uid)
     H.pushLog(res.message, res.ok ? 'fail' : 'info')
     if (res.ok) { H.persist('beast-decompose'); H.emitFloat({ text: `灵石 +${res.stones}`, kind: 'gold' }) }
+    render()
+    return
+  }
+  // V5.6.1 血脉觉醒（失败也耗觉醒石、成率递增；两件材料都不折灵石 → 不调 noteBeast）
+  const awk = e.target.closest('[data-awaken]')
+  if (awk && !awk.disabled) {
+    const res = system.awaken(+awk.dataset.awaken)
+    H.pushLog(res.message, res.ok ? (res.success ? 'ok' : 'info') : 'info')
+    if (res.ok) {
+      H.persist('beast-awaken')
+      if (res.success) H.emitBurst({ kind: 'breakthrough' })
+    }
+    render()
+    return
+  }
+  // V5.6.1 化形（王品以上 · 兽王精华 ×1 · 一次性；不折灵石 → 不调 noteBeast）
+  const mrp = e.target.closest('[data-morph]')
+  if (mrp && !mrp.disabled) {
+    const res = system.morph(+mrp.dataset.morph)
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      H.persist('beast-morph')
+      H.emitBurst({ kind: 'breakthrough' })
+    }
     render()
     return
   }

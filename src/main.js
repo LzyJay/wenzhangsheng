@@ -21,6 +21,7 @@ import AlchemySystem from './systems/AlchemySystem.js'
 import SectSystem from './systems/SectSystem.js'
 import BeastSystem from './systems/BeastSystem.js'
 import WorldSystem from './systems/WorldSystem.js'
+import WorldMechanicSystem from './systems/WorldMechanicSystem.js'   // V5.2 世界专属机制（内容批次 2/3 世界篇首步）
 import EventSystem from './systems/EventSystem.js'
 import DungeonSystem from './systems/DungeonSystem.js'
 import MarketSystem from './systems/MarketSystem.js'
@@ -62,6 +63,7 @@ import { createTechPanel } from './ui/TechPanel.js'                         // V
 import { createSectPanel } from './ui/SectPanel.js'                         // V3.5.6 拆分：宗门面板（src/ui/ 新层）
 import { createBagPanel } from './ui/BagPanel.js'                           // V3.5.6 拆分：行囊面板（src/ui/ 新层）
 import { createAlchemyPanel } from './ui/AlchemyPanel.js'                   // V3.5.6 拆分：丹房面板（src/ui/ 新层）
+import { createWorldPanel } from './ui/WorldPanel.js'                       // V5.2 世界日常面板（#world-overlay 的 daily 态）
 import { pickRenderMs } from './data/powersave.js'                          // P4.4 性能与省电：渲染间隔决策（纯函数）
 
 const TICK_MS = 100            // 挂机结算间隔（按秒速率连续入账，进度条因此顺滑）
@@ -100,6 +102,7 @@ let alchemy = null
 let sect = null
 let beasts = null
 let world = null
+let worldMech = null     // V5.2 世界专属机制（懒建 state.world.specialState / frictionState）
 let events = null
 let dungeon = null
 let market = null
@@ -111,6 +114,7 @@ let techPanel = null     // V3.5.6 拆分：功法面板实例（boot 创建）
 let sectPanel = null     // V3.5.6 拆分：宗门面板实例（boot 创建）
 let bagPanel = null      // V3.5.6 拆分：行囊面板实例（boot 创建）
 let alchemyPanel = null  // V3.5.6 拆分：丹房面板实例（boot 创建）
+let worldPanel = null    // V5.2 世界日常面板实例（boot 创建）
 let achv = null
 let life = null
 let game = null
@@ -454,22 +458,25 @@ function playtimeSec () {
 
 /**
  * 当前战力构成（主人 2026-09-19：功法也影响战力）
- *   基准（境界表）× (1 + 功法战力%) × (1 + 灵兽出战%)
- * —— 与注入给 SectSystem / DungeonSystem 的 powerMul 闭包同口径，三处不会各算各的。
+ *   基准（境界表）× (1 + 功法战力%) × (1 + 灵兽出战%) × (1 + 剑冢法宝%)
+ * —— 与注入给 SectSystem / DungeonSystem 的 powerMul 闭包同口径，几处不会各算各的。
+ * V5.2：新增「剑冢法宝」乘区（青云古界专属机制 · 每阶 +0.5%，九阶封顶 +4.5%）。
  */
 function powerBreakdown () {
   const base = getLevelInfo(state.player.realm.level).combat.power
   const techPct = tech ? tech.combatPct() : 0
   const petPct = beasts ? beasts.powerBonusPct() : 0
-  return { base, techPct, petPct, total: Math.round(base * (1 + techPct) * (1 + petPct)) }
+  const mechPct = worldMech ? worldMech.powerPct : 0
+  return { base, techPct, petPct, mechPct, total: Math.round(base * (1 + techPct) * (1 + petPct) * (1 + mechPct)) }
 }
 
-/** 战力乘区闭包（注入给宗门 / 秘境，避免它们横向 import 功法 / 灵兽） */
+/** 战力乘区闭包（注入给宗门 / 秘境，避免它们横向 import 功法 / 灵兽 / 世界机制） */
 function powerMulClosure () {
   return () => {
     const techPct = tech ? tech.combatPct() : 0
     const petPct = beasts ? beasts.powerBonusPct() : 0
-    return (1 + techPct) * (1 + petPct)
+    const mechPct = worldMech ? worldMech.powerPct : 0
+    return (1 + techPct) * (1 + petPct) * (1 + mechPct)
   }
 }
 
@@ -487,7 +494,9 @@ function bonusLines (now = Date.now()) {
       roots && { id: 'roots', bonusView: () => roots.bonusView() },
       tech && { id: 'tech', bonusView: () => tech.bonusView() },
       beasts && { id: 'beasts', bonusView: () => beasts.bonusView() },
-      life && { id: 'life', bonusView: () => life.bonusView() }
+      life && { id: 'life', bonusView: () => life.bonusView() },
+      // V5.2：世界专属机制的战力行（剑冢法宝；无加成时不出行，与功法/灵兽同契约）
+      worldMech && { id: 'worldMech', bonusView: () => worldMech.bonusView() }
     ].filter(Boolean),
     state ? state.buffs : [],
     now
@@ -676,7 +685,9 @@ const TIP_BUILDERS = {
       masteryLine +
       tipRow('专属', v.exclusive) +
       tipRow('摩擦', v.friction) +
-      `<span class="t-note">同界轮回熟练度每世 +3%（封顶 +15%）；界游符可换界（内容批次 2）。</span>`
+      `<span class="t-note">同界轮回熟练度每世 +3%（封顶 +15%）；界游符可换界（内容批次 2）。</span>` +
+      // V5.2：此界日常（专属机制 + 摩擦项）入口 —— 挂在世界徽记的浮层里，不占快捷条
+      `<div class="t-act"><button class="violet" data-act="world-daily">进 此 界 · 日 常</button></div>`
   },
 
   /** 修为：产出乘区拆解 + 还差多久（限时增益的明细也在这里，不再占顶栏小牌） */
@@ -724,7 +735,8 @@ const TIP_BUILDERS = {
       tipRow('基准战力', fmt(b.base)) +
       (b.techPct ? tipRow('功法加成', `+${(b.techPct * 100).toFixed(1)}%（×${(1 + b.techPct).toFixed(3)}）`, 'gold') : '') +
       (b.petPct ? tipRow('灵兽出战', `+${Math.round(b.petPct * 100)}%`, 'gold') : '') +
-      (!b.techPct && !b.petPct ? tipRow('加成', '暂无（装备功法 / 出战灵兽即计入）') : '') +
+      (b.mechPct ? tipRow('剑冢法宝', `+${(b.mechPct * 100).toFixed(1)}%（青云古界专属机制）`, 'gold') : '') +
+      (!b.techPct && !b.petPct && !b.mechPct ? tipRow('加成', '暂无（装备功法 / 出战灵兽 / 祭炼剑冢即计入）') : '') +
       tipRow('随境界', `${info.displayName}（${getRealmMeta(Math.floor((lv - 1) / 9)).name}期）`) +
       `<span class="t-note">用途：秘境试炼塔与资源秘境的战力门槛、宗门战力校验类任务的成败判定（接取时定标，成长有回报）。<br />` +
       `功法战力按品阶递增：凡阶每级 +0.4%，天阶每级 +4%（满级三槽合计可达 +90% 上下）。</span>`
@@ -976,6 +988,8 @@ onPress(dom.tip, (e) => {
   if (act === 'draw-root') { closeTip(); startRootDraw(); return }
   if (act === 'reroll-root') { doReroll(); return }   // 浮层保持打开，数字跟着刷新
   if (act === 'draw-world') { closeTip(); drawWorld(); return }
+  // V5.2 世界日常态（专属机制 / 摩擦项）：浮层里点进，收起浮层再开面板
+  if (act === 'world-daily') { closeTip(); openWorldDaily(); return }
   // 2.11 天道契合：天机榜领奖（浮层保持打开）/ 服用延寿丹
   if (act === 'fit-claim') {
     const res = life.claimQuest(btn.dataset.quest, { nowMs: Date.now(), power: sect ? sect.power : 0 })
@@ -1222,7 +1236,8 @@ function render () {
     const detail = [
       `基准 ${fmt(b.base)}`,
       b.techPct ? `功法 +${(b.techPct * 100).toFixed(1)}%` : '',
-      b.petPct ? `灵兽 +${Math.round(b.petPct * 100)}%` : ''
+      b.petPct ? `灵兽 +${Math.round(b.petPct * 100)}%` : '',
+      b.mechPct ? `剑冢 +${(b.mechPct * 100).toFixed(1)}%` : ''   // V5.2 世界专属机制（青云剑冢）
     ].filter(Boolean).join(' ｜ ')
     dom.powerText.textContent = rollText('power', b.total, fmt, (v) => v, now)
     dom.powerWrap.title = `战力 ${fmt(b.total)}（${detail}）\n点按查看战力构成与用途`
@@ -1622,6 +1637,32 @@ function hideWorldOverlay () {
   syncDragRegions()
 }
 
+// ── V5.2 世界日常态（方案①：给 #world-overlay 加 data-state="daily"，不新增遮罩）──────
+// 薄委托：面板本体在 src/ui/WorldPanel.js；实例在 boot 创建。
+// ⚠ 公共区申报（见回执-A3 §1）：本遮罩不在 `.ov` 家族，故必须自行登记
+//   ① closeAllOverlays 的 closers（面板互斥）② Esc 链（逐层收）。二者都只关"日常态"，
+//   绝不碰开局 intro / 揭晓 result 两态（见 WorldPanel.close 的状态判定）。
+
+/** 打开此界日常（世界词条 + 专属机制 + 摩擦项）；未抽世界则不响应 */
+function openWorldDaily () {
+  if (!state || !world || !world.drawn) { pushLog('尚未抽定世界，无此界日常可观。', 'info'); return }
+  if (worldPanel) worldPanel.open()
+}
+
+/** 收起此界日常（只在日常态下生效；开局两态由既有流程自行收） */
+function closeWorldDaily () {
+  if (!worldPanel) return
+  if (dom.worldOverlay.dataset.state !== 'daily') return
+  worldPanel.close()
+}
+
+function toggleWorldDaily () {
+  if (dom.worldOverlay.classList.contains('show') && dom.worldOverlay.dataset.state === 'daily') closeWorldDaily()
+  else openWorldDaily()
+}
+
+function renderWorldDaily () { if (worldPanel) worldPanel.render() }
+
 /** 世界结果卡：词条与修正一目了然（增补 v1.2 §一.3「抽取后开局界面完整展示」） */
 function renderWorldResult (v) {
   if (!v || !v.drawn) return
@@ -1984,7 +2025,8 @@ function closeAllOverlays (except = '') {
     beast: closeBeast,
     chronicle: closeChronicle,
     achv: closeAchv,
-    panel: closePanel
+    panel: closePanel,
+    world: closeWorldDaily    // V5.2 世界日常态（#world-overlay daily）：不在 .ov 家族，故需自行登记互斥
   }
   for (const key of Object.keys(closers)) {
     if (key === except) continue
@@ -3652,6 +3694,8 @@ window.addEventListener('keydown', (e) => {
   else if (dom.chronicleOverlay.classList.contains('show')) closeChronicle()
   else if (dom.achvOverlay && dom.achvOverlay.classList.contains('show')) closeAchv()
   else if (dom.panelOverlay.classList.contains('show')) closePanel()
+  // V5.2 世界日常态（#world-overlay daily）：该遮罩不在 .ov 家族，故需自行插进 Esc 链
+  else if (dom.worldOverlay.classList.contains('show') && dom.worldOverlay.dataset.state === 'daily') closeWorldDaily()
   else if (dom.overlay.classList.contains('show') && roots && roots.drawn) hideOverlay()
 })
 
@@ -3677,6 +3721,10 @@ async function boot () {
   state = await save.load()
   world = new WorldSystem(state)   // 2.9 世界卡池：懒建 state.world 子树，先建好供产出/寿元/渡劫注入
   world.ensure()
+  // V5.2 世界专属机制（内容批次 2/3 世界篇首步）：只用 V2.9 预留的两叶（specialState / frictionState），
+  //   懒建兜底、零迁移、不动 SaveSystem 迁移链；world 注入仅用于摩擦项的展示联动（不读它的子树）
+  worldMech = new WorldMechanicSystem(state, world, powerMulClosure())
+  worldMech.ensure()
   roots = new RootSystem(state)
   tech = new TechniqueSystem(state)
   alchemy = new AlchemySystem(state)
@@ -3755,6 +3803,17 @@ async function boot () {
     // V5.1：面板里点出来的招牌秘境 / 积分商店收益，也要落进 §七 归因的 dungeon 线
     //   （主循环的段间快照只覆盖自动结算，点出来的这一份由面板回传）
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, emitBurst, sfx, fmt, fmtGameDuration, fmtRefreshPeriod, fmtHoursLeft, onPress, noteDungeon: (gain) => noteGain(state, 'dungeon', gain) }
+  })
+  // V5.2 世界日常面板（src/ui/WorldPanel.js）——#world-overlay 的 `data-state="daily"` 日常态
+  //   （不新增遮罩：`.ov` 仍 11；Esc 与互斥由 main.js 的 closeWorldDaily 登记，见回执-A3 §1）
+  worldPanel = createWorldPanel({
+    state: () => state,
+    system: () => worldMech,
+    world: () => world,
+    dom,
+    // V5.2：面板点出的灵石净额回传 §七 归因台账；EconLedger 线固定 8 条（硬口径「不新增线」）
+    //   → 世界专属机制记入既有 'other' 线（负值也照记：纳贡 / 祭炼 / 催熟都是真实灵石流出）
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, onPress, showWorldOverlay, hideWorldOverlay, noteWorld: (gain) => noteGain(state, 'other', gain) }
   })
   achv = new AchievementSystem(state, { grant: grantAchvReward })  // 2.10：奖励发放经装配层回调落到 resources / inventory
   achv.ensure()            // 老档补字段 + 新档播种纪事 + 凡档称号入袋
@@ -4067,7 +4126,8 @@ async function boot () {
   }
 
   // 调试入口（正式包无副作用，仅挂在 window 上便于开发期在 DevTools 里查状态）
-  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) } }
+  // V5.2：新增调试键 `worldMech`（世界专属机制；§13.2⑥ 登记表由合流会话回填）
+  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, worldMech, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) } }
 }
 
 boot().catch((err) => {

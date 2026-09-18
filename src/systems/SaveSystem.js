@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '5.6.0'                                // V5.6（阶段五 M1：A1 试炼塔扩容 / A2 CDP 口径 / B1 弟子线 / C1 兽潮与大比）；与 package.json 同步
+const APP_VERSION = '5.6.1'                                // V5.6.1（阶段五 M2：A3 世界专属机制 / B2 宗门周常 / C2 血脉觉醒与化形）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 

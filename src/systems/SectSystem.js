@@ -41,22 +41,41 @@
  *   · 上限：全部弟子合计当量 h/日 封顶 DISCIPLE_CAP_H_PER_DAY（设计库第三部分 2.4h/日 → 主人 2026-09-19 拍板下调至 2.0h/日）
  *   预留（后续批 B2）：助战 / 代管（设计库 §2.3）、出师门客（§2.4）、师徒风险事件（§2.5）、
  *     藏经阁分层与个人洞府（§1.4）—— 见 data/disciples.js 的 POSTS_RESERVED
+ *
+ * ── V5.5.1 弟子线后续批（B2：经营 / 事件）──────────────────────────────────
+ *   数据源：data/sect.js 的 DABI / OFFERING + data/disciples.js 的 LOYALTY / DISC_EVENTS
+ *   · **周常·供奉**（§1.3「捐献材料 → 贡献 ×1.2 折算」）：每 7 游戏天一次、每次至多 10 份，
+ *     贡献 = 货值 × 份数 × 1.2 —— 每轮限一次堵「商店买符纸 → 供奉回血」的刷贡献回路；
+ *     只动贡献（不入 §七 灵石台账）
+ *   · **周常·宗门大比**（§1.3「周结算 贡献 300~1000＋灵石＋头衔」）：每 7 游戏天一届，
+ *     战力比率内插贡献带（同任务板 CONTRIB_GROWTH 境界口径）＋头衔/魁首计数；
+ *     设计稿的「＋灵石」按压缩日历放大 ~205 倍/日必破 §七 → **本批裁除灵石奖**（需拍板，见回执）
+ *   · **忠诚与师徒风险事件**（§2.5）：每名弟子 loyalty 0~100（入门 70），低于 30 叛离（轻惩罚）；
+ *     事件轮 7 游戏天、每名弟子 3% 概率掷四条（闯祸赔灵石 / 被掳（可救援）/ 带宝而归 / 恩义+贡献）；
+ *     传功 +5 忠诚。赔付取小值 + 材料只出灵草，静态预估不顶破 §七（见回执-B2 §4 量级表）
+ *   · 新存档叶子（全部懒建兜底、零迁移，不改 B1 已有叶子名与语义）：
+ *     state.sect.offerKey / state.sect.dabi{key,wins,best,title} /
+ *     state.sect.disciples.evtKey / .log / 弟子记录.loyalty / .captured
+ *   · 首个事件轮只记键不掷事件（老档 / 新收徒接入不当拍爆，见 _tickDiscipleEvents）
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
 import {
   SECT, RANKS, TASKS, LIBRARY, SHOP, sectDayKey, getTask,
-  contribOf, REALM_GRANTS, realmGrant, taskDurationMs,
-  SECT_REFRESH_DAYS, sectMsToNextRefresh, fmtSectRefreshPeriod
+  contribOf, REALM_GRANTS, realmGrant, taskDurationMs, CONTRIB_GROWTH,
+  SECT_REFRESH_DAYS, sectMsToNextRefresh, fmtSectRefreshPeriod,
+  DABI, dabiKeyOf, dabiMsToNext, dabiContribOf, OFFERING, offeringContrib
 } from '../data/sect.js'
 // V5.5 弟子线（首批：收徒 / 培养 / 职权 / 贡献）——数据先行，参数全在 data 层
 import {
   RECRUIT, recruitCooldownMs, slotsOf,
   APTITUDES, PITY, POSTS, POSTS_RESERVED, DISCIPLE_LV, DISCIPLE_CAP_H_PER_DAY, DAY_SEC,
+  LOYALTY, DISC_EVENTS, discEventKeyOf, rollDiscEvent, rescueCostOf,
   aptById, witById, specById, postById, rollAptitude, rollWits, rollSpecialty,
   rollName, specMaterial, discipleGrowth, discipleOutput, specFitsPost, discipleRateH,
   trainCostH, capScale
 } from '../data/disciples.js'
+import { getGoodsValue } from '../data/market.js'   // V5.5.1 供奉：材料货值表（data 层同源）
 import { getLevelInfo, getRealmMeta, TRIAL_AID } from '../data/realms.js'
 import { getItem } from '../data/items.js'
 import { getTechnique, tierLabel } from '../data/techniques.js'
@@ -75,6 +94,8 @@ const fmtBig = (n) => {
  *  若硬按 10% 算，1 时辰的活要等 0.5 秒、5 时辰的活要等 2.5 秒；取小后"随时可交"名副其实。 */
 const MIN_CLAIM_RATIO = 0.1
 const MIN_CLAIM_MS = 1000
+/** V5.5.1：忠诚值收敛到 [0, LOYALTY.max] */
+const clampLoyalty = (v) => Math.max(0, Math.min(LOYALTY.max, Number(v) || 0))
 
 class SectSystem {
   /**
@@ -104,6 +125,11 @@ class SectSystem {
       this.state.sect.techGrants = {}
     }
     if (!Array.isArray(this.state.sect.slots)) this.state.sect.slots = []
+    // V5.5.1：周常（供奉 / 大比）子叶兜底（懒建，不改 B1 已有叶子名与语义）
+    if (typeof this.state.sect.offerKey !== 'string') this.state.sect.offerKey = ''
+    if (!this.state.sect.dabi || typeof this.state.sect.dabi !== 'object') {
+      this.state.sect.dabi = { key: '', wins: 0, best: 0, title: '' }
+    }
     // V5.5：弟子线子树兜底（懒建，不进迁移链；老档 sect 存在但没有该叶子）
     const dl = this.state.sect.disciples
     if (!dl || typeof dl !== 'object') {
@@ -116,6 +142,14 @@ class SectSystem {
       if (typeof dl.accC !== 'number' || !isFinite(dl.accC)) dl.accC = 0
       if (typeof dl.accS !== 'number' || !isFinite(dl.accS)) dl.accS = 0
       if (!dl.accM || typeof dl.accM !== 'object') dl.accM = {}
+      // V5.5.1：忠诚 / 被掳 / 事件台账兜底（老档弟子逐个补默认值）
+      if (typeof dl.evtKey !== 'string') dl.evtKey = ''
+      if (!Array.isArray(dl.log)) dl.log = []
+      for (const x of dl.list) {
+        if (!x || typeof x !== 'object') continue
+        if (typeof x.loyalty !== 'number' || !isFinite(x.loyalty)) x.loyalty = LOYALTY.start
+        if (typeof x.captured !== 'boolean') x.captured = false
+      }
     }
     return this.state.sect
   }
@@ -286,6 +320,8 @@ class SectSystem {
       }
     }
     out.disciples = this._tickDisciples(now, dtSec)
+    // V5.5.1：师徒风险事件（同一拍结算；闯祸赔的灵石在快照窗口内 → 落既有 sect 线）
+    out.disciples.events = this._tickDiscipleEvents(now)
     return out
   }
 
@@ -819,7 +855,10 @@ class SectSystem {
     }
     this.state.resources.qi -= info.qi
     const d = this.d.list.find((x) => x.uid === uid)
+    if (d.captured) return { ok: false, message: `${d.name}尚遭掳禁，先救援回山再传功。` }
     d.lv = Math.max(1, d.lv | 0) + 1
+    // V5.5.1：传功温情，忠诚 +trainHeal（设计库 §2.5 忠诚口径）
+    d.loyalty = Math.min(LOYALTY.max, (Number(d.loyalty) || 0) + LOYALTY.trainHeal)
     return {
       ok: true,
       uid,
@@ -837,6 +876,8 @@ class SectSystem {
   assignPost (uid, postId) {
     const d = (this.d.list || []).find((x) => x.uid === uid)
     if (!d) return { ok: false, message: '门下没有这名弟子。' }
+    // V5.5.1：被掳期间不派职（人都不在山上）
+    if (d.captured) return { ok: false, message: `${d.name}尚遭掳禁，先救援回山再派职。` }
     if (postId == null || postId === 'none' || postId === '') {
       d.post = null
       return { ok: true, uid, post: null, message: `${d.name}已卸去职司，回山静修（不再产出）。` }
@@ -854,7 +895,9 @@ class SectSystem {
    */
   discipleStats () {
     const list = this.d.list || []
-    const scale = capScale(list.reduce((s, x) => s + discipleRateH(x, x.post), 0))
+    // V5.5.1：被掳弟子不产出（rate 记 0，不影响在岗弟子的封顶缩放）
+    const rateOf = (x) => (x.captured ? 0 : discipleRateH(x, x.post))
+    const scale = capScale(list.reduce((s, x) => s + rateOf(x), 0))
     const stoneH = this.stonePerHour()
     let h = 0
     let contrib = 0
@@ -862,7 +905,7 @@ class SectSystem {
     let mats = 0
     for (const x of list) {
       const p = postById(x.post)
-      if (!p) continue
+      if (!p || x.captured) continue
       const r = discipleRateH(x, x.post) * scale
       h += r
       contrib += r * p.contribPerH
@@ -871,9 +914,9 @@ class SectSystem {
     }
     return {
       count: list.length,
-      posted: list.filter((x) => !!x.post).length,
+      posted: list.filter((x) => !!x.post && !x.captured).length,
       slots: this.slotCount(),
-      rawHPerDay: list.reduce((s, x) => s + discipleRateH(x, x.post), 0),
+      rawHPerDay: list.reduce((s, x) => s + rateOf(x), 0),
       scale,
       capH: DISCIPLE_CAP_H_PER_DAY,
       hPerDay: h,
@@ -914,7 +957,7 @@ class SectSystem {
     const dM = {}
     for (const x of list) {
       const p = postById(x.post)
-      if (!p) continue
+      if (!p || x.captured) continue   // V5.5.1：被掳不产出
       const dh = discipleRateH(x, x.post) * stats.scale / DAY_SEC * dtSec   // 本拍当量 h
       dC += dh * p.contribPerH
       if (p.stones) dS += dh * stoneH
@@ -988,11 +1031,13 @@ class SectSystem {
         fit: p ? specFitsPost(x, p.id) : false,
         growth: discipleGrowth(x),
         output: discipleOutput(x),
-        rateH: discipleRateH(x, x.post) * stats.scale,   // 已封顶折算后的每日当量
+        rateH: x.captured ? 0 : discipleRateH(x, x.post) * stats.scale,   // 已封顶折算后的每日当量
         rawRateH: discipleRateH(x, x.post),
         trainQi: info.qi || 0,
         trainMaxed: !!info.maxed,
         trainAffordable: !!info.affordable,
+        loyalty: Math.round(Number(x.loyalty) || 0),      // V5.5.1：忠诚 0~100
+        captured: !!x.captured,                            // V5.5.1：被掳中（不产出，可救援）
         posts: POSTS.map((pp) => ({
           id: pp.id,
           name: pp.name,
@@ -1001,7 +1046,216 @@ class SectSystem {
         }))
       }
     })
-    return { stats, list, gate: this.recruitGate(), reserved: POSTS_RESERVED }
+    return {
+      stats,
+      list,
+      gate: this.recruitGate(),
+      reserved: POSTS_RESERVED,
+      // V5.5.1：忠诚口径 / 救援价码 / 师徒近事（最近 5 条倒序）
+      loyaltyMeta: LOYALTY,
+      eventDays: DISC_EVENTS.periodDays,
+      rescueCost: rescueCostOf(this.realmIndex),
+      events: (this.d.log || []).slice(-5).reverse()
+    }
+  }
+
+  // ── V5.5.1 弟子线后续批（B2）：周常·供奉 / 周常·大比 / 忠诚与师徒事件 ─────────
+  // 设计源：设计库《宗门与弟子 v1》§1.3（周常两条）· §2.5（师徒风险事件）
+  //   · 周期与任务板同源（7 游戏天 ≈ 现实 7 分钟），各自记周期键幂等
+  //   · 供奉 / 大比只动「贡献」（不入 §七 灵石台账）；事件赔付取小值（见 data 层注释）
+  //   · 灵石赔付在 tick() 快照窗口内 → 落既有 `sect` 归因线，不新增线
+
+  /** 供奉信息（纯读）：行囊里有货值的材料各一行（至多 4 行，按可换贡献降序） */
+  offerInfo (now = Date.now()) {
+    const inv = (this.state.inventory && this.state.inventory.items) || {}
+    const rows = []
+    for (const id of Object.keys(inv)) {
+      const have = inv[id] | 0
+      const v = getGoodsValue(id)
+      if (have <= 0 || !(v > 0)) continue
+      const units = Math.min(have, OFFERING.maxUnits)
+      rows.push({ id, name: getItem(id).name, have, units, perUnit: v, contrib: offeringContrib(v, units) })
+    }
+    rows.sort((a, b) => b.contrib - a.contrib)
+    return {
+      joined: this.joined,
+      rate: OFFERING.rate,
+      maxUnits: OFFERING.maxUnits,
+      done: this.s.offerKey === sectDayKey(now),
+      rows: rows.slice(0, 4)
+    }
+  }
+
+  /**
+   * 供奉（周常）：捐出某材料至多 OFFERING.maxUnits 份 → 贡献 = 货值 × 份数 × 1.2
+   *   每轮（7 游戏天）限一次（offerKey 幂等）——堵「商店买符纸 → 供奉回血」的刷贡献回路
+   */
+  offer (id, now = Date.now()) {
+    if (!this.joined) return { ok: false, message: '尚未拜入宗门。' }
+    const key = sectDayKey(now)
+    if (this.s.offerKey === key) {
+      return { ok: false, message: `本轮已供奉过（周常，每 ${SECT_REFRESH_DAYS} 游戏天一次）。` }
+    }
+    const inv = this.state.inventory.items
+    const have = inv[id] | 0
+    const v = getGoodsValue(id)
+    if (!(have > 0) || !(v > 0)) return { ok: false, message: '行囊里没有可供奉的材料。' }
+    const units = Math.min(have, OFFERING.maxUnits)
+    const contrib = offeringContrib(v, units)
+    inv[id] = have - units
+    this.s.offerKey = key
+    this.earnContribution(contrib)
+    return {
+      ok: true,
+      id,
+      units,
+      contrib,
+      message: `供奉 ${getItem(id).name} ×${units}（货值折算 ×${OFFERING.rate}）：贡献 +${contrib}。`
+    }
+  }
+
+  /** 大比信息（纯读）：本届是否已赴 / 荣誉累计 / 贡献带（已按境界缩放） */
+  dabiInfo (now = Date.now()) {
+    const d = this.s.dabi
+    const done = d.key === dabiKeyOf(now)
+    return {
+      joined: this.joined,
+      days: DABI.days,
+      done,
+      canClaim: this.joined && !done,
+      wins: d.wins | 0,
+      best: d.best | 0,
+      title: d.title || '',
+      req: Math.round(this.basePower * DABI.reqMul),
+      lo: dabiContribOf(0.25, this.realmIndex),
+      hi: dabiContribOf(0.95, this.realmIndex),
+      nextInMs: dabiMsToNext(now)
+    }
+  }
+
+  /**
+   * 赴大比（周常）：战力比率（当前战力 / 基准战力 × reqMul，clamp 0.25~0.95）
+   *   → 贡献带内插值 × 境界增长；rate ≥ 0.9 记魁首（wins+1）
+   *   设计稿的「＋灵石」奖已裁除（压缩日历下会放大 ~205 倍/日顶破 §七，见 data/sect.js DABI 注释）
+   */
+  claimDabi (now = Date.now()) {
+    if (!this.joined) return { ok: false, message: '尚未拜入宗门。' }
+    const d = this.s.dabi
+    const key = dabiKeyOf(now)
+    if (d.key === key) return { ok: false, message: `本届大比已经赴过（周常，每 ${DABI.days} 游戏天一届）。` }
+    const req = Math.max(1, Math.round(this.basePower * DABI.reqMul))
+    const rate = clamp(this.power / req, 0.25, 0.95)
+    const contrib = dabiContribOf(rate, this.realmIndex)
+    const title = rate >= 0.9 ? DABI.titleTop : rate >= 0.6 ? DABI.titleMid : DABI.titleLow
+    d.key = key
+    if (rate >= 0.9) d.wins = (d.wins | 0) + 1
+    d.best = Math.max(d.best | 0, contrib)
+    d.title = title
+    this.earnContribution(contrib)
+    return {
+      ok: true,
+      contrib,
+      title,
+      rate,
+      message: `宗门大比：以战力 ${fmtBig(this.power)} 对定标 ${fmtBig(req)}——${title}，贡献 +${contrib}。`
+    }
+  }
+
+  /**
+   * 救援被掳弟子：花贡献赎人（价码随境界，见 data/disciples.js rescueCostOf），忠诚 +5
+   */
+  rescue (uid, now = Date.now()) {
+    const d = (this.d.list || []).find((x) => x.uid === uid)
+    if (!d) return { ok: false, message: '门下没有这名弟子。' }
+    if (!d.captured) return { ok: false, message: `${d.name}好端端在山上，无须救援。` }
+    const cost = rescueCostOf(this.realmIndex)
+    if (this.contribution < cost) {
+      return { ok: false, cost, message: `救援需 ${cost} 贡献（现有 ${this.contribution}）。` }
+    }
+    this.state.resources.contribution = this.contribution - cost
+    d.captured = false
+    d.loyalty = clampLoyalty((Number(d.loyalty) || 0) + DISC_EVENTS.dLoyalty.rescue)
+    this._pushEvt(now, `以 ${cost} 贡献寻回${d.name}，师徒情分更笃（忠诚 +${DISC_EVENTS.dLoyalty.rescue}）。`)
+    return { ok: true, uid, cost, message: `以 ${cost} 贡献寻回${d.name}，师徒情分更笃（忠诚 +${DISC_EVENTS.dLoyalty.rescue}）。` }
+  }
+
+  /** 师徒近事台账（封 DISC_EVENTS.logCap 条；面板展示用，系统日志由装配层按 events 自行打） */
+  _pushEvt (now, text) {
+    const log = this.d.log
+    log.push({ at: now, text })
+    if (log.length > DISC_EVENTS.logCap) log.splice(0, log.length - DISC_EVENTS.logCap)
+  }
+
+  /**
+   * 师徒风险事件掷点（设计库 §2.5；由 tick() 调用，每个事件轮至多掷一次）
+   *   ① 叛离检查：忠诚 < 30 → 弟子不辞而别（轻惩罚＝失去该弟子与其产出，名额腾出）
+   *   ② 被掳弟子自行脱困：忠诚 −15（上轮被掳、没救援的）
+   *   ③ 每名在山弟子 chance 概率掷一条：闯祸（赔灵石）/ 被掳 / 带宝而归 / 恩义（+贡献）
+   *   首个事件轮只记键不掷事件——老档 / 新档接入的当拍不爆，事件从下一轮起算
+   * @returns {Array<object>} 本拍的事件清单（供装配层打日志；空数组＝无事发生）
+   */
+  _tickDiscipleEvents (now = Date.now()) {
+    const out = []
+    if (!this.joined) return out
+    const dl = this.d
+    const list = dl.list
+    if (!list.length) return out
+    const key = discEventKeyOf(now)
+    if (!dl.evtKey) { dl.evtKey = key; return out }   // 首轮只记键（见方法注释）
+    if (dl.evtKey === key) return out
+    dl.evtKey = key
+    const stoneH = this.stonePerHour()
+    const growth = 1 + CONTRIB_GROWTH * Math.min(RANKS.length - 1, this.realmIndex)
+    const dL = DISC_EVENTS.dLoyalty
+
+    // ① 叛离（轻惩罚：失去弟子与其产出，名额腾出）
+    for (let i = list.length - 1; i >= 0; i--) {
+      const x = list[i]
+      if ((Number(x.loyalty) || 0) < LOYALTY.revoltAt) {
+        list.splice(i, 1)
+        this._pushEvt(now, `${x.name}忠诚 ${Math.round(Number(x.loyalty) || 0)}，心生去意，不辞而别（门墙空出一个名额）。`)
+        out.push({ type: 'revolt', uid: x.uid, name: x.name })
+      }
+    }
+    // ② 被掳弟子自行脱困（上轮被掳且未救援）
+    for (const x of list) {
+      if (x.captured) {
+        x.captured = false
+        x.loyalty = clampLoyalty((Number(x.loyalty) || 0) + dL.capturedReturn)
+        this._pushEvt(now, `${x.name}被掳多日，自行脱困归山（忠诚 ${dL.capturedReturn}）。`)
+        out.push({ type: 'captured-return', uid: x.uid, name: x.name })
+      }
+    }
+    // ③ 新事件（被掳中的不掷）
+    for (const x of list) {
+      if (x.captured) continue
+      if (Math.random() >= DISC_EVENTS.chance) continue
+      const type = rollDiscEvent(Math.random())
+      if (type === 'trouble') {
+        const loss = Math.max(1, Math.round(stoneH * DISC_EVENTS.troubleStoneH))
+        this.state.resources.stones = Math.max(0, (Number(this.state.resources.stones) || 0) - loss)
+        x.loyalty = clampLoyalty((Number(x.loyalty) || 0) + dL.trouble)
+        this._pushEvt(now, `${x.name}在外闯祸，师父代为赔了 ${loss} 灵石（忠诚 ${dL.trouble}）。`)
+        out.push({ type: 'trouble', uid: x.uid, name: x.name, stones: -loss })
+      } else if (type === 'captured') {
+        x.captured = true
+        this._pushEvt(now, `${x.name}外出未归，恐遭掳劫——可点「救援」以贡献赎人，否则下一轮自行脱困（忠诚受损）。`)
+        out.push({ type: 'captured', uid: x.uid, name: x.name })
+      } else if (type === 'treasure') {
+        const inv = this.state.inventory.items
+        inv[DISC_EVENTS.treasureMat] = (inv[DISC_EVENTS.treasureMat] | 0) + 1
+        x.loyalty = clampLoyalty((Number(x.loyalty) || 0) + dL.treasure)
+        this._pushEvt(now, `${x.name}带宝而归：${getItem(DISC_EVENTS.treasureMat).name} +1（忠诚 +${dL.treasure}）。`)
+        out.push({ type: 'treasure', uid: x.uid, name: x.name, mat: DISC_EVENTS.treasureMat })
+      } else {
+        const c = Math.max(1, Math.round(DISC_EVENTS.graceContrib * growth))
+        this.earnContribution(c)
+        x.loyalty = clampLoyalty((Number(x.loyalty) || 0) + dL.grace)
+        this._pushEvt(now, `师徒恩义：${x.name}奉上孝敬，贡献 +${c}（忠诚 +${dL.grace}）。`)
+        out.push({ type: 'grace', uid: x.uid, name: x.name, contrib: c })
+      }
+    }
+    return out
   }
 
   // ── 视图（装配层渲染用，纯读）────────────────────────────────────────────

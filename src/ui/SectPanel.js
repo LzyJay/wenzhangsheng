@@ -92,7 +92,75 @@ function syncTaskBulkBtns (taskList) {
 }
 
 /**
- * V5.5 门下弟子区（收徒 → 培养 → 职权 → 贡献）
+ * V5.5.1 周常两条（设计库 §1.3 任务与贡献表）：宗门大比 / 供奉
+ *   渲染进任务板宿主（同属「宗门任务与贡献」口径）；规则在 SectSystem + data/sect.js。
+ */
+function appendWeeklyRows (frag, sect) {
+  // ① 宗门大比（周常）
+  const db = sect.dabiInfo()
+  const r1 = document.createElement('div')
+  r1.className = 'sect-row' + (db.done ? ' locked' : '')
+  const tn1 = document.createElement('span')
+  tn1.className = 'tn'
+  tn1.textContent = '宗门大比（周常）'
+  const td1 = document.createElement('span')
+  td1.className = 'td'
+  td1.textContent = `每 ${db.days} 游戏天一届：以战力争胜，得贡献 ${db.lo}~${db.hi} 与头衔` +
+    (db.title ? `　上一届：${db.title}` : '') + (db.wins ? ` · 魁首 ×${db.wins}` : '')
+  const tp1 = document.createElement('span')
+  tp1.className = 'tp dim'
+  tp1.textContent = db.done ? '本届已赴' : '可赴'
+  const btn1 = document.createElement('button')
+  btn1.className = 'mini gap'
+  btn1.textContent = db.done ? '已赴' : '赴大比'
+  btn1.dataset.dabi = '1'
+  btn1.disabled = !db.canClaim
+  if (!db.done) btn1.title = `定标战力 ${H.fmt(db.req)}：战力越高贡献越厚（rate ≥ 0.9 记魁首）`
+  r1.append(tn1, td1, tp1, btn1)
+  frag.appendChild(r1)
+
+  // ② 供奉（周常）
+  const of = sect.offerInfo()
+  const r2 = document.createElement('div')
+  r2.className = 'sect-row' + (of.done ? ' locked' : '')
+  const tn2 = document.createElement('span')
+  tn2.className = 'tn'
+  tn2.textContent = '供奉（周常）'
+  const td2 = document.createElement('span')
+  td2.className = 'td'
+  td2.textContent = `捐出材料折贡献（货值 ×${of.rate}，每次至多 ${of.maxUnits} 份；每 ${db.days} 游戏天一次）`
+  const btns = document.createElement('div')
+  if (!of.rows.length) {
+    const em = document.createElement('em')
+    em.textContent = '行囊里暂无可供奉的材料'
+    em.style.color = 'rgba(180,180,180,0.6)'
+    btns.appendChild(em)
+  } else {
+    for (const m of of.rows) {
+      const b = document.createElement('button')
+      b.className = 'mini'
+      b.style.marginRight = '4px'
+      b.textContent = `${m.name}×${m.units}（+${m.contrib}）`
+      b.dataset.offer = m.id
+      b.disabled = of.done
+      b.title = `${m.name} 货值 ${m.perUnit}/份 → 贡献 ×${of.rate}`
+      btns.appendChild(b)
+    }
+  }
+  td2.appendChild(btns)
+  const tp2 = document.createElement('span')
+  tp2.className = 'tp dim'
+  tp2.textContent = of.done ? '本轮已供奉' : ''
+  const ph = document.createElement('button')
+  ph.className = 'mini gap'
+  ph.textContent = '—'
+  ph.disabled = true
+  r2.append(tn2, td2, tp2, ph)
+  frag.appendChild(r2)
+}
+
+/**
+ * V5.5 门下弟子区（收徒 → 培养 → 职权 → 贡献；V5.5.1 增忠诚 / 被掳救援 / 师徒近事）
  *   数据全部取自 sect.disciplesView()（纯读）；本区只做接线与展示，规则在 SectSystem + data/disciples.js。
  */
 function renderDisciples (info) {
@@ -117,6 +185,8 @@ function renderDisciples (info) {
     head =
       `<div class="si-line">门墙 <b>${g.used}/${g.slots}</b> 名（上限 ${g.maxSlots}：每晋一大境界 +1 · 首座 +2 · 掌门 +3）` +
       `　在岗 ${st.posted} 名　保底计数 ${g.pity}/${g.pityNeed}</div>` +
+      `<div class="si-line">师徒情分：忠诚低于 <b>${v.loyaltyMeta.revoltAt}</b> 会叛离（轻惩罚）` +
+      `　传功 +${v.loyaltyMeta.trainHeal}　事件轮每 ${v.eventDays} 游戏天掷一次（3% / 名）</div>` +
       `<div class="si-line">合计产出 <span class="jade">${st.hPerDay.toFixed(2)} 当量 h/日</span>` +
       `　贡献 +${st.contribPerDay}/日　灵石 +${H.fmt(st.stonesPerDay)}/日　材料 ${st.matsPerDay.toFixed(1)} 份/日` +
       (capped ? `　<span class="dim">（原始 ${st.rawHPerDay.toFixed(2)} h/日，已按宗门线护栏压至 ${st.capH} h/日）</span>` : '') +
@@ -157,14 +227,24 @@ function renderDisciples (info) {
 
     const td = document.createElement('span')
     td.className = 'td'
-    td.textContent = `${d.apt.name} · 悟性 ${d.wits.id} · 特长${d.spec ? d.spec.name : '—'} · 第 ${d.lv}/${d.lvMax} 级`
+    td.textContent = `${d.apt.name} · 悟性 ${d.wits.id} · 特长${d.spec ? d.spec.name : '—'} · 第 ${d.lv}/${d.lvMax} 级 · 忠诚 ${d.loyalty}`
 
     const line2 = document.createElement('div')
-    line2.textContent = d.post
-      ? `职司 ${d.post.name}${d.fit ? '（对口 +30%）' : ''} → ${d.rateH.toFixed(3)} 当量 h/日${d.matName ? ` · 出 ${d.matName}` : ''}`
-      : '闲居未派职（不产出）'
-    line2.style.color = 'rgba(232,185,106,0.78)'
+    line2.textContent = d.captured
+      ? '被掳在外（不产出）——可救援赎人，或等下一事件轮自行脱困（忠诚受损）'
+      : (d.post
+          ? `职司 ${d.post.name}${d.fit ? '（对口 +30%）' : ''} → ${d.rateH.toFixed(3)} 当量 h/日${d.matName ? ` · 出 ${d.matName}` : ''}`
+          : '闲居未派职（不产出）')
+    line2.style.color = d.captured ? 'rgba(226,120,120,0.85)' : 'rgba(232,185,106,0.78)'
     td.appendChild(line2)
+
+    // V5.5.1：忠诚告急提示（低于叛离线）
+    if (d.loyalty < v.loyaltyMeta.revoltAt) {
+      const warn = document.createElement('em')
+      warn.textContent = `忠诚告急：低于 ${v.loyaltyMeta.revoltAt} 将在下个事件轮叛离（传功 +${v.loyaltyMeta.trainHeal} 可挽回）`
+      warn.style.color = 'rgba(226,120,120,0.85)'
+      td.appendChild(warn)
+    }
 
     if (d.trainMaxed) {
       const em = document.createElement('em')
@@ -178,7 +258,7 @@ function renderDisciples (info) {
       td.appendChild(em)
     }
 
-    // 职权：每名已实装岗位一枚按钮 + 一枚「撤职 / 闲居」
+    // 职权：每名已实装岗位一枚按钮 + 一枚「撤职 / 闲居」（被掳期间整排禁用）
     const acts = document.createElement('div')
     acts.style.marginTop = '2px'
     for (const p of d.posts) {
@@ -189,7 +269,7 @@ function renderDisciples (info) {
       b.dataset.postSet = d.uid
       b.dataset.post = p.id
       b.title = p.fit ? `${p.name}（特长对口 · 产出 +30%）` : `${p.name}`
-      if (p.active) b.disabled = true
+      if (p.active || d.captured) b.disabled = true
       acts.appendChild(b)
     }
     const off = document.createElement('button')
@@ -198,30 +278,45 @@ function renderDisciples (info) {
     off.dataset.postSet = d.uid
     off.dataset.post = 'none'
     off.title = '卸去职司，回山静修（不产出）'
-    if (!d.post) off.disabled = true
+    if (!d.post || d.captured) off.disabled = true
     acts.appendChild(off)
     td.appendChild(acts)
 
     const tp = document.createElement('span')
     tp.className = 'tp dim'
-    tp.textContent = d.trainMaxed ? '满级' : `传功 ${H.fmt(d.trainQi)}`
+    tp.textContent = d.captured ? '被掳' : (d.trainMaxed ? '满级' : `传功 ${H.fmt(d.trainQi)}`)
 
     const btn = document.createElement('button')
     btn.className = 'mini gap'
-    if (d.trainMaxed) {
+    if (d.captured) {
+      // V5.5.1：被掳 → 主按钮换成「救援」（花贡献赎人）
+      btn.textContent = `救援 ${v.rescueCost}`
+      btn.dataset.rescue = d.uid
+      btn.disabled = v.rescueCost > sect.contribution
+      btn.title = `以 ${v.rescueCost} 贡献赎回${d.name}（忠诚 +${v.loyaltyMeta.rescue}）；不救则下一事件轮自行脱困（忠诚 ${v.loyaltyMeta.capturedReturn}）`
+    } else if (d.trainMaxed) {
       btn.textContent = '已满'
       btn.disabled = true
     } else {
       btn.textContent = '传功'
       btn.dataset.train = d.uid
       btn.disabled = !d.trainAffordable
-      btn.title = `耗灵气 ${H.fmt(d.trainQi)}，修为进一级（代价随等级升、随资质悟性降）`
+      btn.title = `耗灵气 ${H.fmt(d.trainQi)}，修为进一级（代价随等级升、随资质悟性降；忠诚 +${v.loyaltyMeta.trainHeal}）`
     }
 
     row.append(tn, td, tp, btn)
     frag.appendChild(row)
   }
   host.replaceChildren(frag)
+
+  // V5.5.1：师徒近事（最近 5 条，倒序；事件掷点在系统 tick 内，面板只展示台账）
+  if (v.events && v.events.length) {
+    const box = document.createElement('div')
+    box.className = 'si-line'
+    box.style.color = 'rgba(180,180,190,0.75)'
+    box.textContent = '师徒近事：' + v.events.map((e) => e.text).join('　')
+    host.appendChild(box)
+  }
 }
 
 function render () {
@@ -357,6 +452,8 @@ function render () {
       row.append(tn, td, tp, btn)
       frag.appendChild(row)
     }
+    // V5.5.1：周常两条（宗门大比 / 供奉）——设计库 §1.3，与任务板同宿主
+    appendWeeklyRows(frag, sect)
     dom.sectTasks.replaceChildren(frag)
     syncTaskBulkBtns(taskList)
   }
@@ -581,6 +678,37 @@ dom.sectOverlay.addEventListener('click', (e) => {
     const res = sect.assignPost(ps.dataset.postSet, ps.dataset.post)
     H.pushLog(res.message, res.ok ? 'ok' : 'info')
     if (res.ok) H.persist('sect-post')
+    render()
+    return
+  }
+  // ── V5.5.1 弟子线后续批（周常大比 / 供奉 / 救援）────────────────────────────
+  const db = e.target.closest('[data-dabi]')
+  if (db && !db.disabled) {
+    const res = sect.claimDabi()
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      H.persist('sect-dabi')
+      H.emitFloat({ text: `${res.title} · 贡献 +${res.contrib}`, kind: 'gold' })
+    }
+    render()
+    return
+  }
+  const ofr = e.target.closest('[data-offer]')
+  if (ofr && !ofr.disabled) {
+    const res = sect.offer(ofr.dataset.offer)
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      H.persist('sect-offer')
+      H.emitFloat({ text: `贡献 +${res.contrib}`, kind: 'info' })
+    }
+    render()
+    return
+  }
+  const rc = e.target.closest('[data-rescue]')
+  if (rc && !rc.disabled) {
+    const res = sect.rescue(rc.dataset.rescue)
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) H.persist('sect-rescue')
     render()
   }
 })

@@ -11,8 +11,9 @@
  *       + 《问长生-开发计划》§4.4（弟子行）· §4.1b（V5.5 排期）· §七（宗门线 ≤15%）
  *
  * 范围（首批）：收徒 → 培养 → 职权 → 贡献 四件事闭环。
- *   · 助战 / 代管（设计库 §2.3 后两条）＝ **预留**，见 POSTS_RESERVED（后续批 B2）
- *   · 出师门客（§2.4）· 师徒风险事件（§2.5）· 藏经阁分层 / 个人洞府（§1.4）＝ 后续批
+ *   · 助战 / 代管（设计库 §2.3 后两条）＝ **预留**，见 POSTS_RESERVED（需接 powerMul 乘区，后续批）
+ *   · 师徒风险事件（§2.5）＝ **V5.5.1 已实装**（忠诚 + 四条掷点事件，见第 ⑦ 段）
+ *   · 出师门客（§2.4）· 藏经阁分层 / 个人洞府（§1.4）＝ 后续批（需接全产乘区 / 装配层）
  *
  * 口径（本文件即单点旋钮，全部参数在此，SectSystem 只读不硬编码）：
  *   · **产出不发境界**：弟子只产材料 / 宗门贡献 / 灵石（§七 硬护栏）
@@ -30,7 +31,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { gameDaysToMs } from './gametime.js'
+import { gameDaysToMs, periodKeyOf } from './gametime.js'
 
 // ── ① 收徒（设计库 §2.1）─────────────────────────────────────────────────────
 
@@ -292,10 +293,71 @@ export function capScale (rawHPerDay = 0) {
   return raw > DISCIPLE_CAP_H_PER_DAY ? DISCIPLE_CAP_H_PER_DAY / raw : 1
 }
 
+// ── ⑦ 忠诚与师徒风险事件（设计库 §2.5，V5.5.1 B2）────────────────────────────
+
+/**
+ * 忠诚（0~100，入门 70）：
+ *   · 低于 revoltAt（30）→ 叛离（设计库「忠诚 <30 叛离（轻惩罚）」＝失去该弟子与其产出，名额腾出）
+ *   · 回复：传功 +trainHeal · 师徒恩义 +10 · 救援归来 +5
+ *   · 折损：闯祸 −10 · 被掳自行脱困 −15
+ */
+export const LOYALTY = { start: 70, max: 100, revoltAt: 30, trainHeal: 5 }
+
+/**
+ * 师徒风险事件（设计库 §2.5 五条；叛离单列如上，余四条在此掷点）：
+ *   · 掷点：每「事件轮」（7 游戏天 ≈ 现实 7 分钟，与任务板同源）每名弟子 chance 概率出事
+ *   · ⚠ 压缩日历（1 现实分钟 = 1 游戏天）下事件频次被放大 ~205 倍/日，
+ *     故 chance 与各赔付取「静态预估后不顶破开发册 §七」的小值（见 tests/V5.5.1-自测 ⑧ 量级表）：
+ *     闯祸赔灵石 = stoneHourly × 0.002 当量（L47 ≈ 2 灵石）；带宝而归只出灵草（最便宜的材料，
+ *     且材料本不入归因台账）；恩义贡献 80 × 境界增长（量级 ≈ 任务贡献线的 1~2%）
+ */
+export const DISC_EVENTS = {
+  periodDays: 7,          // 事件轮：7 游戏天（≈现实 7 分钟）
+  chance: 0.03,           // 每名弟子每轮出事概率
+  troubleStoneH: 0.002,   // 闯祸赔灵石 = stoneHourly × 此当量
+  treasureMat: 'mat_lingcao', // 带宝而归的材料（取最便宜，防经坊市套现顶破护栏）
+  graceContrib: 80,       // 师徒恩义贡献（× 境界增长，见 REALM_GROWTH）
+  rescueBase: 200,        // 救援被掳弟子的基础贡献价
+  dLoyalty: { trouble: -10, capturedReturn: -15, treasure: 5, grace: 10, rescue: 5 },
+  logCap: 8               // 师徒近事最多留几条（面板展示，防刷屏）
+}
+
+/** 事件轮毫秒 / 周期键（同一轮内幂等） */
+export function discEventMs () {
+  return gameDaysToMs(DISC_EVENTS.periodDays)
+}
+
+export function discEventKeyOf (ts) {
+  return periodKeyOf(ts, discEventMs())
+}
+
+/**
+ * 掷事件类型：r∈[0,1)（纯函数，自测定序）
+ *   权重：闯祸 0.3 ｜ 被掳 0.2 ｜ 带宝而归 0.1 ｜ 师徒恩义 0.4
+ *   （带宝出的是可卖材料 → 权重压到 0.1，经坊市套现的间接灵石量级见 V5.5.1 自测 ⑧）
+ */
+export function rollDiscEvent (r) {
+  const x = Math.min(0.999999, Math.max(0, Number(r) || 0))
+  if (x < 0.3) return 'trouble'
+  if (x < 0.5) return 'captured'
+  if (x < 0.6) return 'treasure'
+  return 'grace'
+}
+
+/** 境界增长（口径同 sect.js CONTRIB_GROWTH：每晋一大境界 +60%； disciple 域内独立声明避免互相 import） */
+export const REALM_GROWTH = 0.6
+
+/** 救援被掳弟子的贡献价码（随境界同任务板口径放大） */
+export function rescueCostOf (realmIndex = 0) {
+  const k = Math.max(0, Math.min(5, realmIndex | 0))
+  return Math.max(1, Math.round(DISC_EVENTS.rescueBase * (1 + REALM_GROWTH * k)))
+}
+
 export default {
   RECRUIT, recruitCooldownMs, slotsOf,
   APTITUDES, GOOD_APT, PITY, WITS, SPECIALTY_BONUS, SPECIALTIES, SURNAMES, GIVEN_NAMES,
   DISCIPLE_LV, TRAIN, POSTS, POSTS_RESERVED, DISCIPLE_CAP_H_PER_DAY, DAY_SEC,
+  LOYALTY, DISC_EVENTS, discEventMs, discEventKeyOf, rollDiscEvent, REALM_GROWTH, rescueCostOf,
   aptById, witById, specById, postById, aptWeights, rollAptitude, rollWits, rollSpecialty,
   rollName, specMaterial, discipleGrowth, discipleOutput, specFitsPost, discipleRateH,
   trainCostH, capScale

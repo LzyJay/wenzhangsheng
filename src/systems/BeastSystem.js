@@ -11,7 +11,7 @@
  *     autoHatchTick 支持自动入孵 + 自动破壳（主人 2026-09-19，档位 settings.autoHatch）
  *   · 灵兽园 6 格；孵出即入园林；首只自动当主战（MVP 验收口径「孵出并生效加成」）
  *   · 出战编队（V4.7 主人）：**主战 1 只 + 辅助（元婴 1 / 合体 2）**——
- *     被动产出 0.2h/日 × 品级 × 等级 × 星级（上限 0.6h × 星级）随在线秒入账（离线不发）；
+ *     被动产出 0.2h/日 × 品级 × 等级 × 星级（上限 0.5h × 星级，V5.6.1 降档）随在线秒入账（离线不发）；
  *     战力：主战全额、辅助按 50%（品级 +4%/皇品 +8%，每星另 +0.5 个百分点）；
  *     渡劫助战：主战 +7%、辅助各 +3.5%，合计受 TRIAL_BEAST.cap 封顶
  *     （经装配层供 CultivationSystem 报价，本系统不读别人子树）
@@ -20,7 +20,9 @@
  *   · 喂养：妖丹 → 升 1 级（1~9 级），每级 +10%；8% 悟性爆发本次连升 2 级
  *   · 兽潮与灵兽大比（V5.6 首批）：周期波次抵御 + 大比评比领奖，参数在 data/beastWaves.js，
  *     周期与坊市/寻蛋同源（periodKeyOf），奖励走既有 beast 归因线
- *   · 血脉觉醒 / 化形 / 灵兽园扩容 / 代采 ＝ 内容批次 2/3（C2），不在本模块
+ *   · 血脉觉醒 / 化形（V5.6.1 · C2）：觉醒石掷成败升品级、王品以上化形；
+ *     参数在 data/beasts.js（AWAKEN / MORPH），材料从兽潮奖励池出
+ *   · 灵兽园扩容 / 代采 / 技能位实装 ＝ 后续批，不在本模块
  *
  * 存档子树：state.beast（null＝尚无灵兽资产；懒建兜底，老档自动补全）
  * 跨模块接线（13.1②，均由 main.js 中转）：
@@ -29,7 +31,7 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { GRADES, WANSHOU, HATCH, STAR, DECOMPOSE, ASSIST, FEED, GROWTH, OUTPUT, PARK_CAP, TRIAL_BEAST, dayKey, getGrade, getSpecies, rollGrade, speciesOfGrade } from '../data/beasts.js'
+import { GRADES, WANSHOU, HATCH, STAR, DECOMPOSE, ASSIST, FEED, GROWTH, OUTPUT, PARK_CAP, TRIAL_BEAST, AWAKEN, MORPH, dayKey, getGrade, getSpecies, rollGrade, speciesOfGrade } from '../data/beasts.js'
 // V5.6 兽潮与灵兽大比：参数与周期/分档纯函数（数据先行，见 data/beastWaves.js 文件头口径）
 import { WAVE, CONTEST, WAVE_TIERS, waveKeyOf, waveMsToNext, contestKeyOf, waveTierOfShare, waveTierRank, waveTierName, contestTierOfRank, contestTier, contestRealmMul } from '../data/beastWaves.js'
 import { getLevelInfo } from '../data/realms.js'
@@ -78,6 +80,8 @@ class BeastSystem {
       if (!(p.star >= 1)) p.star = 1
       if (p.exp == null) p.exp = 0
       if (p.gf == null) p.gf = 0
+      if (p.awakenFails == null) p.awakenFails = 0   // V5.6.1：血脉觉醒的失败累加（保底用）
+      if (p.morphed == null) p.morphed = false       // V5.6.1：化形标记
     }
     // V5.6 兽潮 / 大比叶子（懒建兜底，零迁移；老档已有该叶则原样保留）
     if (!b.wave || typeof b.wave !== 'object') {
@@ -162,17 +166,18 @@ class BeastSystem {
     return 1 + STAR.outputPctPerStar * (this.starOf(pet) - 1)
   }
 
-  /** 单只被动产出时数：0.2h/日 × 品级 × 等级 × **星级**，上限 0.6h/只 × 星级 */
+  /** 单只被动产出时数：0.2h/日 × 品级 × 等级 × **星级**，上限 0.5h/只 × 星级（V5.6.1 降档） */
   petOutputHours (pet) {
     const g = getGrade(pet && pet.grade)
     const k = this.starCoef(pet)
     return clamp(OUTPUT.baseHours * g.coef * this.levelCoef(pet && pet.level) * k, 0, OUTPUT.capHours * k)
   }
 
-  /** 单只战力加成：品级基准（+4%，皇品 +8%）+ 每星 +0.5 个百分点 */
+  /** 单只战力加成：品级基准（+4%，皇品 +8%）+ 每星 +0.5 个百分点 + 化形 +2 个百分点 */
   petPowerPct (pet) {
     const g = getGrade(pet && pet.grade)
-    return g.powerPct + STAR.powerPctPerStar * (this.starOf(pet) - 1)
+    return g.powerPct + STAR.powerPctPerStar * (this.starOf(pet) - 1) +
+      (this.isMorphed(pet) ? MORPH.powerPct : 0)   // V5.6.1：化形加成（老档无 morphed → 0，逐位不变）
   }
 
   // ── 万兽林派遣（寻蛋）────────────────────────────────────────────────────
@@ -464,6 +469,139 @@ class BeastSystem {
     }
   }
 
+  // ── 血脉觉醒 / 化形（V5.6.1 · C2 · 设计库《灵兽兽潮与大比 v1》§1.3）────────
+  // 参数在 data/beasts.js（AWAKEN / MORPH）；材料从兽潮奖励池出（beastWaves.WAVE）。
+  // 两件材料都不折灵石 → 不产生归因回传（面板不调 noteBeast），beast 线不受影响。
+
+  /** 化形标记（老档缺省 false） */
+  isMorphed (pet) {
+    return !!(pet && pet.morphed)
+  }
+
+  /** 下一档品级 id（皇品 → null） */
+  nextGradeOf (grade) {
+    const i = AWAKEN.order.indexOf(grade)
+    return (i < 0 || i >= AWAKEN.order.length - 1) ? null : AWAKEN.order[i + 1]
+  }
+
+  /** 当前档的觉醒成率（含失败保底递增，clamp 到 minP~maxP） */
+  awakenChanceOf (pet) {
+    const fails = (pet && pet.awakenFails) | 0
+    return clamp(AWAKEN.base + AWAKEN.stepPerFail * fails, AWAKEN.minP, AWAKEN.maxP)
+  }
+
+  /** 觉醒可行性（面板置灰与悬停提示用，纯读）
+   *  注意：数值（next / needStone / needEssence / p / fails）**先算齐再判门槛** ——
+   *  被拒时也要给面板真实成率与耗材，否则悬停会显示「成率 0% / 需 0 枚」这种假信息。 */
+  canAwaken (uid) {
+    const pet = this.s.pets.find((p) => p.uid === uid)
+    if (!pet) {
+      return { ok: false, reason: '园里没有这只灵兽。', next: null, nextName: '', needStone: 0, needEssence: 0, p: 0, fails: 0 }
+    }
+    const next = this.nextGradeOf(pet.grade)
+    const info = {
+      next,
+      nextName: next ? getGrade(next).name : '',
+      needStone: AWAKEN.stoneOf[pet.grade] | 0,
+      needEssence: AWAKEN.essenceOf[pet.grade] | 0,
+      p: this.awakenChanceOf(pet),
+      fails: (pet.awakenFails | 0)
+    }
+    if (!next) return { ok: false, reason: '已至皇品血脉，再无可越之阶。', ...info }
+    const items = this.state.inventory.items
+    const haveStone = items[AWAKEN.stoneItem] | 0
+    const haveEssence = items[AWAKEN.essenceItem] | 0
+    const gName = getGrade(pet.grade).name
+    if (haveStone < info.needStone) {
+      return { ok: false, reason: `觉醒石不足：${gName}→${info.nextName} 需 ${info.needStone} 枚（现有 ${haveStone}）。`, ...info }
+    }
+    if (info.needEssence && haveEssence < info.needEssence) {
+      return { ok: false, reason: `王品→皇品需兽王精华 ×${info.needEssence}（现有 ${haveEssence}）：唯有击退兽潮高波方可得见。`, ...info }
+    }
+    return { ok: true, ...info, haveStone, haveEssence }
+  }
+
+  /**
+   * 血脉觉醒（一次尝试）：觉醒石**每次必耗**；兽王精华**成功才扣**；失败累加保底。
+   * @returns {{ok:boolean, success?:boolean, message:string, grade?:string, gradeName?:string, p?:number, nextP?:number, stone?:number, essence?:number}}
+   */
+  awaken (uid) {
+    const pet = this.s.pets.find((p) => p.uid === uid)
+    if (!pet) return { ok: false, message: '园里没有这只灵兽。' }
+    const v = this.canAwaken(uid)
+    if (!v.ok) return { ok: false, message: v.reason }
+    const items = this.state.inventory.items
+    items[AWAKEN.stoneItem] = (items[AWAKEN.stoneItem] | 0) - v.needStone
+    const name = this.petName(pet)
+    const gName = getGrade(pet.grade).name
+    if (Math.random() >= v.p) {
+      pet.awakenFails = (pet.awakenFails | 0) + 1
+      const nextP = this.awakenChanceOf(pet)
+      return {
+        ok: true,
+        success: false,
+        p: v.p,
+        nextP,
+        stone: v.needStone,
+        message: `「${name}」血脉纹丝不动（本次成率 ${Math.round(v.p * 100)}%，耗觉醒石 ×${v.needStone}）——` +
+          `兽血已记下这一遭，下次成率抬到 ${Math.round(nextP * 100)}%。`
+      }
+    }
+    if (v.needEssence) items[AWAKEN.essenceItem] = (items[AWAKEN.essenceItem] | 0) - v.needEssence
+    pet.grade = v.next
+    pet.awakenFails = 0
+    return {
+      ok: true,
+      success: true,
+      grade: v.next,
+      gradeName: v.nextName,
+      p: v.p,
+      stone: v.needStone,
+      essence: v.needEssence,
+      message: `「${name}」血脉翻涌，${gName}之躯蜕为${v.nextName}（耗觉醒石 ×${v.needStone}` +
+        `${v.needEssence ? ` ＋ 兽王精华 ×${v.needEssence}` : ''}）！`
+    }
+  }
+
+  /** 化形可行性（面板置灰与悬停提示用，纯读） */
+  canMorph (uid) {
+    const pet = this.s.pets.find((p) => p.uid === uid)
+    if (!pet) return { ok: false, reason: '园里没有这只灵兽。' }
+    if (this.isMorphed(pet)) return { ok: false, reason: '已化形。' }
+    const gi = AWAKEN.order.indexOf(pet.grade)
+    const mi = AWAKEN.order.indexOf(MORPH.minGrade)
+    if (gi < mi) {
+      return { ok: false, reason: `须${getGrade(MORPH.minGrade).name}以上血脉方可化形（现为${getGrade(pet.grade).name}）。` }
+    }
+    const have = this.state.inventory.items[MORPH.essenceItem] | 0
+    if (have < MORPH.costEssence) {
+      return { ok: false, reason: `化形需兽王精华 ×${MORPH.costEssence}（现有 ${have}）：唯有击退兽潮高波方可得见。` }
+    }
+    return { ok: true, have }
+  }
+
+  /**
+   * 化形（一次性，永久）：王品以上 + 兽王精华 ×1 → 外观形态 + 第二技能位 + 战力 +2 个百分点。
+   * @returns {{ok:boolean, message:string, skillSlots?:number, powerPct?:number}}
+   */
+  morph (uid) {
+    const pet = this.s.pets.find((p) => p.uid === uid)
+    if (!pet) return { ok: false, message: '园里没有这只灵兽。' }
+    const v = this.canMorph(uid)
+    if (!v.ok) return { ok: false, message: v.reason }
+    const items = this.state.inventory.items
+    items[MORPH.essenceItem] = (items[MORPH.essenceItem] | 0) - MORPH.costEssence
+    pet.morphed = true
+    const name = this.petName(pet)
+    return {
+      ok: true,
+      skillSlots: MORPH.skillSlots,
+      powerPct: MORPH.powerPct,
+      message: `「${name}」借兽王精华洗炼形骸，化作人形（兽王精华 ×${MORPH.costEssence}）：` +
+        `战力 +${Math.round(MORPH.powerPct * 100)}%，另开第二技能位（技能实装随版本 3）。`
+    }
+  }
+
   // ── 三用途数值（设计库 §1.4；跨模块只读报价）─────────────────────────────
 
   /** 出战·产出折算：Σ（单只产出 × 编队权重）—— 主战全额、辅助 50%（V4.7） */
@@ -706,6 +844,17 @@ class BeastSystem {
       egg = { grade, gradeName: getGrade(grade).name }
       w.pity = 0
     }
+    // V5.6.1（C2）：奖励池扩觉醒石 / 兽王精华（设计库 §1.5）。两件都是养成介质、不折灵石，
+    //   故**不进 beast 归因线**（面板不调 noteBeast）；随机抽样放在掉蛋之后，避免打乱既有掷序。
+    const awakenStone = WAVE.awakenStone[tier] | 0
+    if (awakenStone) {
+      this.state.inventory.items[AWAKEN.stoneItem] = (this.state.inventory.items[AWAKEN.stoneItem] | 0) + awakenStone
+    }
+    let essence = 0
+    if (Math.random() < WAVE.essenceChance[tier]) {
+      essence = 1
+      this.state.inventory.items[AWAKEN.essenceItem] = (this.state.inventory.items[AWAKEN.essenceItem] | 0) + essence
+    }
     w.doneKey = key
     w.fought = (w.fought | 0) + 1
     const tierName = waveTierName(tier)
@@ -716,8 +865,11 @@ class BeastSystem {
       rows,
       stones,
       yaodan,
+      awakenStone,
+      essence,
       egg,
       message: `兽潮退去（${tierName}）：三波妖兽尽数击退，拾得妖丹 ×${yaodan}、灵石 +${stones}` +
+        `${awakenStone ? `、觉醒石 ×${awakenStone}` : ''}${essence ? '、兽王精华 ×1' : ''}` +
         `${egg ? `，兽王仓皇间遗落一枚${egg.gradeName}蛋！` : ''}。`
     }
   }
@@ -809,7 +961,9 @@ class BeastSystem {
       tiers: WAVE_TIERS.map((t) => ({ id: t.id, name: t.name, shareMin: t.shareMin })),
       rewardH: { ...WAVE.rewardH },
       yaodan: { ...WAVE.yaodan },
-      eggChance: { ...WAVE.eggChance }
+      eggChance: { ...WAVE.eggChance },
+      awakenStone: { ...WAVE.awakenStone },        // V5.6.1：觉醒石掉落（按档）
+      essenceChance: { ...WAVE.essenceChance }     // V5.6.1：兽王精华掉落概率（按档）
     }
   }
 
@@ -903,6 +1057,8 @@ class BeastSystem {
       const isMain = pet.uid === activeUid
       const isAssist = assists.includes(pet.uid)
       const starUp = this.canStarUp(pet.uid)
+      const awakenV = this.canAwaken(pet.uid)      // V5.6.1：觉醒可行性（纯读，不产生副作用）
+      const morphV = this.canMorph(pet.uid)        // V5.6.1：化形可行性
       return {
         uid: pet.uid,
         name: sp ? sp.name : '无名幼兽',
@@ -929,6 +1085,19 @@ class BeastSystem {
         canDecompose: !isMain && !isAssist,     // 随行中不可杀鸡取卵
         outputHours: this.petOutputHours(pet),
         powerPct: this.petPowerPct(pet),
+        // V5.6.1 血脉觉醒 / 化形（面板置灰 + 悬停说明用）
+        awaken: awakenV.ok,
+        awakenReason: awakenV.reason || '',
+        awakenNext: awakenV.next || '',
+        awakenNextName: awakenV.nextName || '',
+        awakenP: awakenV.p || 0,
+        awakenFails: awakenV.fails | 0,
+        awakenNeedStone: awakenV.needStone | 0,
+        awakenNeedEssence: awakenV.needEssence | 0,
+        morphed: this.isMorphed(pet),
+        morph: morphV.ok,
+        morphReason: morphV.reason || '',
+        skillSlots: this.isMorphed(pet) ? MORPH.skillSlots : 1,
         // 自动成长（V3.5.1）：升级进度与下一还差多久（在线挂机口径）
         growPct: maxed ? 1 : exp / GROWTH.expPerLevel,
         growText: maxed

@@ -226,8 +226,65 @@ export function getTask (id) {
   return TASKS.find((t) => t.id === id) || null
 }
 
+/**
+ * ═══ V5.5.1 弟子线后续批（B2）：周常·宗门大比 / 周常·供奉（设计库《宗门与弟子 v1》§1.3 任务与贡献表）═══
+ * 口径：
+ *   · 「周常」＝每 7 游戏天（≈现实 7 分钟，与任务板 SECT_REFRESH_DAYS 同源）一轮，各自记周期键幂等
+ *   · 大比：贡献 300~1000（设计库原值）随境界 ×(1+0.6×大境界)（同任务板 CONTRIB_GROWTH 口径）；
+ *     设计稿的「＋灵石」奖按压缩日历（1 现实分钟 = 1 游戏天）会放大 ~205 倍/日、直接顶破
+ *     开发册 §七「宗门线 ≤15%」护栏 → 本批裁除灵石奖、保留头衔荣誉（详见回执-B2 §4/§5 需拍板）
+ *   · 供奉：贡献 = 货值（market.js 货值表，由调用方传入）× 份数 × 1.2（设计库「贡献 ×1.2 折算」）；
+ *     每轮限一次、每次至多 10 份 —— 堵「商店买符纸 → 供奉回血」的刷贡献回路
+ *     （灵纹符纸商店 60 贡献/2 份，若不限量供奉 40×1.2×2=96 会变成贡献打印机）
+ */
+
+/** 周常·宗门大比（设计库 §1.3「周常·宗门大比｜周结算｜贡献 300~1000＋灵石＋头衔」） */
+export const DABI = {
+  days: 7,                    // 周常周期：7 游戏天 ≈ 现实 7 分钟（与任务板同源）
+  contribMin: 300,            // 设计库 §1.3 原值（随境界再放大，见 dabiContribOf）
+  contribMax: 1000,
+  reqMul: 1.2,                // 大比定标＝基准战力 × 1.2（同「护送」口径）
+  titleTop: '大比魁首',        // rate ≥ 0.9
+  titleMid: '大比之秀',        // rate ≥ 0.6
+  titleLow: '大比优胜'
+}
+
+/** 大比一轮的周期毫秒 / 周期键（同一届内幂等）/ 距下一届（现实毫秒） */
+export function dabiRefreshMs () {
+  return gameDaysToMs(DABI.days)
+}
+
+export function dabiKeyOf (ts) {
+  return periodKeyOf(ts, dabiRefreshMs())
+}
+
+export function dabiMsToNext (ts) {
+  return msToNextPeriod(ts, dabiRefreshMs())
+}
+
+/**
+ * 大比贡献：rate∈[0.25, 0.95]（战力比率，同任务板成功率 clamp 口径）
+ *   → 带内插值 × 境界增长（CONTRIB_GROWTH，与 contribOf 同一旋钮）
+ */
+export function dabiContribOf (rate, realmIndex = 0) {
+  const r = Math.min(0.95, Math.max(0.25, Number(rate) || 0))
+  const base = DABI.contribMin + (DABI.contribMax - DABI.contribMin) * r
+  const k = Math.max(0, Math.min(RANKS.length - 1, realmIndex | 0))
+  return Math.max(1, Math.round(base * (1 + CONTRIB_GROWTH * k)))
+}
+
+/** 周常·供奉（设计库 §1.3「周常·供奉｜捐献材料｜贡献 ×1.2 折算」） */
+export const OFFERING = { rate: 1.2, maxUnits: 10 }
+
+/** 供奉折算（纯函数）：货值 × 份数 × 1.2（四舍五入） */
+export function offeringContrib (valuePerUnit, n) {
+  return Math.max(0, Math.round((Number(valuePerUnit) || 0) * Math.max(0, n | 0) * OFFERING.rate))
+}
+
 export default {
   SECT, DAO_TONG, RANKS, TASKS, LIBRARY, SHOP, REALM_GRANTS, CONTRIB_GROWTH,
+  DABI, dabiRefreshMs, dabiKeyOf, dabiMsToNext, dabiContribOf,
+  OFFERING, offeringContrib,
   SECT_REFRESH_DAYS, sectRefreshMs, sectDayKey, sectMsToNextRefresh, fmtSectRefreshPeriod,
   taskDurationMs, taskDurationText, REFRESH_DAYS,
   getTask, contribOf, realmGrant
