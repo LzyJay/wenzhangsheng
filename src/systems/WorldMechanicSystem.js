@@ -28,7 +28,7 @@ import {
   MECH, mechanicsOf, actsOf, getAct, cycleMsOf, cycleKeyOf,
   stonesOfH, matsTextOf, pointKeysOf, pointNameOf,
   quotaOf, rankOf, rankThresholdsOf, tributeRateOf, needPowerOf,
-  staticDailyH, staticDailyHCap, worldMetaOf
+  staticDailyH, staticDailyHCap, worldMetaOf, slot2MaterialOf
 } from '../data/worldMechanics.js'
 import { getLevelInfo, getRealmMeta } from '../data/realms.js'
 import { getItem } from '../data/items.js'
@@ -380,6 +380,15 @@ class WorldMechanicSystem {
     for (const m of f.gainMats) {
       this.items[m.id] = (this.items[m.id] | 0) + (m.n | 0)
       matsOut.push({ id: m.id, n: m.n })
+    }
+    // ②a V7.3 D6：**第 2 材料位** —— 日常动作（1 现实日一次）额外产 1 份本界材料
+    //     （与 data 层 staticDailyH 的 `mat2_*` 行同一口径；材料当量即该界静态增量）
+    if (act.kind === 'grant' && (act.cycleDays || MECH.dayGameDays) === MECH.dayGameDays) {
+      const s2 = slot2MaterialOf(b.id)
+      if (s2) {
+        this.items[s2.id] = (this.items[s2.id] | 0) + 1
+        matsOut.push({ id: s2.id, n: 1 })
+      }
     }
     const pointsOut = {}
     for (const p of f.gainPoints) {

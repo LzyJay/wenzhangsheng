@@ -54,7 +54,7 @@ import { stoneHourly } from './events.js'
 import { gameDaysToMs, periodKeyOf, msToNextPeriod } from './gametime.js'
 import { getLevelInfo } from './realms.js'
 import { getWorld } from './worlds.js'
-import { getItem, ITEM_MAP } from './items.js'
+import { getItem, ITEM_MAP, worldMatPool } from './items.js'
 
 /** 材料 → 当量 h（倒数即秘境 matPerH；见文件头「量级口径」） */
 export const MAT_H = {
@@ -80,6 +80,44 @@ export const MECH = {
   // V7.3（主人 2026-09-22 拍板 D1/D6）：单界静态日产出上限 **4 → 10 当量 h/日**
   //   —— 先实现功能、后做平衡（§七 占比收紧与数值收口留待统一平衡轮）
   dailyHCap: 10
+}
+
+/**
+ * V7.3 D6（主人 2026-09-22 定案）：各界「**第 2 材料位**」
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 口径（定档表 §十一 表 3，主人已审）：
+ *   · 各界**日常动作**（`cycleDays` ＝ 1 现实日）除原有产出外，**再产 1 份本界材料**
+ *     —— 产物位 **1 → 2**（第一份沿用既有产出，第二份出自**本界**材料池）。
+ *   · 材料池＝**凡 / 良 / 珍** 三档（绝 / 仙 档量级过大，只走秘境高档槽与拍卖，不进日产出）；
+ *     具体哪一份由「界 ＋ 定种子」选出 → 同一存档下稳定（要轮换时把日键掺进种子即可）。
+ *   · **份数固定 1 份/日**（不按当量折算——否则珍档 0.24 份/日会被抹成 0），
+ *     其当量＝该材料当量 → 各界静态日产出**增量 = 该界材料当量**（0.4 / 1.0 / 2.5 三档）。
+ *   · 护栏：D1 已把 `MECH.dailyHCap` 4 → 10；本项落定后最大界（幽傩）约 5.7 h/日 ≤ 10 ✓。
+ *     §七 占比收紧与数值平衡**本轮不做**（留待统一平衡轮）。
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/** 第 2 材料位的取料池（品质档） */
+export const MAT_SLOT2_QUALITIES = ['fan', 'liang', 'zhen']
+
+/** 某界第 2 材料位的材料；未登记界 / 本界无凡良珍材料 → null */
+export function slot2MaterialOf (worldId) {
+  const pool = worldMatPool(worldId, MAT_SLOT2_QUALITIES)
+  if (!pool.length) return null
+  let h = 2166136261
+  const seed = `slot2|${worldId}`
+  for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return pool[(h >>> 0) % pool.length]
+}
+
+/** 该界是否享有第 2 材料位（需有**一日一次的生产型动作** ＋ 本界有凡良珍材料）
+ *  ⚠ 判据必须与 `staticDailyH` / `WorldMechanicSystem.doAct` **逐字同源**（`kind === 'grant'`
+ *   且周期 ＝ 1 现实日）——望族只有纳贡 / 兑换（donate / exchange）→ 不享有。 */
+export function hasSlot2 (worldId) {
+  const b = mechanicsOf(worldId)
+  if (!b || !slot2MaterialOf(worldId)) return false
+  return b.acts.some((a) =>
+    a.kind === 'grant' && (a.cycleDays || MECH.dayGameDays) === MECH.dayGameDays)
 }
 
 /** 望族山河 · 家族职权（增补 §三 05「外门→内门→族正院→族长：职权越高，抽成越低、福利越多」） */
@@ -830,6 +868,24 @@ export function staticDailyH (worldId, ctx = {}) {
     const net = gainH - costH
     rows.push({ id: act.id, netH: net, uses, dayH: net * uses })
     total += net * uses
+  }
+
+  // V7.3 D6：**第 2 材料位** —— 每个「一日一次的生产型动作（`kind:'grant'`）」各产 1 份本界材料。
+  //   份数与该动作的 `uses`（quota）同口径 → 静态与实发**逐份对齐**（不虚报也不漏计）。
+  const s2 = slot2MaterialOf(worldId)
+  if (s2) {
+    let parts = 0
+    for (const act of block.acts) {
+      if (act.kind !== 'grant') continue
+      if ((act.cycleDays || per) !== per) continue
+      const q = quotaOf(act, rankIdx)
+      parts += (q == null ? 1 : q)
+    }
+    if (parts > 0) {
+      const h2 = matHOf(s2.id) * parts
+      rows.push({ id: `mat2_${s2.id}`, netH: h2, uses: parts, dayH: h2 })
+      total += h2
+    }
   }
   return { h: total, rows }
 }
