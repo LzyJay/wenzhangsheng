@@ -18,6 +18,7 @@ import RootSystem from './systems/RootSystem.js'
 import LifespanSystem from './systems/LifespanSystem.js'
 import TechniqueSystem from './systems/TechniqueSystem.js'
 import AlchemySystem from './systems/AlchemySystem.js'
+import ForgeSystem from './systems/ForgeSystem.js'          // V7.3 炼器线（丹房「炼器」页签 · 与炼丹同范式）
 import SectSystem from './systems/SectSystem.js'
 import BeastSystem from './systems/BeastSystem.js'
 import WorldSystem from './systems/WorldSystem.js'
@@ -105,6 +106,7 @@ let cult = null
 let roots = null
 let tech = null
 let alchemy = null
+let forge = null          // V7.3 炼器线（纯逻辑；不落新档叶，只读写 inventory.items）
 let sect = null
 let beasts = null
 let world = null
@@ -3907,6 +3909,7 @@ async function boot () {
   roots = new RootSystem(state)
   tech = new TechniqueSystem(state)
   alchemy = new AlchemySystem(state)
+  forge = new ForgeSystem(state)    // V7.3：炼器（无需 ensure —— 不落新档叶）
   beasts = new BeastSystem(state)   // 2.8 灵兽：懒建 state.beast 子树，先建好供下面两处注入
   beasts.ensure()                   // V4.7：老档补字段（辅助位名单 assistUids / 星级 star / 成长计数 exp·gf）
   // 战力乘区闭包（功法 × 灵兽）：宗门战力校验与秘境战力门槛共用同一口径（2026-09-19）
@@ -3965,6 +3968,7 @@ async function boot () {
     state,
     // V4.7 批 0：同上，getter 注入（本面板也建在 cult 实例化之前）
     alchemy: () => alchemy,
+    forge: () => forge,               // V7.3：炼器页签（同面板内的第二条产线）
     cult: () => cult,
     dom,
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, fmtRefreshPeriod, onPress, render: () => render(), renderBag: () => renderBag() }
@@ -4327,7 +4331,7 @@ async function boot () {
 
   // 调试入口（正式包无副作用，仅挂在 window 上便于开发期在 DevTools 里查状态）
   // V5.2：新增调试键 `worldMech`（世界专属机制；§13.2⑥ 登记表由合流会话回填）
-  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, worldMech, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) }, gm: { open: openGm, close: closeGm } }
+  window.__wcs = { game, state, cult, roots, tech, alchemy, forge, life, sect, beasts, world, worldMech, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) }, gm: { open: openGm, close: closeGm } }
 }
 
 boot().catch((err) => {

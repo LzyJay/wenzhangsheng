@@ -20,6 +20,15 @@ export function createAlchemyPanel (ctx) {
   const getAlchemy = ctx.alchemy
   const getCult = ctx.cult
   const H = ctx.helpers
+  // V7.3 炼器线（getter：本面板先于实例化建好，直取会捕获 null）；
+  //   未注入时回落到恒 null —— 面板对**可选依赖**兜底（生产由 main.js 必注入）
+  const getForge = typeof ctx.forge === 'function' ? ctx.forge : () => null
+  /** 丹房页签：`'brew'` 炼丹（既有）／`'forge'` 炼器（V7.3 · 不新增遮罩，只在本遮罩内切页） */
+  let tab = 'brew'
+  // 页签键位从文档取（与 main.js dom 表同口径）；极简 DOM 桩没有 querySelectorAll → 空数组兜底
+  const tabs = typeof document.querySelectorAll === 'function'
+    ? Array.from(document.querySelectorAll('#alchemy-tabs .bag-tab'))
+    : []
   if (!dom.alchemyOverlay) return null
 
   /** 当下"正缺"的丹药清单（纯读；判定归各系统，此处只做汇总） */
@@ -55,7 +64,14 @@ export function createAlchemyPanel (ctx) {
       dom.brewAutoNote.textContent = autoOn ? '每种丹常备 1 枚，用掉自动补' : '已关闭：缺丹需手动开炉'
     }
     const needed = neededPills()
-    const views = alchemy.recipesView({ needed })
+    // V7.3：**页签分流**。炼器视图与丹方视图同形（只把 `canForge` 归一到 `canBrew`），
+    //   故下方行渲染一条逻辑共用，仅在「成丹/成器」文案与动作键上分流 → 不复制粘贴两套行代码。
+    const isForge = tab === 'forge'
+    for (const b of tabs) b.classList.toggle('on', b.dataset.alchtab === tab)
+    const forgeSys = getForge()
+    const views = isForge
+      ? (forgeSys ? forgeSys.forgeView().map((v) => Object.assign({}, v, { canBrew: v.canForge })) : [])
+      : alchemy.recipesView({ needed })
 
     // 材料摘要（一眼看清手上有什么）
     if (dom.alchemyMats) {
@@ -66,11 +82,16 @@ export function createAlchemyPanel (ctx) {
         `　·　打坐偶得 + 宗门任务 / 商店 / 秘境（离线不掉）`
     }
 
-    dom.brewNote.textContent =
-      '材料齐即可开炉（一次一炉）；炼失败不白烧，收回一半材料。' +
-      '标「当前所需」的是眼下卡关的那味丹。' +
-      '上面开着「自动炼制」时，每种丹常备 1 枚、用掉自动补（材料不足则等有料再补）；' +
-      '突破 / 渡劫时若发现缺丹，不管开关如何都会自动开炉一次。'
+    // 「自动炼制」是**丹药线**的开关，炼器页收起该行（不改开关本身，切回炼丹页照旧）
+    const autoRow = dom.tgBrewAuto && dom.tgBrewAuto.closest ? dom.tgBrewAuto.closest('.row') : null
+    if (autoRow) autoRow.hidden = isForge
+    dom.brewNote.textContent = isForge
+      ? '炼器（V7.3）：材料齐即可开炉（一次一炉）；成器率按品质档，炼失败不白烧、收回一半材料。' +
+        '法宝入囊即成藏品 —— 镇雷法宝（渡劫单雷 +8%）与界镜（照界重掷）即刻可用，其余为藏品。'
+      : '材料齐即可开炉（一次一炉）；炼失败不白烧，收回一半材料。' +
+        '标「当前所需」的是眼下卡关的那味丹。' +
+        '上面开着「自动炼制」时，每种丹常备 1 枚、用掉自动补（材料不足则等有料再补）；' +
+        '突破 / 渡劫时若发现缺丹，不管开关如何都会自动开炉一次。'
 
     const frag = document.createDocumentFragment()
     for (const r of views) {
@@ -81,7 +102,7 @@ export function createAlchemyPanel (ctx) {
       bn.className = 'bn'
       bn.textContent = r.name
       bn.style.color = QUALITY_COLOR[r.quality] || QUALITY_COLOR.fan   // 兜底取真源凡档（V7.2 收敛残留硬编码 hex）
-      bn.title = `${r.qualityName} · 成丹率 ${Math.round(r.rate * 100)}% —— ${r.desc}`
+      bn.title = `${r.qualityName} · ${isForge ? '成器率' : '成丹率'} ${Math.round(r.rate * 100)}% —— ${r.desc}`
       if (r.needed) {
         const mark = document.createElement('span')
         mark.className = 'brew-mark'
@@ -114,15 +135,16 @@ export function createAlchemyPanel (ctx) {
       bi.appendChild(gh)
       const rate = document.createElement('span')
       rate.className = 'rate'
-      rate.textContent = `${r.qualityName} ｜ 成丹率 ${Math.round(r.rate * 100)}%`
+      rate.textContent = `${r.qualityName} ｜ ${isForge ? '成器率' : '成丹率'} ${Math.round(r.rate * 100)}%`
       bi.appendChild(rate)
 
       const btn = document.createElement('button')
       btn.className = 'mini'
-      btn.textContent = '炼制'
-      btn.dataset.brew = r.id
+      btn.textContent = isForge ? '炼 制' : '炼制'
+      if (isForge) btn.dataset.forge = r.id
+      else btn.dataset.brew = r.id
       btn.disabled = !r.canBrew
-      btn.title = r.canBrew ? `开炉炼制${r.name}（1 炉）` : `材料不足：${r.missing.join('、')}`
+      btn.title = r.canBrew ? `开炉${isForge ? '炼器' : '炼制'}${r.name}（1 炉）` : `材料不足：${r.missing.join('、')}`
 
       row.append(bn, bi, btn)
       frag.appendChild(row)
@@ -154,6 +176,26 @@ export function createAlchemyPanel (ctx) {
       H.persist('settings')
       render()
       H.render()
+      return
+    }
+    // V7.3：丹房页签切换（炼丹 / 炼器）—— 只切本面板内存态，不落存档
+    const tb = e.target.closest('[data-alchtab]')
+    if (tb) {
+      const t = tb.dataset.alchtab
+      if (t && t !== tab) { tab = t; render() }
+      return
+    }
+    // V7.3：炼器的「炼 制」键（与炼丹同位置、不同动作键 → 委托用 data-forge 区分）
+    const fb = e.target.closest('[data-forge]')
+    if (fb && !fb.disabled) {
+      const fg = getForge()
+      if (!fg) return
+      const res = fg.forge(fb.dataset.forge)
+      H.pushLog(res.message, res.ok && res.success ? 'ok' : 'fail')
+      if (res.ok) {
+        H.persist('alchemy-forge')
+        render()
+      }
       return
     }
     const b = e.target.closest('[data-brew]')
