@@ -18,8 +18,9 @@
  */
 
 import {
-  GOODS, SHOP_SLOTS, DISCOUNT_RANGE, RECYCLE_RATE,
-  AUCTION_MIN_REALM, AUCTION_POOL, AUCTION_PRICE_RANGE,
+  GOODS, SHOP_SLOTS, SHOP_SPLIT, SHOP_QUALITY_WEIGHT, DISCOUNT_RANGE, RECYCLE_RATE,
+  GOODS_POOL_COMMON, goodsPoolOfWorld,
+  AUCTION_MIN_REALM, AUCTION_PRICE_RANGE, AUCTION_PER_TIER, auctionWindow,
   getGoodsValue, recycleUnitPrice, realmIndexOf, dayKey
 } from '../data/market.js'
 import { getItem, getUnit } from '../data/items.js'
@@ -35,10 +36,11 @@ class MarketSystem {
 
   // ── 基础 ────────────────────────────────────────────────────────────────
 
-  /** 坊市子树（懒建：老档 market 为 null 时补全结构） */
+  /** 坊市子树（懒建：老档 market 为 null 时补全结构）
+   *  V7.3：新增 `auctionList`（分层 12 件）；`auction` **保持单件形状**（既有三处断言依赖它） */
   get m () {
     if (!this.state.market || typeof this.state.market !== 'object') {
-      this.state.market = { lastDay: null, shop: [], auction: null }
+      this.state.market = { lastDay: null, shop: [], auction: null, auctionList: [] }
     }
     return this.state.market
   }
@@ -65,34 +67,84 @@ class MarketSystem {
     return true
   }
 
-  /** 抽 SHOP_SLOTS 件（去重），每件随机折扣定当日价 */
-  rollShop () {
-    const pool = [...GOODS]
-    // Fisher–Yates 后取前 SHOP_SLOTS 件（不足则全取）
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      const t = pool[i]; pool[i] = pool[j]; pool[j] = t
-    }
-    const n = Math.min(SHOP_SLOTS, pool.length)
-    const shop = []
+  /** 按品质权重抽 1 件（池内权重和 > 0）；池空返回 null */
+  _pickWeighted (pool) {
+    if (!pool.length) return null
+    const w = (id) => SHOP_QUALITY_WEIGHT[getItem(id).quality] || 1
+    let total = 0
+    for (const x of pool) total += w(x.id)
+    if (total <= 0) return pool[0]
+    let r = Math.random() * total
+    for (const x of pool) { r -= w(x.id); if (r <= 0) return x }
+    return pool[pool.length - 1]
+  }
+
+  /** 按品质权重抽 n 件（去重；`used` 为已占位 id 集） */
+  _pickManyWeighted (pool, n, used) {
+    const out = []
     for (let i = 0; i < n; i++) {
-      const g = pool[i]
-      const discount = clamp(randRange(DISCOUNT_RANGE[0], DISCOUNT_RANGE[1]), 0.1, 1)
-      const price = Math.max(1, Math.round(g.base * discount))
-      shop.push({ id: g.id, base: g.base, price, discount })
+      const avail = pool.filter((x) => !used.has(x.id))
+      if (!avail.length) break
+      const pick = this._pickWeighted(avail)
+      if (!pick) break
+      used.add(pick.id)
+      out.push(pick)
     }
+    return out
+  }
+
+  /** 抽 SHOP_SLOTS 件（V7.3：分池 —— 4 常驻基础 ＋ 4 本界 ＋ 2 公用），每件随机折扣定当日价 */
+  rollShop () {
+    const wid = (this.state.world && this.state.world.worldId) || null
+    const used = new Set()
+    const shop = []
+    const push = (g, pool) => {
+      const base = getGoodsValue(g.id)
+      if (!(base > 0)) return
+      const discount = clamp(randRange(DISCOUNT_RANGE[0], DISCOUNT_RANGE[1]), 0.1, 1)
+      shop.push({ id: g.id, base, price: Math.max(1, Math.round(base * discount)), discount, pool })
+    }
+    // ① 常驻基础席：基础货值表内均匀轮换（Fisher–Yates 后取前 SHOP_SPLIT.base 件）
+    const basePool = [...GOODS]
+    for (let i = basePool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      const t = basePool[i]; basePool[i] = basePool[j]; basePool[j] = t
+    }
+    for (const g of basePool.slice(0, SHOP_SPLIT.base)) { used.add(g.id); push(g, 'base') }
+    // ② 本界席：本界专属池品质加权（未抽定世界 / 本界无货 → 回落公用池，保证不空）
+    const worldPool = goodsPoolOfWorld(wid)
+    for (const it of this._pickManyWeighted(worldPool.length ? worldPool : GOODS_POOL_COMMON, SHOP_SPLIT.world, used)) push(it, 'world')
+    // ③ 公用席：公用新增池品质加权
+    for (const it of this._pickManyWeighted(GOODS_POOL_COMMON, SHOP_SPLIT.common, used)) push(it, 'common')
     this.m.shop = shop
     return shop
   }
 
-  /** 抽 1 件拍卖稀有物（按当前境界过滤池；无资格则 null） */
+  /** 抽拍卖稀有物（V7.3：按境界分层的「当前 ＋ 往下三层」窗口，每层 AUCTION_PER_TIER 件）
+   *  `m.auctionList` ＝ 分层明细（UI 用）；`m.auction` ＝ 首件（**兼容既有单件视图**） */
   rollAuction () {
-    const pool = AUCTION_POOL.filter((a) => a.minRealm <= this.realmIndex)
-    if (!pool.length) { this.m.auction = null; return null }
-    const a = pool[Math.floor(Math.random() * pool.length)]
-    const base = getGoodsValue(a.id)
-    const price = Math.max(1, Math.round(base * randRange(AUCTION_PRICE_RANGE[0], AUCTION_PRICE_RANGE[1])))
-    this.m.auction = { id: a.id, base, price, bought: false, minRealm: a.minRealm }
+    const tiers = auctionWindow(this.realmIndex)
+    if (!tiers.length) {
+      this.m.auction = null
+      this.m.auctionList = []
+      return null
+    }
+    const list = []
+    for (const t of tiers) {
+      const ids = t.items.slice()
+      for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        const x = ids[i]; ids[i] = ids[j]; ids[j] = x
+      }
+      for (const id of ids.slice(0, AUCTION_PER_TIER)) {
+        const base = getGoodsValue(id)
+        if (!(base > 0)) continue
+        const price = Math.max(1, Math.round(base * randRange(AUCTION_PRICE_RANGE[0], AUCTION_PRICE_RANGE[1])))
+        list.push({ id, base, price, bought: false, minRealm: t.realm, realm: t.realm, realmName: t.realmName })
+      }
+    }
+    this.m.auctionList = list
+    this.m.auction = list.length ? { ...list[0] } : null
     return this.m.auction
   }
 
@@ -134,21 +186,27 @@ class MarketSystem {
     }
   }
 
-  /** 拍下（高境界拍卖行；每日限 1 次） */
-  buyAuction (now = Date.now()) {
+  /** 拍下（高境界拍卖行）
+   *  V7.3：`id` 可选（不传＝拍 `m.auction` 首件，兼底既有调用）；**每件各限拍 1 次** */
+  buyAuction (id = null, now = Date.now()) {
     this.ensureDaily(now)
-    const a = this.m.auction
+    const list = this.m.auctionList || []
+    const wantId = id || (this.m.auction && this.m.auction.id)
+    const a = list.find((x) => x.id === wantId) || this.m.auction
     if (!a) return { ok: false, message: '拍卖行尚未开启（需更高境界）。' }
     if (this.realmIndex < a.minRealm) {
-      return { ok: false, message: `境界不足：此拍需 ${a.minRealm + 1 <= 6 ? '金丹' : '元婴'}期以上。` }
+      return { ok: false, message: `境界不足：此拍需 ${a.realmName || '金丹'}期以上。` }
     }
-    if (a.bought) return { ok: false, message: '今日此拍已结，明日再来。' }
+    if (a.bought) return { ok: false, message: '此拍已结，本轮不再上架。' }
     if (this.stones < a.price) {
       return { ok: false, message: `灵石不足：拍下需 ${a.price}，还差 ${a.price - this.stones}。` }
     }
     this.stones = this.stones - a.price
     this._addItem(a.id, 1)
     a.bought = true
+    const mirror = list.find((x) => x.id === a.id)
+    if (mirror) mirror.bought = true
+    if (this.m.auction && this.m.auction.id === a.id) this.m.auction.bought = true
     const it = getItem(a.id)
     return {
       ok: true,
@@ -167,6 +225,9 @@ class MarketSystem {
         index,
         id: slot.id,
         name: it.name,
+        icon: it.icon,
+        quality: it.quality,
+        pool: slot.pool || 'base',
         unit: getUnit(it),
         base: slot.base,
         price: slot.price,
@@ -207,12 +268,51 @@ class MarketSystem {
       open: true,
       id: a.id,
       name: it.name,
+      icon: it.icon,
+      quality: it.quality,
       unit: getUnit(it),
       price: a.price,
       bought: a.bought,
       minRealm: a.minRealm,
+      realm: a.realm,
+      realmName: a.realmName,
       realmOk: this.realmIndex >= a.minRealm,
       affordable: this.realmIndex >= a.minRealm && !a.bought && this.stones >= a.price
+    }
+  }
+
+  /** 分层拍卖视图（V7.3 · UI 用）：按境界分组返回「当前 ＋ 往下三层」共 12 件 */
+  auctionListView () {
+    const list = this.m.auctionList || []
+    const tiers = []
+    let cur = null
+    for (const x of list) {
+      const it = getItem(x.id)
+      if (!cur || cur.realm !== x.realm) {
+        cur = { realm: x.realm, realmName: x.realmName, items: [] }
+        tiers.push(cur)
+      }
+      cur.items.push({
+        id: x.id,
+        name: it.name,
+        icon: it.icon,
+        quality: it.quality,
+        unit: getUnit(it),
+        base: x.base,
+        price: x.price,
+        bought: x.bought,
+        realm: x.realm,
+        realmName: x.realmName,
+        minRealm: x.minRealm,
+        realmOk: this.realmIndex >= x.minRealm,
+        affordable: this.realmIndex >= x.minRealm && !x.bought && this.stones >= x.price
+      })
+    }
+    return {
+      open: this.realmIndex >= AUCTION_MIN_REALM,
+      minRealm: AUCTION_MIN_REALM,
+      count: list.length,
+      tiers
     }
   }
 }
