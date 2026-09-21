@@ -3,13 +3,25 @@
  * ═══════════════════════════════════════════════════════════════════════════
  * 边界（src/ui/ 层 · V3.5.6 拆分 main.js 第二批）：只碰本面板自己的 DOM；
  *   系统实例与装配层工具经 createBagPanel(ctx) 注入，禁止 import systems；
- *   纯数据层可 import（getItem/getUnit ← data/items.js）。
- * 凝神丹服用（useNingshen）走 state.buffs 公共乘区，落在本面板（唯一使用入口）。
- * 洗髓（doReroll）属灵根流程，经装配层回调（H.doReroll）触发。
+ *   纯数据层可 import（getItem/getUnit/ITEM_TYPE_ORDER/ITEM_TYPE_NAME/USE_ACTIONS ← data/items.js）。
+ *
+ * V7.1 改版（主人 2026-09-22 拍板）：
+ *   ① **按类型五栏网格**：丹药 / 材料 / 法宝 / 符箓 / 残页；只渲染**实际持有**（数量 > 0）的物品，
+ *      某栏为空则整栏（含分组头）不渲染；全空仍出「囊中空空」空态。
+ *   ② **文字图标**：每格居中显示物品 `icon`（2 字简称）；文字色 / 描边 / 底色统一取该物品**品质**，
+ *      色板 import `util/quality.js` **单一真源**（不复制副本——V5.9.1 专门收敛过这种副本）。
+ *   ③ **数量角标**：右下角小角标显示持有数（数量 1 亦显示，口径一致；三位数自动收窄字号）。
+ *   ④ **悬停详情卡**：鼠标移入图标浮出（名称 / 品质 / 持有量 / 描述 / 来源），卡在本面板内自绘
+ *      —— **刻意不用全局 #tip**：ui 层规约是「只碰本面板自己的 DOM」，面板内自绘亦天然不碰
+ *      拖拽区（坑 10）与 Esc 链；卡片随图标定位，越界翻到上方、横向夹回面板宽度内。
+ *   ⑤ **使用白名单**：只有 `USE_ACTIONS` 里登记过的物品才在详情卡内给「使用」键。
+ *      ⚠ 旧实现是按 id 硬编码 + **兜底回落到灵根重掷（`doReroll`）**——物品库扩容到 504 条后，
+ *      未登记物品一旦被点到就会把灵根洗掉；白名单化后该分支**已删除**，结构上不可能再落到兜底。
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { getItem, getUnit } from '../data/items.js'
+import { getItem, getUnit, ITEM_TYPE_ORDER, ITEM_TYPE_NAME, USE_ACTIONS } from '../data/items.js'
+import { QUALITY_KEYS, QUALITY_NAME, QUALITY_COLOR } from '../util/quality.js'
 
 export function createBagPanel (ctx) {
   const dom = ctx.dom
@@ -69,16 +81,109 @@ export function createBagPanel (ctx) {
     H.render()
   }
 
+  /**
+   * 白名单执行器（唯一入口）：只认 `USE_ACTIONS` 登记过的 id。
+   * 未登记者在面板里**根本不会渲染出「使用」键**，故此处 default 返回 false 只是双保险。
+   */
+  function useItemById (id) {
+    const act = USE_ACTIONS[id]
+    if (!act) return false
+    if (act === 'buff-ningshen') { useNingshen(); return true }
+    if (act === 'buff-jiangling') { useJiangling(); return true }
+    if (act === 'reroll-root') { close(); H.doReroll(); return true }   // 洗髓丹（白名单内，非兜底）
+    return false
+  }
+
+  // ══ 详情卡（面板内自绘；挂 #bag-list，绝对定位随图标）════════════════════════
+  let cardEl = null
+  let cardTimer = null
+
+  function ensureCard () {
+    if (cardEl && cardEl.isConnected) return cardEl
+    cardEl = document.createElement('div')
+    cardEl.className = 'bag-card'
+    cardEl.hidden = true
+    // hover 桥接：鼠标从图标移到卡片（跨过 6px 间隙）期间不能收卡，否则卡内「使用」永远点不到
+    cardEl.addEventListener('mouseenter', () => { if (cardTimer) { clearTimeout(cardTimer); cardTimer = null } })
+    cardEl.addEventListener('mouseleave', () => scheduleCardHide())
+    // 卡内「使用」：pointerdown（与项目「按下即响应」口径一致；重绘也不丢这一次点击）
+    cardEl.addEventListener('pointerdown', (e) => {
+      const btn = e.target.closest('[data-act="use-item"]')
+      if (!btn || btn.disabled) return
+      e.stopPropagation()
+      if (useItemById(btn.dataset.item)) render()   // 用掉立刻重绘，角标同步减一
+    })
+    return cardEl
+  }
+
+  /** 定位：默认贴图标下方；越出内容高度则翻到上方；横向夹回面板宽度内 */
+  function placeCard (tile) {
+    const host = dom.bagList
+    if (!host || !cardEl) return
+    const tw = tile.offsetWidth
+    const th = tile.offsetHeight
+    const cw = cardEl.offsetWidth
+    const ch = cardEl.offsetHeight
+    const hostW = host.clientWidth || 0
+    const hostH = host.scrollHeight || 0
+    let left = tile.offsetLeft + tw / 2 - cw / 2
+    left = Math.max(0, Math.min(left, Math.max(0, hostW - cw)))
+    let top = tile.offsetTop + th + 6
+    if (top + ch > hostH && tile.offsetTop - ch - 6 >= 0) top = tile.offsetTop - ch - 6
+    cardEl.style.left = `${Math.round(left)}px`
+    cardEl.style.top = `${Math.round(top)}px`
+  }
+
+  function showCard (tile, id, count) {
+    if (cardTimer) { clearTimeout(cardTimer); cardTimer = null }
+    const it = getItem(id)
+    const col = QUALITY_COLOR[it.quality] || QUALITY_COLOR.fan
+    const qn = QUALITY_NAME[it.quality] || '凡'
+    const unit = getUnit(it)
+    const usable = !!USE_ACTIONS[id]
+    const el = ensureCard()
+    el.dataset.for = id
+    el.innerHTML =
+      `<div class="bc-head"><span class="bc-name" style="color:${col}">${it.name}</span>` +
+      `<span class="bc-q" style="color:${col};border-color:${col}">${qn}</span></div>` +
+      `<div class="bc-row"><span class="k">持有</span><span class="v">${count} ${unit}</span></div>` +
+      `<div class="bc-desc">${it.desc}</div>` +
+      (it.from ? `<div class="bc-from">得自 ${it.from}</div>` : '') +
+      (usable
+        ? `<div class="bc-act"><button class="mini" data-act="use-item" data-item="${id}"${H.rootBusy() ? ' disabled' : ''} title="${it.useHint || ''}">使 用</button></div>`
+        : '')
+    if (!el.parentNode) dom.bagList.appendChild(el)
+    el.hidden = false
+    placeCard(tile)
+  }
+
+  function hideCard () { if (cardEl) cardEl.hidden = true }
+
+  function scheduleCardHide () {
+    if (cardTimer) clearTimeout(cardTimer)
+    cardTimer = setTimeout(() => { cardTimer = null; hideCard() }, 160)
+  }
+
+  // ══ 渲染 ═══════════════════════════════════════════════════════════════════
+  /** 内容签名：持有集合与数量未变即不重绘（面板每 100ms 会被 render 触发，504 条库也不抖） */
+  let lastSig = ''
+
   function render () {
     if (!state) return
     const items = (state.inventory && state.inventory.items) || {}
-    const entries = Object.entries(items).filter(([, n]) => (n | 0) > 0)
-
-    if (dom.bagNote) {
-      dom.bagNote.textContent = '「持有 N 枚」＝背包里的实际数量；可「使用」的丹药右侧带按钮，点一下即消耗 1 枚。'
+    const held = []
+    for (const [id, n] of Object.entries(items)) {
+      const c = n | 0
+      if (c > 0) held.push([id, c])
     }
 
-    if (!entries.length) {
+    if (dom.bagNote) {
+      dom.bagNote.textContent = '数量角标＝持有数；鼠标移到图标上看详情，可用的丹药 / 符箓在详情卡里点「使用」。'
+    }
+
+    if (!held.length) {
+      lastSig = ''
+      hideCard()
       const empty = document.createElement('div')
       empty.className = 'bag-empty'
       empty.append('囊中空空')
@@ -88,59 +193,71 @@ export function createBagPanel (ctx) {
       return
     }
 
+    const sig = held.map(([id, c]) => `${id}:${c}`).join(',')
+    if (sig === lastSig && dom.bagList.querySelector('.bag-grid')) return
+    lastSig = sig
+    hideCard()   // 重绘前收卡，避免卡片挂在被移除的节点上
+
     const frag = document.createDocumentFragment()
-    for (const [id, count] of entries) {
-      const it = getItem(id)
-      const unit = getUnit(it)
-      const row = document.createElement('div')
-      row.className = 'bag-item'
-
-      const nm = document.createElement('span')
-      nm.className = 'nm'
-      nm.textContent = it.name
-
-      // 数量写成「持有 N 枚」——不再是一个孤零零的数字，避免看不懂
-      const qt = document.createElement('span')
-      qt.className = 'qt'
-      const num = document.createElement('b')
-      num.textContent = String(count)
-      qt.append('持有 ', num, ` ${unit}`)
-      qt.title = `${it.name}：持有 ${count} ${unit}`
-
-      const ds = document.createElement('span')
-      ds.className = 'ds'
-      ds.textContent = it.desc
-      ds.appendChild(document.createElement('br'))
-      const from = document.createElement('em')
-      from.textContent = it.from
-      ds.appendChild(from)
-
-      row.append(nm, qt, ds)
-
-      if (it.usable) {
-        const btn = document.createElement('button')
-        btn.className = 'mini'
-        btn.textContent = '使用'
-        btn.title = it.useHint || ''
-        btn.disabled = H.rootBusy()
-        btn.addEventListener('click', () => {
-          if (it.id === 'pill_ningshen') { useNingshen(); render(); return }
-          if (it.id === 'talisman_jiangling') { useJiangling(); render(); return }
-          close(); H.doReroll()
+    let kinds = 0
+    for (const type of ITEM_TYPE_ORDER) {
+      // 同栏内按品质降序（仙 → 凡），同品质按 id 稳定排序
+      const list = held
+        .filter(([id]) => (getItem(id).type || 'material') === type)
+        .sort((a, b) => {
+          const d = QUALITY_KEYS.indexOf(getItem(b[0]).quality) - QUALITY_KEYS.indexOf(getItem(a[0]).quality)
+          return d !== 0 ? d : a[0].localeCompare(b[0])
         })
-        row.appendChild(btn)
+      if (!list.length) continue
+      kinds += list.length
+
+      const head = document.createElement('div')
+      head.className = 'tech-sec bag-sec'                        // 复用既有分组头范式
+      head.textContent = `${ITEM_TYPE_NAME[type] || type} · ${list.length} 种`
+      frag.appendChild(head)
+
+      const grid = document.createElement('div')
+      grid.className = 'bag-grid'
+      for (const [id, count] of list) {
+        const it = getItem(id)
+        const col = QUALITY_COLOR[it.quality] || QUALITY_COLOR.fan
+        const tile = document.createElement('button')
+        tile.type = 'button'
+        tile.className = 'bag-tile'
+        tile.dataset.id = id
+        tile.style.setProperty('--q', col)                       // 品质色：描边 / 底色 / 文字统一取它
+        tile.setAttribute('aria-label', `${it.name}（${QUALITY_NAME[it.quality] || '凡'}）持有 ${count} ${getUnit(it)}`)
+        const ic = document.createElement('span')
+        ic.className = 'bt-ic'
+        ic.textContent = it.icon || (it.name || '').slice(0, 2)
+        const num = document.createElement('span')
+        num.className = 'bt-num' + (String(count).length >= 3 ? ' long' : '')   // 三位数收窄字号
+        num.textContent = String(count)
+        tile.append(ic, num)
+        if (USE_ACTIONS[id]) {
+          const dot = document.createElement('span')             // 可用标记：极小鎏金点（不占格内空间）
+          dot.className = 'bt-dot'
+          tile.appendChild(dot)
+        }
+        tile.addEventListener('mouseenter', () => showCard(tile, id, count))
+        tile.addEventListener('mouseleave', () => scheduleCardHide())
+        tile.addEventListener('focus', () => showCard(tile, id, count))
+        tile.addEventListener('blur', () => scheduleCardHide())
+        tile.addEventListener('click', () => {                   // 点击＝聚焦查看（触摸屏 / 键盘走查）
+          if (cardEl && !cardEl.hidden && cardEl.dataset.for === id) hideCard()
+          else showCard(tile, id, count)
+        })
+        grid.appendChild(tile)
       }
-      frag.appendChild(row)
+      frag.appendChild(grid)
     }
+
     dom.bagList.replaceChildren(frag)
+    if (dom.bagNote) {
+      dom.bagNote.textContent = `持有 ${kinds} 种 · 按「${ITEM_TYPE_ORDER.map((t) => ITEM_TYPE_NAME[t]).join(' / ')}」分栏；` +
+        '数量角标＝持有数；鼠标移到图标上看详情，可用的丹药 / 符箓在详情卡里点「使用」。'
+    }
   }
-
-  /**
-   * 丹房：丹方列表 + 炼制 / 自动炼制（主人 2026-09-17：背包与丹房分离；缺丹时自动开炉）
-   * 「当前所需」＝当下真正卡关的丹药（突破缺的破境丹、渡劫缺的护劫丹）。
-   */
-  let lastAlchemyRender = 0 // 丹房面板轻刷节拍（V3.5.2：时间驱动）
-
 
   function open () {
     if (!state) return
@@ -153,6 +270,8 @@ export function createBagPanel (ctx) {
   }
 
   function close () {
+    hideCard()
+    H.closeTip()          // 收面板时一并清掉残留卡 / 残留全局浮层
     H.ovHide(dom.bagOverlay)
     dom.btnBag.classList.remove('on')
     H.syncDragRegions()

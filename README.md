@@ -1,14 +1,31 @@
 # 问长生 —— 桌面常驻挂机修仙小窗
 
 > 桌面右下角常驻的修仙挂机小窗：打坐吐纳、突破渡劫、宗门坊市秘境灵兽，一窗全收。
-> 当前版本 **v6.9.0（阶段六终版 · 全部收口）**。
+> 当前版本 **v6.9.0（阶段六终版）** ＋ **阶段七 V7.1 进行中**（物品库扩容 504 条 ＋ 行囊图标化网格；照惯例模块轮不抬版本，待阶段七收口）。
 > 阶段六 15 项全部交付：**12 界剧情线（批 A~H）**· 12 界专属事件池 · 渡劫八关口与招牌首通分界文案 ·
 > **转世与各界继承** · GM 控制台 · **功法库 22 → 每界可用 144 本** · **12 界 96 宗 + 宗门功法 288 本** ·
 > 宗门系统层 · **换界散修化与职级八档** · 12 界入宗彩蛋成就 · 世界 11 号换源「无缺古界」。
 > 阶段五 14 项（招牌秘境 · 试炼塔 100 层 · CDP 口径 · 弟子线 · 兽潮与大比 · 世界专属机制 12 界 ·
 > 雷淬石 · 招牌 18 条与降档 · 界镜与界游符 · 大比换锚）与 V5.9.1 源码去重均已在库。
 
-## 本次（v6.9.0 · 阶段六终版 · 剧情与宗门线收口）
+## 本次（v7.1 · 物品库扩容与行囊图标化）
+
+- **物品库 23 → 504 条**（参照功法库范式）：**公用库 120 条**（＝基础表 23 ＋ 新增 97；五类型 × 五品质全覆盖）
+  ＋ **12 界各 32 条专属（384 条）**，专属条目**自原著提炼**并逐条标出处（`命名池` / `提炼·丹药|药材|法宝|灵兽` / `释义性命名`）。
+  新增 `src\data\itemLibrary.js` 与 `itemLibraryWorld.js`；`items.js` 汇总 `COMMON_ITEMS` / `WORLD_ITEMS` / `ALL_ITEMS`
+  与纯函数 `libByType` / `libByWorld` / `libCounts`。既有 **23 条一字未改**（只补 `icon`），
+  老档 `state.inventory.items` 键位不增不减 → **零迁移**。
+- **行囊改图标网格**：按 **丹药 / 材料 / 法宝 / 符箓 / 残页** 五栏（只显已有）· 每格一枚 **2 字铭牌**（新增 `icon` 字段）
+  · **品质五档配色**（色板取 `util\quality.js` 真源，不复制副本）· **数量角标**（右下角，三位数自动收窄）·
+  **悬停详情卡**（名称 / 品质 / 持有 / 描述 / 来源，可用的丹药符箓在卡内点「使用」）。
+- **安全硬修**：行囊「使用」键由「按 id 硬编码 ＋ 兜底回落灵根重掷」改为 **白名单**（`USE_ACTIONS`，现 3 项：
+  洗髓丹 / 凝神丹 / 降灵符）——未登记物品不再有键可点，误触换灵根的结构性隐患消除。
+- **验收**：全量回归 **3595 项 / 69 份 / 0 失败**（新增 `V7.1-自测` 37 项）；`vite build` 三产物（node 22）；
+  隔离数据目录 + 存档副本起窗 CDP 点验（**15 格 / 4 栏** · 悬停卡正常 · `.ov` 仍 **11** · `__wcs` 仍 **20 键** · 零未捕获异常）；
+  预览截图 `design\archive\v7.1-bag-grid.png`。
+- **⚠ 本批只入库不接产出**：新增 481 条的产出途径（坊市 / 秘境 / 世界机制 / 宗门商店掉落）待排。
+
+## 上一版（v6.9.0 · 阶段六终版 · 剧情与宗门线收口）
 
 - **本版不含新玩法**：MF6 是**收口轮**——阶段六 15 个内容模块早已实装（2026-09-21/22），本轮把它们
   正式发版：抬终版号 `5.9.1 → **6.9.0**`（两处 + 16 份测试版本钉 ＝ 18 份）、全面回写开发册 / 看板 /
@@ -197,7 +214,7 @@ npm run dev          开发模式（HMR）
 npm run build        构建渲染层 dist/ + 主进程 dist-electron/
 npm start            启动实机窗口（等价 scripts\launch.cmd）
 npm run dist         打安装包（先 build 再 electron-builder）
-node tests\wcs_regress.mjs   全量回归（≈4 秒 / 68 份：自动择优解释器 + 并发；见下）
+node tests\wcs_regress.mjs   全量回归（≈6 秒 / 69 份：自动择优解释器 + 并发；见下）
 ```
 
 回归运行器（`tests\wcs_regress.mjs`）常用开关：`--only V4.7` 只跑名字含该关键字的份数、
@@ -213,13 +230,13 @@ node tests\wcs_regress.mjs   全量回归（≈4 秒 / 68 份：自动择优解�
 | `src\main.js` | 唯一装配层（读档 → 实例化 systems → 装配 UI 面板 → 通知场景；`window.__wcs` 调试出口） |
 | `src\util\` | **零依赖叶子层**（通用纯函数工具：`num.js` 区间钳制 + 大数格式化、`quality.js` 品质 5 档真源）；禁 import 业务层 / DOM / Phaser，可被其余任意层引用 |
 | `src\systems\` | 纯逻辑层（16 个玩法系统 + `BonusLedger` / `EconLedger`；V6 新增 `StorySystem.js` 命运节拍器 / `RebirthSystem.js` 转世；禁 DOM / Phaser / 横向 import） |
-| `src\data\` | 纯配置层（改平衡只动这里；`realms.js` 为生成物禁手改；V6 新增 `story.js` / `storyRituals.js` / `storyEndings.js` / `worldSects.js` / `sectTechniques.js` / `techniqueLibrary.js` / `worldEvents.js` / `trialTexts.js` / `signatureTexts.js`） |
+| `src\data\` | 纯配置层（改平衡只动这里；`realms.js` 为生成物禁手改；V6 新增 `story.js` / `storyRituals.js` / `storyEndings.js` / `worldSects.js` / `sectTechniques.js` / `techniqueLibrary.js` / `worldEvents.js` / `trialTexts.js` / `signatureTexts.js`）；**V7.1 新增 `itemLibrary.js`（公用新增 97）与 `itemLibraryWorld.js`（12 界 × 32 ＝ 384）** → 物品库合计 **504 条**） |
 | `src\ui\` | 面板视图层（10 个 `*Panel.js`，只依赖 `data\` 与 `util\`；V6.2 新增 `GmPanel.js` GM 控制台） |
 | `src\scenes\` / `src\audio\` | Phaser 表现层 / 程序化音效引擎 |
 | `electron\` | 主进程（窗口 / 托盘 / 存档 IO，无游戏逻辑） |
 | `tests\` | 回归（`wcs_regress.mjs`）与手工 CDP 真机脚本；阶段一遗留调试脚本在 `tests\legacy\` |
 | `scripts\` | 工具链（数值生成 / 对账 / 图标 / MD→HTML / 起窗口 / 真机点验） |
-| `docs\` | 过程文档归档（`回执\` / `改动清单\` / `handoff\` / `进度看板-阶段五.md` / `进度看板-阶段六.md`） |
+| `docs\` | 过程文档归档（`回执\` / `改动清单\` / `handoff\` / `进度看板-阶段五.md` / `进度看板-阶段六.md` / `进度看板-阶段七.md`） |
 | `design\` | UI 交互稿（改 UI 前先读；`archive\` 为立绘比对过程图） |
 | `data-source\` | 数值源 CSV（改这里 → `npm run gen:values`） |
 

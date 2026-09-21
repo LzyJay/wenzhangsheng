@@ -10,6 +10,10 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+// V7.1 物品库扩容：公用新增段与 12 界专属库分文件存放（本文件只负责汇总与查询，避免 data 层循环 import）
+import { COMMON_NEW } from './itemLibrary.js'
+import { WORLD_ITEMS, WORLD_ITEM_GROUPS } from './itemLibraryWorld.js'
+
 export const ITEM_TYPE_NAME = {
   pill: '丹药',
   material: '材料',
@@ -30,6 +34,7 @@ export const ITEMS = [
   {
     id: 'pill_pojing',
     name: '破境丹',
+    icon: '破境',
     type: 'pill',
     quality: 'liang',
     // 写明炼制材料（主人 2026-09-17：「丹药的说明也要写清怎么来的，哪两种材料」）
@@ -41,6 +46,7 @@ export const ITEMS = [
   {
     id: 'pill_hujie',
     name: '护劫丹',
+    icon: '护劫',
     type: 'pill',
     quality: 'zhen',
     desc: '渡劫时服下，单道天雷通过率 +10%。九曲灵参炼的「九转护劫丹」为升档：服之 +15%（同一次渡劫只占一格准备位，囊中有它则优先服它）。',
@@ -51,6 +57,7 @@ export const ITEMS = [
   {
     id: 'pill_xisui',
     name: '洗髓丹',
+    icon: '洗髓',
     type: 'pill',
     quality: 'zhen',
     // 明码标价（主人 2026-09-17 / 09-18 要求）：每档的修炼速度与概率都写清，
@@ -66,6 +73,7 @@ export const ITEMS = [
   {
     id: 'pill_yanshou',
     name: '延寿丹',
+    icon: '延寿',
     type: 'pill',
     quality: 'zhen',
     desc: '续命之物：+50 年（高品 +500 年）。俗称「益寿丹」。',
@@ -76,6 +84,7 @@ export const ITEMS = [
   {
     id: 'treasure_zhenlei',
     name: '镇雷法宝',
+    icon: '镇雷',
     type: 'treasure',
     quality: 'zhen',
     desc: '悬于头顶可弱化雷劫：渡劫单雷通过率 +8%。',
@@ -86,6 +95,7 @@ export const ITEMS = [
   {
     id: 'mat_lingcao',
     name: '灵草',
+    icon: '灵草',
     type: 'material',
     quality: 'fan',
     desc: '炼丹主料，产自灵田与秘境。',
@@ -95,6 +105,7 @@ export const ITEMS = [
   {
     id: 'mat_kuang',
     name: '玄铁矿',
+    icon: '玄铁',
     type: 'material',
     quality: 'fan',
     desc: '炼器与法宝强化材料，亦入丹方。',
@@ -104,6 +115,7 @@ export const ITEMS = [
   {
     id: 'mat_yaodan',
     name: '妖丹',
+    icon: '妖丹',
     type: 'material',
     quality: 'liang',
     desc: '妖兽内丹，喂养灵兽与炼制高阶丹药皆需。',
@@ -114,6 +126,7 @@ export const ITEMS = [
     // V3.3.1 追加：秘境 · 古修遗迹的主题产物（主人：古修遗迹不该再复刻玄铁矿）
     id: 'frag_canjuan',
     name: '功法残页',
+    icon: '残页',
     type: 'fragment',
     quality: 'jue',
     desc: '古修遗迹里封存的残卷断页，字迹半蚀。攒够页数可补全一门秘境功法——去「秘境」看残页能换什么。',
@@ -125,6 +138,7 @@ export const ITEMS = [
     // 2.10 追加：成就阶梯（凡/灵/玄/王/皇）发放，外观系统实装后可兑换外观
     id: 'frag_waiguan',
     name: '外观碎片',
+    icon: '外观',
     type: 'fragment',
     quality: 'zhen',
     desc: '成就阶梯的赏赐。攒够可换一身皮囊——不涨战力，只涨旁人多看你一眼。',
@@ -138,6 +152,7 @@ export const ITEMS = [
   {
     id: 'mat_qinglingcao',
     name: '清灵草',
+    icon: '清灵',
     type: 'material',
     quality: 'liang',
     desc: '生于灵田背阴处的低阶灵药，叶背有淡淡清气流转。药性清润不燥，是凝神丹的主料。',
@@ -147,6 +162,7 @@ export const ITEMS = [
   {
     id: 'mat_yaohu',
     name: '妖兽精血',
+    icon: '精血',
     type: 'material',
     quality: 'liang',
     desc: '妖兽心头一滴精血，趁气血方刚时取下最宜。炼丹炼体皆用，喂养灵兽时兑一分水也是大补。',
@@ -156,6 +172,7 @@ export const ITEMS = [
   {
     id: 'mat_wannianru',
     name: '千年灵乳',
+    icon: '灵乳',
     type: 'material',
     quality: 'zhen',
     desc: '石髓千年凝成的一汪乳白灵液，天地精华所钟。上品丹方的药引，一滴可换一城——可惜保不住，见风即散。',
@@ -165,6 +182,7 @@ export const ITEMS = [
   {
     id: 'mat_fuzhi',
     name: '灵纹符纸',
+    icon: '符纸',
     type: 'material',
     quality: 'fan',
     desc: '符修绘符的底纸，以灵植纤维压制而成，自带一缕天然灵纹。符箓线实装前暂作通货流通。',
@@ -176,6 +194,7 @@ export const ITEMS = [
     // 绝品材料，登记待丹方扩容接入（同千年灵乳「先入库后接线」的口径）
     id: 'mat_jiuqu',
     name: '九曲灵参',
+    icon: '九曲',
     type: 'material',
     quality: 'jue',
     desc: '九曲盘结的千年老参，参香入鼻即醒神。破境类丹方的顶级主料——丹房丹方扩容时接入。',
@@ -187,6 +206,7 @@ export const ITEMS = [
     // 走 state.buffs 公共乘区（与凝神丹同机制；可叠加，同符只刷新时长）
     id: 'talisman_jiangling',
     name: '降灵符',
+    icon: '降灵',
     type: 'talisman',
     quality: 'liang',
     desc: '符门引灵入体的初阶灵符。符纸一燃，天地灵气应召而来：现实 5 分钟内修为产出 +10%。',
@@ -199,6 +219,7 @@ export const ITEMS = [
     // 护劫丹升档，同槽位：渡劫准备时囊中有它则优先服高档（+15%）
     id: 'pill_hujie2',
     name: '九转护劫丹',
+    icon: '九转',
     type: 'pill',
     quality: 'jue',
     desc: '以九曲灵参为主料九转炼成的护劫丹上品。渡劫时服下：单道天雷通过率 +15%（普通护劫丹 +10%；同一次渡劫只占一格准备位，囊中有它则优先服它）。',
@@ -209,6 +230,7 @@ export const ITEMS = [
   {
     id: 'pill_ningshen',
     name: '凝神丹',
+    icon: '凝神',
     type: 'pill',
     quality: 'liang',
     desc: '服之凝神静气、灵台清明：现实 10 分钟内修为产出 +15%。清灵草为主料，丹香清苦，入喉微凉。',
@@ -224,6 +246,7 @@ export const ITEMS = [
   {
     id: 'mat_juexingshi',
     name: '觉醒石',
+    icon: '觉醒',
     type: 'material',
     unit: '枚',
     quality: 'zhen',
@@ -237,6 +260,7 @@ export const ITEMS = [
   {
     id: 'mat_shouwangjinghua',
     name: '兽王精华',
+    icon: '兽王',
     type: 'material',
     unit: '滴',
     quality: 'jue',
@@ -257,6 +281,7 @@ export const ITEMS = [
   {
     id: 'mat_leicui',
     name: '雷淬石',
+    icon: '雷淬',
     type: 'material',
     unit: '枚',
     quality: 'liang',
@@ -278,6 +303,7 @@ export const ITEMS = [
   {
     id: 'treasure_jiejing',
     name: '界镜',
+    icon: '界镜',
     type: 'treasure',
     unit: '枚',
     quality: 'zhen',
@@ -290,6 +316,7 @@ export const ITEMS = [
   {
     id: 'talisman_jieyou',
     name: '界游符',
+    icon: '界游',
     type: 'talisman',
     unit: '张',
     quality: 'jue',
@@ -301,11 +328,46 @@ export const ITEMS = [
   }
 ]
 
-/** id → 物品定义 */
-export const ITEM_MAP = ITEMS.reduce((acc, it) => {
+/**
+ * ── 物品库三视图（V7.1）────────────────────────────────────────────────────
+ *   `ITEMS`        基础表 **23 条**（位置与数值冻结；既有测试的条数 / 索引钉都钉在它身上）
+ *   `COMMON_ITEMS` 公用库 **120 条** ＝ 基础表 23 ＋ 公用新增 97（`itemLibrary.js`）
+ *   `WORLD_ITEMS`  各界专属库 **384 条** ＝ 12 界 × 32（`itemLibraryWorld.js`，`worldId` 必填）
+ *   `ALL_ITEMS`    全量 **504 条** ＝ 公用 ＋ 专属
+ * `ITEM_MAP` / `getItem` **走全量**，故丹房 / 宗门商店 / 坊市 / 秘境 / 灵兽 / 世界机制 / 成就
+ * 等既有消费点**无需任何改动**即可解析新物品（老档的 `state.inventory.items` 键位不增不减）。
+ */
+export const COMMON_ITEMS = [...ITEMS, ...COMMON_NEW]
+export const ALL_ITEMS = [...COMMON_ITEMS, ...WORLD_ITEMS]
+
+/** id → 物品定义（全量真源视图；id 唯一性由 `V7.1-自测` 兜住） */
+export const ITEM_MAP = ALL_ITEMS.reduce((acc, it) => {
   acc[it.id] = it
   return acc
 }, {})
+
+/** 世界归属：公用库 → `null`；专属库 → 该界 worldId */
+export function worldOf (item) { return (item && item.worldId) || null }
+
+/** 纯函数：按类型过滤（`type` 省略＝返回全量副本） */
+export function libByType (type, list = ALL_ITEMS) {
+  return type ? list.filter((x) => x.type === type) : list.slice()
+}
+
+/** 纯函数：按世界过滤（`worldId` 省略 / null → 公用库） */
+export function libByWorld (worldId, list = ALL_ITEMS) {
+  return list.filter((x) => worldOf(x) === (worldId || null))
+}
+
+/** 纯函数：库计数（自测与面板脚注共用）· `perWorld` 只统计各界专属库 */
+export function libCounts () {
+  const perWorld = {}
+  for (const x of WORLD_ITEMS) perWorld[x.worldId] = (perWorld[x.worldId] || 0) + 1
+  return { total: ALL_ITEMS.length, common: COMMON_ITEMS.length, base: ITEMS.length, perWorld }
+}
+
+/** 各界专属库本体与分组（转发 `itemLibraryWorld.js` 的常量，便于展示层与自测一处引用） */
+export { WORLD_ITEMS, WORLD_ITEM_GROUPS }
 
 /** 计数器单位：未登记类型回退「份」 */
 export function getUnit (item) {
@@ -315,6 +377,22 @@ export function getUnit (item) {
 /** 取物品定义；未登记的 id 返回一个兜底对象（老档/新道具不至于崩） */
 export function getItem (id) {
   return ITEM_MAP[id] || { id, name: id, type: 'material', quality: 'fan', desc: '未登记物品', from: '—', usable: false }
+}
+
+/** 五类型分栏顺序（行囊网格与自测共用；键序与 ITEM_TYPE_NAME 一致 · V7.1） */
+export const ITEM_TYPE_ORDER = ['pill', 'material', 'treasure', 'talisman', 'fragment']
+
+/**
+ * 可在行囊内直接使用的物品（**唯一真源** · V7.1 使用白名单）。
+ * 值＝行为键，由行囊面板映射到具体执行函数；**未登记者一律不渲染「使用」键**。
+ * ⚠ 这是对旧实现的硬修：旧「使用」键按 id 硬编码且**兜底回落 `H.doReroll()`（灵根重掷）**，
+ *   物品库扩容到 504 条后，未登记物品一旦被点到就会把灵根洗掉——
+ *   改为白名单后，结构上不可能再落到兜底（`BagPanel` 已删除该分支）。
+ */
+export const USE_ACTIONS = {
+  pill_xisui: 'reroll-root',           // 洗髓丹：洗髓重掷（经 helpers 回调触发）
+  pill_ningshen: 'buff-ningshen',      // 凝神丹：现实 10 分钟修为产出 +15%
+  talisman_jiangling: 'buff-jiangling' // 降灵符：现实 5 分钟修为产出 +10%
 }
 
 export default { ITEMS, ITEM_MAP, ITEM_TYPE_NAME, ITEM_UNIT, getItem, getUnit }

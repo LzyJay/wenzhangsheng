@@ -1070,14 +1070,64 @@
       word-break: break-all; line-height: 1.5;
     }
 
-    /* 背包 */
-    .bag-item { display: flex; align-items: flex-start; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-    .bag-item .nm { color: var(--gold-light); font-size: 11.5px; min-width: 62px; }
-    /* 持有量：明确打出「持有 N 枚」，不再只是一个孤零零的 ×5 */
-    .bag-item .qt { min-width: 58px; font-size: 10.5px; color: var(--dim); white-space: nowrap; }
-    .bag-item .qt b { color: var(--gold-light); font-size: 11.5px; margin-right: 2px; font-variant-numeric: tabular-nums; }
-    .bag-item .ds { flex: 1; font-size: 10px; line-height: 1.55; color: var(--text-dim); }
-    .bag-item .ds em { color: rgba(var(--gold-rgb), 0.72); font-style: normal; }
+    /* 背包（V7.1：文本行列表 → 五类型图标网格；旧行列表样式已退役）
+       品质色走 --q（由 BagPanel 逐格写入，取值＝util/quality.js 真源），描边 / 底色 / 文字同源不同透明度 */
+    #bag-list { position: relative; }
+    .bag-sec { margin: 9px 0 5px; }
+    .bag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+    .bag-tile {
+      position: relative; aspect-ratio: 1 / 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; cursor: pointer;
+      border-radius: 8px;
+      border: 1px solid color-mix(in srgb, var(--q) 45%, transparent);
+      background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--q) 16%, transparent), rgba(0, 0, 0, 0.28));
+      color: var(--q);
+      transition: transform 90ms ease, border-color 90ms ease, box-shadow 90ms ease;
+    }
+    .bag-tile:hover, .bag-tile:focus-visible {
+      border-color: color-mix(in srgb, var(--q) 85%, transparent);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--q) 35%, transparent), 0 2px 10px rgba(0, 0, 0, 0.35);
+      transform: translateY(-1px);
+      outline: none;
+    }
+    .bt-ic { font-family: var(--serif); font-size: 13px; letter-spacing: 1px; line-height: 1; }
+    .bt-num {
+      position: absolute; right: -3px; bottom: -3px;
+      min-width: 15px; padding: 0 3px;
+      border-radius: 7px;
+      background: rgba(var(--bg-deep-rgb), 0.92);
+      border: 1px solid rgba(var(--gold-rgb), 0.35);
+      color: var(--gold-light);
+      font-size: 10.5px; line-height: 14px; text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .bt-num.long { font-size: 9.5px; letter-spacing: -0.4px; }
+    .bt-dot {
+      position: absolute; right: 3px; top: 3px;
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--gold-light);
+      box-shadow: 0 0 4px rgba(var(--gold-rgb), 0.9);
+    }
+    /* 悬停详情卡（面板内自绘：随图标定位、横向夹回面板宽度、越界翻到上方） */
+    .bag-card {
+      position: absolute; z-index: 3;
+      width: 190px; max-width: 100%;
+      padding: 8px 9px; border-radius: 8px;
+      border: 1px solid rgba(var(--gold-rgb), 0.42);
+      background: rgba(var(--bg-deep-rgb), 0.97);
+      box-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(6px);
+    }
+    .bag-card .bc-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .bag-card .bc-name { font-size: 12px; font-weight: 600; }
+    .bag-card .bc-q { font-size: 9.5px; padding: 0 4px; border: 1px solid; border-radius: 4px; line-height: 14px; }
+    .bag-card .bc-row { display: flex; gap: 6px; font-size: 10.5px; margin-bottom: 4px; }
+    .bag-card .bc-row .k { color: var(--dim); }
+    .bag-card .bc-row .v { color: var(--gold-light); font-variant-numeric: tabular-nums; }
+    .bag-card .bc-desc { font-size: 10px; line-height: 1.6; color: var(--text-dim); }
+    .bag-card .bc-from { margin-top: 4px; font-size: 10px; line-height: 1.5; color: rgba(var(--gold-rgb), 0.72); }
+    .bag-card .bc-act { margin-top: 6px; display: flex; justify-content: flex-end; }
     .bag-empty { margin-top: 14px; text-align: center; font-size: 11px; color: var(--dim); line-height: 1.9; }
     .bag-note { margin-top: 10px; font-size: 10px; line-height: 1.6; color: var(--dim); }
 
