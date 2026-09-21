@@ -614,6 +614,8 @@ class AchievementSystem {
             got,
             at: a.unlocked[x.id] || 0,
             hidden: c.id === 'hidden',
+            // V7.3：奖励物品一并透出（成就墙图标化用）——未解锁 / 隐藏未达成**不透出**（不剧透）
+            reward: got && !masked ? (x.reward || null) : null,
             // V6.15：身份型成就（`need` 为字符串）进度统一记 0/1 —— 避免面板与断言算出 NaN
             progress: typeof x.need === 'string'
               ? { cur: got ? 1 : 0, need: 1 }

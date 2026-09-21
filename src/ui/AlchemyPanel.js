@@ -8,6 +8,8 @@
  */
 
 import { QUALITY_COLOR } from '../data/events.js'   // 品质色板单一真源（原先本文件函数体内硬编码了一份逐字相同的副本）
+// V7.3：物品图标网格公用渲染器（ui → ui 同层复用；只碰传入宿主）
+import { buildItemGrid, attachItemCard } from './itemTile.js'
 
 export function createAlchemyPanel (ctx) {
   const dom = ctx.dom
@@ -94,18 +96,22 @@ export function createAlchemyPanel (ctx) {
 
       const bi = document.createElement('span')
       bi.className = 'bi'
-      for (let i = 0; i < r.inputsView.length; i++) {
-        const iv = r.inputsView[i]
-        const chip = document.createElement('span')
-        chip.textContent = `${iv.name} ${iv.have}/${iv.n}`
-        if (!iv.enough) {
-          chip.className = 'lack'
-          chip.title = `还差 ${iv.n - iv.have} 份`
-        }
-        bi.appendChild(chip)
-        if (i < r.inputsView.length - 1) bi.append(' · ')
-      }
-      bi.appendChild(document.createElement('br'))
+      // V7.3：输入材料 ＋ 产出丹药改为**图标格**（角标＝「有/需」；缺料格 data-lack=1 → 描边转警戒色）
+      //   与全游物品呈现语言统一；每格的 title / 详情卡仍给全信息（含「还差 N 份」）。
+      const gh = document.createElement('div')
+      gh.className = 'bag-grid-host'
+      buildItemGrid(gh, [
+        ...r.inputsView.map((iv) => ({
+          id: iv.id,
+          badge: `${iv.have}/${iv.n}`,
+          data: { lack: iv.enough ? '0' : '1' },
+          title: iv.enough
+            ? `${iv.name}：${iv.have}/${iv.n}（够）`
+            : `${iv.name}：${iv.have}/${iv.n} —— 还差 ${iv.n - iv.have} 份`
+        })),
+        { id: r.pillId, badge: r.have, title: `产出：${r.name}（现有 ${r.have} 枚）` }
+      ])
+      bi.appendChild(gh)
       const rate = document.createElement('span')
       rate.className = 'rate'
       rate.textContent = `${r.qualityName} ｜ 成丹率 ${Math.round(r.rate * 100)}%`
@@ -122,6 +128,11 @@ export function createAlchemyPanel (ctx) {
       frag.appendChild(row)
     }
     dom.brewList.replaceChildren(frag)
+    // V7.3：丹方图标格的悬停详情卡（本函数每次重绘都会被调 → 只绑一次，避免叠监听）
+    if (dom.brewList.dataset && !dom.brewList.dataset.cardBound) {
+      attachItemCard(dom.brewList)
+      dom.brewList.dataset.cardBound = '1'
+    }
   }
 
   // ── 界面事件绑定 ──────────────────────────────────────────────────────────

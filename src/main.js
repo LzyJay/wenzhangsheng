@@ -67,6 +67,8 @@ import { createBagPanel } from './ui/BagPanel.js'                           // V
 import { createAlchemyPanel } from './ui/AlchemyPanel.js'                   // V3.5.6 拆分：丹房面板（src/ui/ 新层）
 import { createWorldPanel } from './ui/WorldPanel.js'                       // V5.2 世界日常面板（#world-overlay 的 daily 态）
 import { createGmPanel } from './ui/GmPanel.js'                             // V6.2 GM 控制台（#gm-overlay · 开发者工具）
+// V7.3：物品图标网格公用渲染器（装配层渲染「成就奖励」图标化用）
+import { buildItemGrid, attachItemCard } from './ui/itemTile.js'
 import { pickRenderMs } from './data/powersave.js'                          // P4.4 性能与省电：渲染间隔决策（纯函数）
 import { fmtNum } from './util/num.js'                                      // 显示层数值格式化唯一真源（本地别名 fmt 见下）
 
@@ -2876,10 +2878,23 @@ function renderAchvWall (v = achv.view(collectMetrics())) {
       } else if (a.got) {
         row.title = `解锁于 ${fmtDateTime(a.at)}`
       }
+      // V7.3：已得成就的**奖励物品**图标化（有物品奖励才出行；隐藏成就未达成时系统本就不透出）
+      const rw = (a.got && a.reward && Array.isArray(a.reward.items)) ? a.reward.items : []
+      if (rw.length) {
+        const rgh = document.createElement('div')
+        rgh.className = 'bag-grid-host'
+        row.appendChild(rgh)
+        buildItemGrid(rgh, rw.map((m) => ({ id: m.id, count: m.n })))
+      }
       frag.appendChild(row)
     }
   }
   dom.achvWall.replaceChildren(frag)
+  // 悬停详情卡只绑一次（本函数每次重绘都会调，重复绑会叠出 N 份监听）
+  if (dom.achvWall.dataset && !dom.achvWall.dataset.cardBound) {
+    attachItemCard(dom.achvWall)
+    dom.achvWall.dataset.cardBound = '1'
+  }
 }
 
 function renderTitleList () {

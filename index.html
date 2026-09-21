@@ -1159,6 +1159,8 @@
     .bag-card .bc-toggle:hover { color: var(--gold-light); }
     /* V7.3 通用图标网格宿主：给 itemTile 挂的详情卡一个定位基准（卡内自绘，不新增遮罩） */
     .bag-grid-host { position: relative; margin: 4px 0; }
+    /* 缺料格：描边转警戒色（丹方行「有/需」不足时） */
+    .bag-tile[data-lack="1"] { border-color: rgba(216, 120, 92, 0.75); }
     /* 丹方行 */
     .brew-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
     .brew-row .bn { min-width: 56px; font-size: 11.5px; font-weight: 600; }
