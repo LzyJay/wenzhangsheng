@@ -19,6 +19,8 @@
  */
 
 import { MECH } from '../data/worldMechanics.js'   // 纯数据（ui 层允许 import data/）：量级文案口径
+// V7.3：物品图标网格公用渲染器（ui → ui 同层复用；只碰传入宿主）
+import { buildItemGrid, attachItemCard } from './itemTile.js'
 
 export function createWorldPanel (ctx) {
   const dom = ctx.dom
@@ -169,6 +171,9 @@ export function createWorldPanel (ctx) {
           `<span class="dd">${esc(a.note)}` +
           `<br>得：<b>${esc(a.gainText || '—')}</b>${a.costText ? `　　耗：${esc(a.costText)}` : ''}${quotaText}${calcText}${rateText}` +
           `</span>` +
+          `</span>` +
+          // V7.3：产物图标格宿主（有材料的动作才填；空则留空 div，不删节点以免动到事件委托链）
+          `<div class="bag-grid-host" data-world-mats="${esc(a.id)}"></div>` +
           `<span class="ds">${a.ready ? '可施为' : esc(a.disabledReason)}</span>` +
           `<div class="dbtns"><button class="d-btn" data-world-act="${esc(a.id)}"${a.ready ? '' : ' disabled'}` +
           `${a.note ? ` title="${esc(a.note)}"` : ''}>${esc(btnText)}</button></div>` +
@@ -178,6 +183,23 @@ export function createWorldPanel (ctx) {
     // ②-b（V5.3 A4c）换界道具行：界镜 / 界游符（世界系统提供数据，面板只做按钮与文案）
     if (world && typeof world.travelView === 'function') actsHtml += travelRowHtml(world.travelView(now))
     actsHost.innerHTML = actsHtml
+    // V7.3：机制**产物图标化** —— 有材料的动作行下补一行图标格（角标＝份数；悬停浮详情卡）。
+    //   截图/桩环境下 querySelectorAll 可能缺省 → 用可选调用兜底，不因装饰性渲染而报错。
+    let matGrids = 0
+    if (typeof actsHost.querySelectorAll === 'function') {
+      for (const gh of actsHost.querySelectorAll('[data-world-mats]')) {
+        const a = acts.find((x) => x.id === gh.dataset.worldMats)
+        const mats = (a && a.gainMats) || []
+        if (!mats.length) continue
+        buildItemGrid(gh, mats.map((m) => ({ id: m.id, count: m.n })))
+        matGrids++
+      }
+    }
+    // 详情卡只在首次绑一次（本函数每 100ms 会被触发，重复绑会叠出 N 份监听）
+    if (matGrids > 0 && actsHost.dataset && !actsHost.dataset.cardBound) {
+      attachItemCard(actsHost)
+      actsHost.dataset.cardBound = '1'
+    }
 
     // ③ 摩擦行（三种：已在别处生效的展示联动 / 只做标记 / 可开关）
     if (fricHost) {

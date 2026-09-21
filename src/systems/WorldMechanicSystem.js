@@ -294,6 +294,10 @@ class WorldMechanicSystem {
       costText: costs.map((c) => c.text).join(' · '),
       gains,
       gainText: gains.map((g) => g.text).join(' · '),
+      // V7.3：**带 id 的收 / 产物清单**（面板图标化用）——`gains` 只有文案，画不出铭牌格；
+      //   与 `gainText` / `costText` 同源（都出自 `_flowsOf`），不另立账。
+      gainMats: f.gainMats.map((m) => ({ id: m.id, n: m.n | 0 })),
+      costMats: f.costMats.map((m) => ({ id: m.id, n: m.n | 0 })),
       affordable,
       ratePct: f.rate,
       taxPoints: f.taxPoints
