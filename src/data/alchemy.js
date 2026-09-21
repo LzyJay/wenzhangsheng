@@ -89,12 +89,25 @@ export const QUALITY_RATE = { fan: 0.95, liang: 0.90, zhen: 0.80, jue: 0.70, xia
 /** 品阶名（对齐数据模型通用枚举）—— 唯一词表已迁 src/util/quality.js（全站统一短名「凡 / 良 / 珍 / 绝 / 仙」，
  *  原「凡品」式全名词表删除，避免同一套 5 档出现两种档名；成丹率 QUALITY_RATE 仍属本域平衡数值，留在此处）。 */
 
-/** 挂机材料掉落（每秒概率；离线不掉落；⚖ 数值可调） */
+/** 挂机材料掉落（每秒概率；离线不掉落；⚖ 数值可调）
+ *  V7.3（主人 2026-09-22 拍板 D7）：**打坐只出基础材料**——
+ *  ① 下面 3 条为**常驻席**（数值与 V3.5.1 起逐位不变）；
+ *  ② 另加 **2 个「本界基础材料」席**（见 `DROP_WORLD_*`），候选来自 `baseMatPool()`；
+ *  ③ **珍 / 绝 / 仙 档材料一律不进掉落池**（千年灵乳 / 九曲灵参 / 觉醒石 / 兽王精华 /
+ *     界镜 / 界游符 等高档货不再从打坐掉出，改由秘境 / 坊市 / 拍卖 / 机制给出）。
+ *  总速率 0.0137 → **0.0165 / 秒（＋20%）**，与定档表 5 一致。 */
 export const MAT_DROPS = {
   mat_lingcao: { perSec: 0.009 },   // 灵草：期望 ≈ 1 份 / 1.9 分钟
   mat_kuang: { perSec: 0.0035 },    // 玄铁矿：期望 ≈ 1 份 / 4.8 分钟
   mat_yaodan: { perSec: 0.0012 }    // 妖丹：期望 ≈ 1 枚 / 13.9 分钟
 }
+
+/** 本界基础材料席数（V7.3） */
+export const DROP_WORLD_SEATS = 2
+/** 本界基础材料席的单席每秒概率（2 席合计 0.0028 ≈ 原总量 +20%） */
+export const DROP_WORLD_PER_SEC = 0.0014
+/** ⚠ 打坐掉落池的**候选**由 `items.js` 的 `baseMatPool(worldId)` 提供（物品查询归 data/items.js，
+ *  避免 alchemy.js 反向 import items.js 形成环）；本文件只放「掉几席、多快」这两个数。 */
 
 /** 取丹方；未登记返回 null */
 export function getRecipe (id) {
@@ -112,4 +125,8 @@ export function expectedMinutes (r) {
   return Math.round(slowest * 10) / 10
 }
 
-export default { RECIPES, RECIPE_MAP, QUALITY_RATE, MAT_DROPS, getRecipe, expectedMinutes }
+export default {
+  RECIPES, RECIPE_MAP, QUALITY_RATE, MAT_DROPS,
+  DROP_WORLD_SEATS, DROP_WORLD_PER_SEC,
+  getRecipe, expectedMinutes
+}

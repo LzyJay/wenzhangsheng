@@ -25,7 +25,8 @@ import {
   TRIAL_NODES,
   TRIAL_PREPS
 } from '../data/realms.js'
-import { MAT_DROPS } from '../data/alchemy.js'
+import { MAT_DROPS, DROP_WORLD_SEATS, DROP_WORLD_PER_SEC } from '../data/alchemy.js'
+import { baseMatPool } from '../data/items.js'   // V7.3：打坐基础材料池（物品查询归 data/items.js）
 import { trialTextOf } from '../data/trialTexts.js'   // V6.4 批 D1：渡劫八关口的分界文案（叠加，不改 TRIAL_NODES）
 import { LEGACY } from '../data/storyEndings.js'      // V6.8 批 F：转世遗产口径（天逆珠免罚 / 功德折扣的真源）
 // 游戏历（主人 2026-09-17）：调息冷却 / 道伤时长一律用游戏历文案
@@ -227,14 +228,27 @@ class CultivationSystem {
   /**
    * 挂机偶得材料（2.2 丹药线 MVP 产出：天地灵气凝出草木矿晶；离线不掉落）。
    * 掉落只改库存，不打断产出节奏；总量对齐 alchemy.js MAT_DROPS（⚖ 可调）。
+   *
+   * V7.3（D7）：除 3 条**常驻席**外，再掷 **2 个「本界基础材料」席**——
+   *   候选＝`baseMatPool(当前界)`（凡 / 良档；本界无则回落公用池），
+   *   高位材料（珍 / 绝 / 仙）**结构上不可能**从打坐掉出。
    */
   _dropMats (dt) {
     const inv = this.state.inventory
     if (!inv || !inv.items || typeof inv.items !== 'object') return
+    const gain = (id) => {
+      inv.items[id] = (inv.items[id] | 0) + 1
+      this.state.stats.matDrops = (this.state.stats.matDrops | 0) + 1
+    }
     for (const [id, cfg] of Object.entries(MAT_DROPS)) {
-      if (Math.random() < cfg.perSec * dt) {
-        inv.items[id] = (inv.items[id] | 0) + 1
-        this.state.stats.matDrops = (this.state.stats.matDrops | 0) + 1
+      if (Math.random() < cfg.perSec * dt) gain(id)
+    }
+    const pool = baseMatPool((this.state.world && this.state.world.worldId) || null)
+    if (!pool.length) return
+    for (let i = 0; i < DROP_WORLD_SEATS; i++) {
+      if (Math.random() < DROP_WORLD_PER_SEC * dt) {
+        const pick = pool[Math.floor(Math.random() * pool.length)]
+        if (pick) gain(pick.id)
       }
     }
   }

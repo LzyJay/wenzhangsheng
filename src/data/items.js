@@ -13,6 +13,7 @@
 // V7.1 物品库扩容：公用新增段与 12 界专属库分文件存放（本文件只负责汇总与查询，避免 data 层循环 import）
 import { COMMON_NEW } from './itemLibrary.js'
 import { WORLD_ITEMS, WORLD_ITEM_GROUPS } from './itemLibraryWorld.js'
+import { channelsOf } from './itemChannels.js'
 
 export const ITEM_TYPE_NAME = {
   pill: '丹药',
@@ -138,7 +139,7 @@ export const ITEMS = [
     icon: '残页',
     type: 'fragment',
     quality: 'jue',
-    desc: '古修遗迹里封存的残卷断页，字迹半蚀。攒够页数可补全一门秘境功法——去「秘境」看残页能换什么。',
+    desc: '古修遗迹里封存的残卷断页，字迹半蚀。秘境「古修遗迹」可拾得，也能在秘境积分商店兑取（V7.3 口径修正：此前文案所称的「残页兑换」入口系统内并无实现）。',
     from: '秘境 · 古修遗迹（首通与派遣）',
     usable: false,
     useHint: '秘境「古修遗迹」的派遣产出，越深越易得'
@@ -363,6 +364,15 @@ export const ITEMS = [
 export const COMMON_ITEMS = [...ITEMS, ...COMMON_NEW]
 export const ALL_ITEMS = [...COMMON_ITEMS, ...WORLD_ITEMS]
 
+/**
+ * V7.3：**481 条「得自」逐条改写**（一次性、幂等）。
+ * V7.1 入库时全部写占位符 `未接产出（本批只入库）`；V7.3 七渠道接线后，按
+ * `itemChannels.channelsOf` 的规则表**逐条**换成真实途径（类型 × 品质 × 公用/各界）。
+ * ⚠ 只改新增条目（基础表 23 条的 `from` 本就是真实文案，不动）。
+ */
+for (const x of COMMON_NEW) x.from = channelsOf(x)
+for (const x of WORLD_ITEMS) x.from = channelsOf(x)
+
 /** id → 物品定义（全量真源视图；id 唯一性由 `V7.1-自测` 兜住） */
 export const ITEM_MAP = ALL_ITEMS.reduce((acc, it) => {
   acc[it.id] = it
@@ -418,6 +428,28 @@ export function getBrief (item) {
   const cut = d.indexOf('。')
   const first = (cut >= 0 ? d.slice(0, cut) : d).trim()
   return first.length > BRIEF_MAX ? first.slice(0, BRIEF_MAX) + '…' : first
+}
+
+// ── V7.3：打坐「基础材料池」（D7）────────────────────────────────────────────
+/** 打坐掉落允许的品质档：**只有基础档**（凡 / 良）——珍 / 绝 / 仙 一律不可从打坐获得 */
+export const BASE_MAT_QUALITIES = ['fan', 'liang']
+
+/** 公用基础材料池（凡 / 良档材料；实测 14 条） */
+export const BASE_MAT_POOL_COMMON = ALL_ITEMS.filter((x) =>
+  worldOf(x) === null && x.type === 'material' && BASE_MAT_QUALITIES.includes(x.quality))
+
+/**
+ * 取某界的「基础材料池」：本界凡 / 良档材料；该界无基础材料时**回落公用池**
+ * （保证任何界、任何存档都掉得出东西）。
+ * @param {string|null} worldId
+ */
+export function baseMatPool (worldId) {
+  if (worldId) {
+    const own = ALL_ITEMS.filter((x) =>
+      x.worldId === worldId && x.type === 'material' && BASE_MAT_QUALITIES.includes(x.quality))
+    if (own.length) return own
+  }
+  return BASE_MAT_POOL_COMMON
 }
 
 /** 取物品定义；未登记的 id 返回一个兜底对象（老档/新道具不至于崩） */

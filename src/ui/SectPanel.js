@@ -17,6 +17,7 @@
 import { getTechnique } from '../data/techniques.js'   // 纯数据访问器（ui 层允许 import data/）
 import { getItem } from '../data/items.js'
 import { getRealmMeta } from '../data/realms.js'
+import { buildItemGrid, attachItemCard, emptyNote } from './itemTile.js'   // V7.3 公用图标渲染器
 
 export function createSectPanel (ctx) {
   const dom = ctx.dom
@@ -28,6 +29,8 @@ export function createSectPanel (ctx) {
   const H = ctx.helpers
   let pendingSect = ''   // V6.12 批 G4：换宗二次确认的闭包标志（运行期变量，不入存档）
   if (!dom.sectOverlay) return null
+  // V7.3：宗门商店改用图标网格 → 悬停详情卡挂一次（宿主固定，重绘时卡片自愈重建）
+  attachItemCard(dom.sectShop)
 
 // ── 宗门面板（2.4）：信息 / 任务板 / 藏经阁 / 商店 ─────────────────────────
 
@@ -529,36 +532,24 @@ function render () {
     dom.sectLibrary.replaceChildren(frag)
   }
 
-  // ④ 宗门商店
+  // ④ 宗门商店（V7.3：图标网格 —— 角标＝贡献价；点击即兑换，走既有 [data-shop-buy] 委托）
   if (!info.joined) {
-    dom.sectShop.innerHTML = '<div class="bag-empty">入宗后开放</div>'
+    emptyNote(dom.sectShop, '入宗后开放')
   } else {
-    const frag = document.createDocumentFragment()
-    for (const e of sect.shopView()) {
-      const row = document.createElement('div')
-      row.className = 'sect-row'
-
-      const tn = document.createElement('span')
-      tn.className = 'tn'
-      tn.textContent = e.name
-
-      const td = document.createElement('span')
-      td.className = 'td'
-      td.textContent = `${getItem(e.id).desc}`
-
-      const tp = document.createElement('span')
-      tp.className = 'tp dim'
-      tp.textContent = e.discounted ? `${e.cost}→${e.price} 贡献` : `${e.price} 贡献`
-
-      const btn = document.createElement('button')
-      btn.className = 'mini gap'
-      btn.textContent = '兑换'
-      btn.dataset.shopBuy = e.id
-
-      row.append(tn, td, tp, btn)
-      frag.appendChild(row)
+    const list = sect.shopView()
+    if (!list.length) {
+      emptyNote(dom.sectShop, '本界暂无货。')
+    } else {
+      buildItemGrid(dom.sectShop, list.map((e) => {
+        const it = getItem(e.id)
+        return {
+          id: e.id,
+          badge: e.price,
+          data: { shopBuy: e.id },                       // 透出既有委托选择器 [data-shop-buy]
+          title: `${it.name} · ${e.discounted ? `${e.cost}→${e.price}` : e.price} 贡献`
+        }
+      }))
     }
-    dom.sectShop.replaceChildren(frag)
   }
 
   // ⑤ 门下弟子（V5.5：收徒 / 传功 / 派职 / 贡献）
