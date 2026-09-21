@@ -14,6 +14,8 @@
  */
 
 import { getTechnique } from '../data/techniques.js'   // 纯数据访问器（ui 层允许 import data/）
+// V7.3：物品图标网格公用渲染器（ui → ui 同层复用；只碰传入宿主）
+import { buildItemGrid, attachItemCard } from './itemTile.js'
 
 export function createDungeonPanel (ctx) {
   const dom = ctx.dom
@@ -208,7 +210,34 @@ let lastDungeonRender = 0 // 秘境面板轻刷节拍（V3.5.2：时间驱动，
   shopHead.innerHTML = `<span class="dn">积分余额</span><span class="dd"><b>${H.fmt(sv.points)}</b>　` +
     `（招牌首通 +30/条 · 每轮探取 +5/次 · 限时秘境 +20/次 · 试炼塔 30 层 +100）</span>`
   shopFrag.appendChild(shopHead)
-  for (const it of sv.shop) {
+  // V7.3：货架**图标化** —— 有实物的货架项出图标格（详情卡内「兑 换」键）；
+  //   折算型货架项（kind: 'techDup'，功法池满时的灵石折算）无实物，仍走行式。
+  const tiled = sv.shop.filter((it) => it.itemId)
+  const rest = sv.shop.filter((it) => !it.itemId)
+  if (tiled.length) {
+    const host = document.createElement('div')
+    host.className = 'bag-grid-host'
+    shopFrag.appendChild(host)
+    buildItemGrid(host, tiled.map((it) => ({
+      id: it.itemId,
+      badge: it.cost,
+      disabled: !it.affordable,
+      title: `${it.itemName} ×${it.n} · ${it.cost} 积分`
+    })))
+    attachItemCard(host, {
+      actions: (id) => {
+        const e = tiled.find((x) => x.itemId === id)
+        if (!e) return []
+        return [{
+          act: 'shop-buy',
+          label: '兑 换',
+          disabled: !e.affordable,
+          title: `秘境积分 −${e.cost}，得${e.itemName} ×${e.n}`
+        }]
+      }
+    })
+  }
+  for (const it of rest) {
     const row = document.createElement('div')
     row.className = 'dungeon-row' + (it.affordable ? '' : ' locked')
     const dn = document.createElement('span')
@@ -382,6 +411,21 @@ H.onPress(dom.dungeonOverlay, (e) => {
     return
   }
   // 积分商店：积分→物品的**转换**（不是产出），按 EconLedger 口径不入归因
+  // V7.3：图标格详情卡里的「兑 换」键（data-act 走公用件）→ 反查回货架项
+  const scTile = e.target.closest('[data-act="shop-buy"]')
+  if (scTile && !scTile.disabled) {
+    const entry = (system.shopView() || []).find((x) => x.itemId === scTile.dataset.item)
+    if (entry) {
+      const r = system.buyShopItem(entry.id)
+      H.pushLog(r.message, r.ok ? 'ok' : 'info')
+      if (r.ok) {
+        H.persist('dungeon-shop')
+        H.emitFloat({ text: `得 ${r.itemName} ×${r.n}`, kind: 'ok' })
+      }
+    }
+    render()
+    return
+  }
   const sb = e.target.closest('[data-shop-buy]')
   if (sb && !sb.disabled) {
     const res = system.buyShopItem(sb.dataset.shopBuy)

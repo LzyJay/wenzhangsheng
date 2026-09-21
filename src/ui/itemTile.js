@@ -55,7 +55,9 @@ export function buildItemGrid (host, items, opts = {}) {
       if (v != null) tile.dataset[k] = String(v)
     }
     if (x.disabled) tile.disabled = true
-    tile.style.setProperty('--q', col)
+    // 品质色经 CSS 变量驱动；极简 DOM 桩（自测用）没有 setProperty → 回退 cssText
+    if (tile.style && typeof tile.style.setProperty === 'function') tile.style.setProperty('--q', col)
+    else if (tile.style) tile.style.cssText = `--q:${col}`
     const qn = QUALITY_NAME[it.quality] || '凡'
     const badge = x.badge != null ? x.badge : x.count
     tile.setAttribute('aria-label',
