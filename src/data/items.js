@@ -34,6 +34,7 @@ export const ITEMS = [
   {
     id: 'pill_pojing',
     name: '破境丹',
+    brief: '小瓶颈（×3 / ×6 重）冲关必需',
     icon: '破境',
     type: 'pill',
     quality: 'liang',
@@ -46,6 +47,7 @@ export const ITEMS = [
   {
     id: 'pill_hujie',
     name: '护劫丹',
+    brief: '渡劫单雷通过率 +10%',
     icon: '护劫',
     type: 'pill',
     quality: 'zhen',
@@ -57,6 +59,7 @@ export const ITEMS = [
   {
     id: 'pill_xisui',
     name: '洗髓丹',
+    brief: '重掷灵根，只会变好不会变差',
     icon: '洗髓',
     type: 'pill',
     quality: 'zhen',
@@ -73,6 +76,7 @@ export const ITEMS = [
   {
     id: 'pill_yanshou',
     name: '延寿丹',
+    brief: '续命 +50 年（高品 +500 年）',
     icon: '延寿',
     type: 'pill',
     quality: 'zhen',
@@ -84,6 +88,7 @@ export const ITEMS = [
   {
     id: 'treasure_zhenlei',
     name: '镇雷法宝',
+    brief: '持有即生效：渡劫单雷 +8%',
     icon: '镇雷',
     type: 'treasure',
     quality: 'zhen',
@@ -95,6 +100,7 @@ export const ITEMS = [
   {
     id: 'mat_lingcao',
     name: '灵草',
+    brief: '炼丹主料，灵田与秘境皆产',
     icon: '灵草',
     type: 'material',
     quality: 'fan',
@@ -105,6 +111,7 @@ export const ITEMS = [
   {
     id: 'mat_kuang',
     name: '玄铁矿',
+    brief: '炼器与法宝强化材料，亦入丹方',
     icon: '玄铁',
     type: 'material',
     quality: 'fan',
@@ -115,6 +122,7 @@ export const ITEMS = [
   {
     id: 'mat_yaodan',
     name: '妖丹',
+    brief: '妖兽内丹，养兽与高阶丹药皆需',
     icon: '妖丹',
     type: 'material',
     quality: 'liang',
@@ -126,6 +134,7 @@ export const ITEMS = [
     // V3.3.1 追加：秘境 · 古修遗迹的主题产物（主人：古修遗迹不该再复刻玄铁矿）
     id: 'frag_canjuan',
     name: '功法残页',
+    brief: '攒够页数可补全一门秘境功法',
     icon: '残页',
     type: 'fragment',
     quality: 'jue',
@@ -138,6 +147,7 @@ export const ITEMS = [
     // 2.10 追加：成就阶梯（凡/灵/玄/王/皇）发放，外观系统实装后可兑换外观
     id: 'frag_waiguan',
     name: '外观碎片',
+    brief: '成就阶梯赏赐，攒够可换一身皮囊',
     icon: '外观',
     type: 'fragment',
     quality: 'zhen',
@@ -152,6 +162,7 @@ export const ITEMS = [
   {
     id: 'mat_qinglingcao',
     name: '清灵草',
+    brief: '凝神丹主料，灵田背阴处所生',
     icon: '清灵',
     type: 'material',
     quality: 'liang',
@@ -162,6 +173,7 @@ export const ITEMS = [
   {
     id: 'mat_yaohu',
     name: '妖兽精血',
+    brief: '炼丹炼体皆用，喂养灵兽亦大补',
     icon: '精血',
     type: 'material',
     quality: 'liang',
@@ -172,6 +184,7 @@ export const ITEMS = [
   {
     id: 'mat_wannianru',
     name: '千年灵乳',
+    brief: '上品丹方药引，见风即散',
     icon: '灵乳',
     type: 'material',
     quality: 'zhen',
@@ -182,6 +195,7 @@ export const ITEMS = [
   {
     id: 'mat_fuzhi',
     name: '灵纹符纸',
+    brief: '符修绘符底纸，现作通货流通',
     icon: '符纸',
     type: 'material',
     quality: 'fan',
@@ -194,6 +208,7 @@ export const ITEMS = [
     // 绝品材料，登记待丹方扩容接入（同千年灵乳「先入库后接线」的口径）
     id: 'mat_jiuqu',
     name: '九曲灵参',
+    brief: '破境类丹方的顶级主料',
     icon: '九曲',
     type: 'material',
     quality: 'jue',
@@ -206,6 +221,7 @@ export const ITEMS = [
     // 走 state.buffs 公共乘区（与凝神丹同机制；可叠加，同符只刷新时长）
     id: 'talisman_jiangling',
     name: '降灵符',
+    brief: '焚之：现实 5 分钟修为产出 +10%',
     icon: '降灵',
     type: 'talisman',
     quality: 'liang',
@@ -219,6 +235,7 @@ export const ITEMS = [
     // 护劫丹升档，同槽位：渡劫准备时囊中有它则优先服高档（+15%）
     id: 'pill_hujie2',
     name: '九转护劫丹',
+    brief: '渡劫单雷 +15%，护劫丹的升档',
     icon: '九转',
     type: 'pill',
     quality: 'jue',
@@ -230,6 +247,7 @@ export const ITEMS = [
   {
     id: 'pill_ningshen',
     name: '凝神丹',
+    brief: '服之：现实 10 分钟修为产出 +15%',
     icon: '凝神',
     type: 'pill',
     quality: 'liang',
@@ -246,6 +264,7 @@ export const ITEMS = [
   {
     id: 'mat_juexingshi',
     name: '觉醒石',
+    brief: '引动灵兽血脉升档（凡→灵→王→皇）',
     icon: '觉醒',
     type: 'material',
     unit: '枚',
@@ -260,6 +279,7 @@ export const ITEMS = [
   {
     id: 'mat_shouwangjinghua',
     name: '兽王精华',
+    brief: '王品登皇品与化形的门票',
     icon: '兽王',
     type: 'material',
     unit: '滴',
@@ -281,6 +301,7 @@ export const ITEMS = [
   {
     id: 'mat_leicui',
     name: '雷淬石',
+    brief: '青岚小天劫凭证，炼器可掺',
     icon: '雷淬',
     type: 'material',
     unit: '枚',
@@ -303,6 +324,7 @@ export const ITEMS = [
   {
     id: 'treasure_jiejing',
     name: '界镜',
+    brief: '照之重掷当界（每日限购 1 件）',
     icon: '界镜',
     type: 'treasure',
     unit: '枚',
@@ -316,6 +338,7 @@ export const ITEMS = [
   {
     id: 'talisman_jieyou',
     name: '界游符',
+    brief: '焚之换界，当界熟练度清零',
     icon: '界游',
     type: 'talisman',
     unit: '张',
@@ -374,6 +397,29 @@ export function getUnit (item) {
   return (item && item.unit) || ITEM_UNIT[(item && item.type) || 'material'] || ''
 }
 
+/** 一句话简介的字数上限（超出即截断加「…」· V7.2） */
+export const BRIEF_MAX = 46
+
+/**
+ * 取「一句话简介」（V7.2 · 行囊详情卡专用；**截断口径只此一处**，视图层不再自行裁剪）：
+ *   ① 条目自带 `brief` → 直接用（基础表 23 条逐条手写，说明书内容一律留在 `desc` 不动）；
+ *   ② 否则取 `desc` 第一句（到首个「。」为止），**去掉句尾句号**；
+ *   ③ 仍超过 BRIEF_MAX 字 → 截断加「…」；
+ *   ④ 无 `desc` → 回退空串。
+ * ⚠ 481 条新增物品**不逐条填 brief**：其 `desc` 本多为一句，取首句与手写等价；
+ *   少数偏长的条目，卡片上仍可「展开全文」看全（信息不丢）。
+ */
+export function getBrief (item) {
+  if (!item) return ''
+  const b = String(item.brief || '').trim()
+  if (b) return b
+  const d = String(item.desc || '').trim()
+  if (!d) return ''
+  const cut = d.indexOf('。')
+  const first = (cut >= 0 ? d.slice(0, cut) : d).trim()
+  return first.length > BRIEF_MAX ? first.slice(0, BRIEF_MAX) + '…' : first
+}
+
 /** 取物品定义；未登记的 id 返回一个兜底对象（老档/新道具不至于崩） */
 export function getItem (id) {
   return ITEM_MAP[id] || { id, name: id, type: 'material', quality: 'fan', desc: '未登记物品', from: '—', usable: false }
@@ -395,4 +441,4 @@ export const USE_ACTIONS = {
   talisman_jiangling: 'buff-jiangling' // 降灵符：现实 5 分钟修为产出 +10%
 }
 
-export default { ITEMS, ITEM_MAP, ITEM_TYPE_NAME, ITEM_UNIT, getItem, getUnit }
+export default { ITEMS, ITEM_MAP, ITEM_TYPE_NAME, ITEM_UNIT, getItem, getUnit, getBrief }

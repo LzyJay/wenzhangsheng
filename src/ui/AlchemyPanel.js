@@ -78,7 +78,7 @@ export function createAlchemyPanel (ctx) {
       const bn = document.createElement('span')
       bn.className = 'bn'
       bn.textContent = r.name
-      bn.style.color = QUALITY_COLOR[r.quality] || '#e8b96a'
+      bn.style.color = QUALITY_COLOR[r.quality] || QUALITY_COLOR.fan   // 兜底取真源凡档（V7.2 收敛残留硬编码 hex）
       bn.title = `${r.qualityName} · 成丹率 ${Math.round(r.rate * 100)}% —— ${r.desc}`
       if (r.needed) {
         const mark = document.createElement('span')

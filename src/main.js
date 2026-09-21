@@ -257,6 +257,7 @@ const dom = {
   btnImport2: el('btn-import2'),
   btnReset2: el('btn-reset2'),
   bagList: el('bag-list'),
+  bagTabs: el('bag-tabs'),          // V7.2 行囊类型页签宿主（键位与种数由 BagPanel 渲染；事件委托挂面板内）
   bagNote: el('bag-note'),
   bagOverlay: el('bag-overlay'),
   btnBagClose: el('btn-bag-close'),

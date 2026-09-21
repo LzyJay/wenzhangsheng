@@ -1146,6 +1146,17 @@
       border-color: rgba(var(--gold-rgb), 0.30);
       background: rgba(var(--gold-rgb), 0.10);
     }
+    /* V7.2 行囊类型页签：六键会换行；空类置灰不可点；键右侧小字＝该类**持有种数** */
+    .bag-tabs.wrap { flex-wrap: wrap; row-gap: 2px; padding-bottom: 4px; }
+    .bag-tab:disabled { opacity: 0.34; cursor: not-allowed; }
+    .bag-tab .cnt { margin-left: 4px; font-size: 9.5px; letter-spacing: 0; opacity: 0.7;
+                    font-variant-numeric: tabular-nums; }
+    /* V7.2 详情卡：默认只给一句话简介，长说明点「展开全文」后就地铺开
+       （卡内自绘 → 不新增遮罩、不碰拖拽区与 Esc 链，`.ov` 仍 11） */
+    .bag-card .bc-desc.open { border-left: 2px solid rgba(var(--gold-rgb), 0.28); padding-left: 6px; }
+    .bag-card .bc-toggle { margin-top: 4px; font-size: 9.5px; line-height: 1.4; cursor: pointer;
+                           color: rgba(var(--gold-rgb), 0.85); user-select: none; }
+    .bag-card .bc-toggle:hover { color: var(--gold-light); }
     /* 丹方行 */
     .brew-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
     .brew-row .bn { min-width: 56px; font-size: 11.5px; font-weight: 600; }
@@ -1505,6 +1516,9 @@
       <span class="spacer"></span>
       <button class="ov-close" id="btn-bag-close" title="关闭（Esc）">×</button>
     </div>
+    <!-- V7.2 按类型浏览：全部 / 丹药 / 材料 / 法宝 / 符箓 / 残页（键位与种数由 BagPanel 渲染）
+         只在本遮罩内加区块，不加遮罩 → `.ov` 总数仍 11 -->
+    <div class="bag-tabs wrap" id="bag-tabs"></div>
     <div class="ov-body">
       <div id="bag-list"></div>
       <div class="bag-note" id="bag-note"></div>

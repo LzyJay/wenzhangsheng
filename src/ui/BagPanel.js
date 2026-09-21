@@ -17,10 +17,19 @@
  *   ⑤ **使用白名单**：只有 `USE_ACTIONS` 里登记过的物品才在详情卡内给「使用」键。
  *      ⚠ 旧实现是按 id 硬编码 + **兜底回落到灵根重掷（`doReroll`）**——物品库扩容到 504 条后，
  *      未登记物品一旦被点到就会把灵根洗掉；白名单化后该分支**已删除**，结构上不可能再落到兜底。
+ *
+ * V7.2 改版（主人 2026-09-22 拍板）：
+ *   ⑥ **类型页签**：顶部「全部 ｜ 丹药 ｜ 材料 ｜ 法宝 ｜ 符箓 ｜ 残页」——一次只渲染一类，
+ *      键上带该类**持有种数**；种数为 0 的类置灰不可点；默认「全部」（仍按五类分栏）。
+ *      `curType` 是**本面板内存态**（不落存档 → 不动 SaveSystem / SCHEMA_VERSION / 迁移链）。
+ *      页签键位每次渲染重建，故切换走 **#bag-tabs 上的事件委托**（逐键绑会漏解绑）。
+ *   ⑦ **详情卡精炼**：默认只显 `getBrief(it)` 一句话简介（截断口径唯一在 data 层），
+ *      长说明收进「展开全文 / 收起」；展开态**按物品 id 记忆**（切到别的物品自动收起），
+ *      展开 / 收起后正文高度变化 → 必须重跑 `placeCard()` 重新定位。
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
-import { getItem, getUnit, ITEM_TYPE_ORDER, ITEM_TYPE_NAME, USE_ACTIONS } from '../data/items.js'
+import { getItem, getUnit, getBrief, ITEM_TYPE_ORDER, ITEM_TYPE_NAME, USE_ACTIONS } from '../data/items.js'
 import { QUALITY_KEYS, QUALITY_NAME, QUALITY_COLOR } from '../util/quality.js'
 
 export function createBagPanel (ctx) {
@@ -97,6 +106,10 @@ export function createBagPanel (ctx) {
   // ══ 详情卡（面板内自绘；挂 #bag-list，绝对定位随图标）════════════════════════
   let cardEl = null
   let cardTimer = null
+  let cardTile = null        // 卡锚定的图标（展开 / 收起后正文高度变了要重跑定位）
+  let cardId = null          // 当前卡展示的物品 id
+  let cardCount = 0
+  let descOpenFor = null     // V7.2 全文展开态：**按物品 id 记忆**（换物品自动收起）
 
   function ensureCard () {
     if (cardEl && cardEl.isConnected) return cardEl
@@ -106,12 +119,21 @@ export function createBagPanel (ctx) {
     // hover 桥接：鼠标从图标移到卡片（跨过 6px 间隙）期间不能收卡，否则卡内「使用」永远点不到
     cardEl.addEventListener('mouseenter', () => { if (cardTimer) { clearTimeout(cardTimer); cardTimer = null } })
     cardEl.addEventListener('mouseleave', () => scheduleCardHide())
-    // 卡内「使用」：pointerdown（与项目「按下即响应」口径一致；重绘也不丢这一次点击）
+    // 卡内两键一律走 pointerdown（与项目「按下即响应」口径一致；重绘也不丢这一次点击）
+    //   ① 使用 ② 展开全文 / 收起（V7.2）
     cardEl.addEventListener('pointerdown', (e) => {
-      const btn = e.target.closest('[data-act="use-item"]')
-      if (!btn || btn.disabled) return
+      const use = e.target.closest('[data-act="use-item"]')
+      if (use) {
+        if (use.disabled) return
+        e.stopPropagation()
+        if (useItemById(use.dataset.item)) render()   // 用掉立刻重绘，角标同步减一
+        return
+      }
+      const tg = e.target.closest('[data-act="toggle-desc"]')
+      if (!tg) return
       e.stopPropagation()
-      if (useItemById(btn.dataset.item)) render()   // 用掉立刻重绘，角标同步减一
+      descOpenFor = descOpenFor === cardId ? null : cardId
+      paintCard()                                     // 正文高度变了，paintCard 内会重跑定位
     })
     return cardEl
   }
@@ -134,27 +156,43 @@ export function createBagPanel (ctx) {
     cardEl.style.top = `${Math.round(top)}px`
   }
 
-  function showCard (tile, id, count) {
-    if (cardTimer) { clearTimeout(cardTimer); cardTimer = null }
-    const it = getItem(id)
+  /** 重建卡内内容（showCard 与「展开 / 收起」共用；按 descOpenFor 决定简体还是全文 · V7.2） */
+  function paintCard () {
+    if (cardId == null) return
+    const it = getItem(cardId)
     const col = QUALITY_COLOR[it.quality] || QUALITY_COLOR.fan
     const qn = QUALITY_NAME[it.quality] || '凡'
     const unit = getUnit(it)
-    const usable = !!USE_ACTIONS[id]
+    const brief = getBrief(it)                              // 一句话简介（截断口径在 data 层）
+    const full = String(it.desc || '').trim()
+    const hasMore = !!full && full !== brief                // 简介 ≠ 全文才给展开入口
+    const open = hasMore && descOpenFor === cardId
     const el = ensureCard()
-    el.dataset.for = id
+    el.dataset.for = cardId
     el.innerHTML =
       `<div class="bc-head"><span class="bc-name" style="color:${col}">${it.name}</span>` +
       `<span class="bc-q" style="color:${col};border-color:${col}">${qn}</span></div>` +
-      `<div class="bc-row"><span class="k">持有</span><span class="v">${count} ${unit}</span></div>` +
-      `<div class="bc-desc">${it.desc}</div>` +
+      `<div class="bc-row"><span class="k">持有</span><span class="v">${cardCount} ${unit}</span></div>` +
+      `<div class="bc-desc${open ? ' open' : ''}">${open ? full : brief}</div>` +
+      (hasMore
+        ? `<div class="bc-toggle" data-act="toggle-desc" role="button" tabindex="0">${open ? '收 起 ▲' : '展开全文 ▾'}</div>`
+        : '') +
       (it.from ? `<div class="bc-from">得自 ${it.from}</div>` : '') +
-      (usable
-        ? `<div class="bc-act"><button class="mini" data-act="use-item" data-item="${id}"${H.rootBusy() ? ' disabled' : ''} title="${it.useHint || ''}">使 用</button></div>`
+      (USE_ACTIONS[cardId]
+        ? `<div class="bc-act"><button class="mini" data-act="use-item" data-item="${cardId}"${H.rootBusy() ? ' disabled' : ''} title="${it.useHint || ''}">使 用</button></div>`
         : '')
     if (!el.parentNode) dom.bagList.appendChild(el)
     el.hidden = false
-    placeCard(tile)
+    if (cardTile) placeCard(cardTile)                       // 正文高度可能已变（展开），必须重定位
+  }
+
+  function showCard (tile, id, count) {
+    if (cardTimer) { clearTimeout(cardTimer); cardTimer = null }
+    if (descOpenFor && descOpenFor !== id) descOpenFor = null   // 换物品自动收起旧展开态
+    cardTile = tile
+    cardId = id
+    cardCount = count
+    paintCard()
   }
 
   function hideCard () { if (cardEl) cardEl.hidden = true }
@@ -165,8 +203,45 @@ export function createBagPanel (ctx) {
   }
 
   // ══ 渲染 ═══════════════════════════════════════════════════════════════════
-  /** 内容签名：持有集合与数量未变即不重绘（面板每 100ms 会被 render 触发，504 条库也不抖） */
+  /** 内容签名：**当前类** + 持有集合与数量未变即不重绘（面板每 100ms 会被 render 触发，504 条库也不抖） */
   let lastSig = ''
+  /** 页签签名：当前类 + 各类种数未变即不重建键位（避免 100ms 级 DOM churn） */
+  let lastTabSig = ''
+  /** 当前浏览类：`'all'` 或五类型之一（V7.2 · 本面板内存态，**不落存档**） */
+  let curType = 'all'
+
+  /** 各类型的**持有种数**（≠ 持有数量；与页签上的小字同口径） */
+  function typeCounts (held) {
+    const c = {}
+    for (const [id] of held) {
+      const t = getItem(id).type || 'material'
+      c[t] = (c[t] || 0) + 1
+    }
+    return c
+  }
+
+  /** 页签行：全部 ＋ 五类型；键上小字＝该类持有种数，种数为 0 的类置灰不可点 */
+  function renderTabs (counts) {
+    if (!dom.bagTabs) return
+    const frag = document.createDocumentFragment()
+    for (const k of ['all', ...ITEM_TYPE_ORDER]) {
+      const n = k === 'all' ? Object.values(counts).reduce((a, b) => a + b, 0) : (counts[k] || 0)
+      const label = k === 'all' ? '全部' : (ITEM_TYPE_NAME[k] || k)
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = 'bag-tab' + (curType === k ? ' on' : '')
+      b.dataset.bagtab = k
+      b.disabled = n <= 0                                     // 空类置灰不可点
+      b.title = `${label}：持有 ${n} 种${n ? '' : '（暂无，故不可点）'}`
+      b.textContent = label
+      const cnt = document.createElement('span')
+      cnt.className = 'cnt'
+      cnt.textContent = String(n)
+      b.appendChild(cnt)
+      frag.appendChild(b)
+    }
+    dom.bagTabs.replaceChildren(frag)
+  }
 
   function render () {
     if (!state) return
@@ -176,6 +251,13 @@ export function createBagPanel (ctx) {
       const c = n | 0
       if (c > 0) held.push([id, c])
     }
+    const counts = typeCounts(held)
+
+    // 当前类被用空（例如刚用掉最后一枚丹）→ 回到「全部」，避免停在空栏干瞪眼
+    if (curType !== 'all' && !(counts[curType] > 0)) curType = 'all'
+
+    const tabSig = `${curType}|${ITEM_TYPE_ORDER.map((t) => counts[t] || 0).join(',')}`
+    if (tabSig !== lastTabSig) { lastTabSig = tabSig; renderTabs(counts) }
 
     if (dom.bagNote) {
       dom.bagNote.textContent = '数量角标＝持有数；鼠标移到图标上看详情，可用的丹药 / 符箓在详情卡里点「使用」。'
@@ -193,14 +275,16 @@ export function createBagPanel (ctx) {
       return
     }
 
-    const sig = held.map(([id, c]) => `${id}:${c}`).join(',')
+    const sig = `${curType}|` + held.map(([id, c]) => `${id}:${c}`).join(',')
     if (sig === lastSig && dom.bagList.querySelector('.bag-grid')) return
     lastSig = sig
     hideCard()   // 重绘前收卡，避免卡片挂在被移除的节点上
 
     const frag = document.createDocumentFragment()
     let kinds = 0
-    for (const type of ITEM_TYPE_ORDER) {
+    // 「全部」走五栏；选中某类时只出该类一栏（且不再重复分组头——页签已指示当前类，省一行高度）
+    const types = curType === 'all' ? ITEM_TYPE_ORDER : [curType]
+    for (const type of types) {
       // 同栏内按品质降序（仙 → 凡），同品质按 id 稳定排序
       const list = held
         .filter(([id]) => (getItem(id).type || 'material') === type)
@@ -211,10 +295,12 @@ export function createBagPanel (ctx) {
       if (!list.length) continue
       kinds += list.length
 
-      const head = document.createElement('div')
-      head.className = 'tech-sec bag-sec'                        // 复用既有分组头范式
-      head.textContent = `${ITEM_TYPE_NAME[type] || type} · ${list.length} 种`
-      frag.appendChild(head)
+      if (curType === 'all') {
+        const head = document.createElement('div')
+        head.className = 'tech-sec bag-sec'                      // 复用既有分组头范式
+        head.textContent = `${ITEM_TYPE_NAME[type] || type} · ${list.length} 种`
+        frag.appendChild(head)
+      }
 
       const grid = document.createElement('div')
       grid.className = 'bag-grid'
@@ -254,9 +340,24 @@ export function createBagPanel (ctx) {
 
     dom.bagList.replaceChildren(frag)
     if (dom.bagNote) {
-      dom.bagNote.textContent = `持有 ${kinds} 种 · 按「${ITEM_TYPE_ORDER.map((t) => ITEM_TYPE_NAME[t]).join(' / ')}」分栏；` +
-        '数量角标＝持有数；鼠标移到图标上看详情，可用的丹药 / 符箓在详情卡里点「使用」。'
+      dom.bagNote.textContent = (curType === 'all'
+        ? `持有 ${kinds} 种 · 按「${ITEM_TYPE_ORDER.map((t) => ITEM_TYPE_NAME[t]).join(' / ')}」分栏；点上方页签可只看一类。`
+        : `${ITEM_TYPE_NAME[curType] || curType} · 持有 ${kinds} 种；点页签「全部」看其余分类。`) +
+        '数量角标＝持有数；鼠标移到图标上看详情（默认一句话简介，点「展开全文」看细节），' +
+        '可用的丹药 / 符箓在详情卡里点「使用」。'
     }
+  }
+
+  // ── V7.2 页签切换：**事件委托**挂一次（键位每次渲染都重建，逐键绑会漏解绑 / 重复绑）──
+  if (dom.bagTabs) {
+    dom.bagTabs.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-bagtab]')
+      if (!b || b.disabled || b.dataset.bagtab === curType) return
+      curType = b.dataset.bagtab
+      descOpenFor = null
+      hideCard()
+      render()
+    })
   }
 
   function open () {
