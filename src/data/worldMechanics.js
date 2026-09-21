@@ -54,7 +54,7 @@ import { stoneHourly } from './events.js'
 import { gameDaysToMs, periodKeyOf, msToNextPeriod } from './gametime.js'
 import { getLevelInfo } from './realms.js'
 import { getWorld } from './worlds.js'
-import { getItem } from './items.js'
+import { getItem, ITEM_MAP } from './items.js'
 
 /** 材料 → 当量 h（倒数即秘境 matPerH；见文件头「量级口径」） */
 export const MAT_H = {
@@ -684,11 +684,29 @@ export function travelGiftH (g) {
 }
 
 /** 材料清单 → 当量 h */
+/** 品质档当量（V7.3 · 新增材料的当量唯一来源；**既有 5 条仍以 `MAT_H` 为准**）
+ *  锚定（定档表 §十一 表 1，主人已审）：凡 0.4（介于灵草 1/3 与玄铁 1/2 之间）· 良 1.0（＝妖丹）
+ *  · 珍 2.5 · 绝 6.0 · 仙 15.0。
+ *  ⚠ 仙档 15 h/份 量级极大（1 份 ≈ 1.5 天机制额度）→ 仙档材料**不进**打坐与机制日产出，
+ *    只走秘境高档槽（极低频）／拍卖／坊市公用池。 */
+export const MAT_H_BY_QUALITY = { fan: 0.4, liang: 1.0, zhen: 2.5, jue: 6.0, xian: 15.0 }
+
+/** 取某材料的当量 h/份：既有 `MAT_H` 覆盖优先，其余按品质档。
+ *  ⚠ **未登记 id 一律回 0**（直查 `ITEM_MAP`，不用会兜底的 `getItem`）——`V5.2.2-自测`
+ *  有「未登记 id 仍折 0（不误伤）」的守卫，回退成凡档会破坏该口径。 */
+export function matHOf (id) {
+  const h = MAT_H[id]
+  if (h != null) return h
+  const it = ITEM_MAP[id]
+  if (!it) return 0
+  return MAT_H_BY_QUALITY[it.quality] || 0
+}
+
 export function matsHOf (mats) {
   let h = 0
   for (const m of Array.isArray(mats) ? mats : []) {
     if (!m) continue
-    h += (MAT_H[m.id] || 0) * (Number(m.n) || 0)
+    h += matHOf(m.id) * (Number(m.n) || 0)
   }
   return h
 }

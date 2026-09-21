@@ -319,6 +319,34 @@ export function weeklySignatureId (weekKey) {
 }
 
 /**
+ * 材料三档槽（V7.3 D5 · 主人 2026-09-22 定案）
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 口径（定档表 §十一 表 2，主人已审过）：
+ *   · **每洞天 3 档槽**（22 洞天 × 3 ＝ **66 槽**），每档**固定当量**、材料从**本界材料池**按档抽：
+ *       low  凡良档 → 本界 `fan` / `liang` 材料
+ *       mid  珍  档 → 本界 `zhen` 材料
+ *       high 绝仙档 → 本界 `jue` / `xian` 材料
+ *   · 三档合计 **1.20 h/h**（原单材料位约 1.00 h/h → **+20%**，与定档表一致）；
+ *   · 份数 ＝ 当量 ÷ 该材料的当量（`matHOf`），**小数部分按材料累积**（否则 0.033 份/h 会被抹成 0）；
+ *   · **low 档沿用洞天既有 `material`**（`matPerH` 字段保留为「历史值·不再参与产出」，见 V5.4-自测口径同步）。
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+export const MAT_SLOTS = [
+  { tier: 'low', name: '凡良', hPerH: 0.30, qualities: ['fan', 'liang'] },
+  { tier: 'mid', name: '珍', hPerH: 0.40, qualities: ['zhen'] },
+  { tier: 'high', name: '绝仙', hPerH: 0.50, qualities: ['jue', 'xian'] }
+]
+
+/** 槽位总数（22 洞天 × 3 档 ＝ 66） */
+export const DUNGEON_SLOT_TOTAL =
+  (RESOURCE_DUNGEONS.length + SIGNATURE_DUNGEONS.length) * MAT_SLOTS.length
+
+/** low 档的「份/h」：由当量 ÷ 该洞天主材料的当量得出（**不再读 `matPerH` 历史值**） */
+export function slotPartsPerH (d, matH) {
+  return matH > 0 ? MAT_SLOTS[0].hPerH / matH : 0
+}
+
+/**
  * 招牌秘境积分商店货架（V5.1）
  *   只卖**现有物品**（不新增物品条目）；价格 = round(entry.h × SIGNATURE.pointsPerH)。
  *   h 为「当量」口径：与秘境产出同一把尺子（1 h 当量 ≈ 该物品的收益量级）。

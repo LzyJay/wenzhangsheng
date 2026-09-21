@@ -452,6 +452,19 @@ export function baseMatPool (worldId) {
   return BASE_MAT_POOL_COMMON
 }
 
+/**
+ * V7.3：取某界**指定品质档**的材料池（秘境三档槽 / 世界机制第 2 材料位用）。
+ * @param {string|null} worldId
+ * @param {string[]} qualities 允许的品质档，如 `['zhen']` / `['jue','xian']`
+ * @returns {Array} 该界材料条目（未抽定世界或该界无对应档材料 → 空数组）
+ */
+export function worldMatPool (worldId, qualities) {
+  const q = Array.isArray(qualities) ? qualities : []
+  if (!worldId || !q.length) return []
+  return ALL_ITEMS.filter((x) =>
+    x.worldId === worldId && x.type === 'material' && q.includes(x.quality))
+}
+
 /** 取物品定义；未登记的 id 返回一个兜底对象（老档/新道具不至于崩） */
 export function getItem (id) {
   return ITEM_MAP[id] || { id, name: id, type: 'material', quality: 'fan', desc: '未登记物品', from: '—', usable: false }

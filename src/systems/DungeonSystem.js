@@ -37,12 +37,15 @@ import {
   towerPower, towerFirstClearH, towerWeeklyH, towerMilestone,
   getDungeon, getDepth, slotCountFor, dispatchHours, techPoolOf, rollSurprise,
   getSignature, sigFirstClearH, sigCycleH, sigCycleKey, sigCycleMsToNext,
-  weeklySignatureId, getShopItem, shopCostOf
+  weeklySignatureId, getShopItem, shopCostOf,
+  MAT_SLOTS, DUNGEON_SLOT_TOTAL, slotPartsPerH          // V7.3：秘境三档材料槽（22 洞天 × 3 ＝ 66 槽）
 } from '../data/dungeon.js'
 import { getLevelInfo, getRealmMeta, REALM_META } from '../data/realms.js'
 // V5.1 招牌秘境：十二界本源映射（data→data 直读，纯函数；不 import 任何 system）
 import { signatureStateOf, originSignaturesOf } from '../data/worlds.js'
-import { getItem } from '../data/items.js'
+import { getItem, worldMatPool } from '../data/items.js'
+// V7.3：当量尺唯一来源（既有 MAT_H 覆盖优先，其余按品质档）
+import { matHOf } from '../data/worldMechanics.js'
 import { signatureFirstTextOf } from '../data/signatureTexts.js'   // V6.4 批 D2：招牌首通叙事（叠加，不改 dungeon.js）
 import { LEGACY } from '../data/storyEndings.js'   // V6.8 批 F：天工「傀儡位」跨世位上限（真源在 data 层）
 import { stoneHourly } from '../data/events.js'
@@ -149,9 +152,67 @@ class DungeonSystem {
     return Math.max(0, Math.round(stoneHourly(this.level) * h))
   }
 
-  /** 当量 h → 主题材料份数 */
+  /** 当量 h → **低档槽**（沿用洞天既有 `material`）份数
+   *  V7.3：口径改由 `MAT_SLOTS[0].hPerH`（0.30 h/h）决定 —— `d.matPerH` 历史值**不再参与产出**
+   *  （字段保留以便追溯；三档合计 1.20 h/h ＝ 原单材料位约 1.00 h/h 的 +20%，见定档表 §十一 表 2）。 */
   hToMats (d, h) {
-    return Math.max(0, Math.round(h * d.matPerH))
+    const per = slotPartsPerH(d, matHOf(d.material))
+    return Math.max(0, Math.round(h * per))
+  }
+
+  // ── V7.3 三档材料槽（22 洞天 × 3 档 ＝ 66 槽）──────────────────────────────
+
+  /** 小数份余数累积（懒建 `state.dungeonState.matFrac`，老档自动补 → 零迁移）。
+   *  ⚠ 必需：高档槽 0.033 份/h 若走 `Math.round` 会被抹成 0，永远产不出东西。 */
+  get _matFrac () {
+    const ds = this.ds
+    if (!ds.matFrac || typeof ds.matFrac !== 'object') ds.matFrac = {}
+    return ds.matFrac
+  }
+
+  /** 某洞天某档槽当前产出的材料（按「界 ＋ 洞天 ＋ 档」定种子 → 同一存档下稳定；
+   *  low 档沿用洞天既有主材料，保证既有文案与账目口径不漂） */
+  slotMaterialOf (d, tier) {
+    const slot = MAT_SLOTS.find((s) => s.tier === tier)
+    if (!slot) return null
+    if (tier === 'low') return getItem(d.material)
+    const wid = (this.state.world && this.state.world.worldId) || null
+    if (!wid) return null                                  // 未抽定世界 → 中/高档空置
+    const pool = worldMatPool(wid, slot.qualities)
+    if (!pool.length) return null                          // 本界无该档材料 → 空置
+    let h = 2166136261
+    const seed = `${wid}|${d.id}|${tier}`
+    for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) }
+    return pool[(h >>> 0) % pool.length]
+  }
+
+  /** 三档槽产出明细（份数含小数累积；`skipLow` 用于低档已由既有主材料路径发放的场景） */
+  slotGrants (d, h, opts = {}) {
+    const out = []
+    const frac = this._matFrac
+    for (const s of MAT_SLOTS) {
+      if (opts.skipLow && s.tier === 'low') continue
+      const it = this.slotMaterialOf(d, s.tier)
+      if (!it) continue
+      const raw = (s.hPerH * h) / matHOf(it.id) + (frac[it.id] || 0)
+      const n = Math.floor(raw)
+      frac[it.id] = raw - n
+      if (n > 0) out.push({ id: it.id, name: it.name, tier: s.tier, tierName: s.name, n })
+    }
+    return out
+  }
+
+  /** 结算三档槽（入行囊），返回明细数组 */
+  grantSlotMats (d, h, opts = {}) {
+    const grants = this.slotGrants(d, h, opts)
+    for (const g of grants) this.items[g.id] = (this.items[g.id] | 0) + g.n
+    return grants
+  }
+
+  /** 槽产出文案（`，另得 玄参 +2（凡良）`；无产出则空串） */
+  slotText (grants) {
+    if (!grants || !grants.length) return ''
+    return '，另得 ' + grants.map((g) => `${g.name} +${g.n}（${g.tierName}）`).join('、')
   }
 
   // ── 功法残卷（V3.3.1：秘境也是功法的正经来源）────────────────────────────
@@ -416,7 +477,8 @@ class DungeonSystem {
     const stones = sup.stones
     const mats = sup.mats
     this.state.resources.stones += stones
-    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats   // 低档槽（沿用主材料）
+    const slotMats = this.grantSlotMats(d, h, { skipLow: true })                 // V7.3：中 / 高档槽
     const drop = this._rollTechDrop(run.dungeonId, run.depth)
     const techText = drop ? `，拾得残卷《${drop.name}》` : ''
     const supText = sup.note ? `　${sup.note}` : ''
@@ -474,7 +536,8 @@ class DungeonSystem {
     const stones = sup.stones
     const mats = sup.mats
     this.state.resources.stones += stones
-    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats   // 低档槽（沿用主材料）
+    const slotMats = this.grantSlotMats(d, h, { skipLow: true })                 // V7.3：中 / 高档槽
     const drop = this._rollTechDrop(run.dungeonId, run.depth)
     const techText = drop ? `，拾得残卷《${drop.name}》` : ''
     const supText = sup.note ? `　${sup.note}` : ''
@@ -550,7 +613,8 @@ class DungeonSystem {
     const stones = this.hToStones(h)
     const mats = this.hToMats(d, h)
     this.state.resources.stones += stones
-    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats   // 低档槽（沿用主材料）
+    const slotMats = this.grantSlotMats(d, h, { skipLow: true })                 // V7.3：中 / 高档槽
     const points = SIGNATURE.points.firstClear
     this._addPoints(points)
     s[id] = { first: true, cycleKey: sigCycleKey(now) }
@@ -582,7 +646,8 @@ class DungeonSystem {
     const stones = this.hToStones(h)
     const mats = this.hToMats(d, h)
     this.state.resources.stones += stones
-    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats   // 低档槽（沿用主材料）
+    const slotMats = this.grantSlotMats(d, h, { skipLow: true })                 // V7.3：中 / 高档槽
     const points = SIGNATURE.points.cycle
     this._addPoints(points)
     cur.cycleKey = key
@@ -590,7 +655,7 @@ class DungeonSystem {
     return {
       ok: true, kind: 'sig-cycle', id, dungeon: d, state: e.state, mul: e.mul, h, stones, mats,
       matId: d.material, matName: getItem(d.material).name, points,
-      message: `${d.name}本轮探获：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。`
+      message: `${d.name}本轮探获：灵石 +${stones}，${getItem(d.material).name} +${mats}${this.slotText(slotMats)}，秘境积分 +${points}。`
     }
   }
 
@@ -631,7 +696,8 @@ class DungeonSystem {
     const stones = this.hToStones(h)
     const mats = this.hToMats(d, h)
     this.state.resources.stones += stones
-    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats
+    if (mats > 0) this.items[d.material] = (this.items[d.material] | 0) + mats   // 低档槽（沿用主材料）
+    const slotMats = this.grantSlotMats(d, h, { skipLow: true })                 // V7.3：中 / 高档槽
     const points = SIGNATURE.points.weekly
     this._addPoints(points)
     this.sigState.weekly = { week: v.week, id: v.id }
@@ -639,7 +705,7 @@ class DungeonSystem {
     return {
       ok: true, kind: 'sig-weekly', id: v.id, dungeon: d, h, stones, mats,
       matId: d.material, matName: getItem(d.material).name, points,
-      message: `限时秘境「${d.name}」已探（产出 ×${SIGNATURE.weeklyMul}）：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。`
+      message: `限时秘境「${d.name}」已探（产出 ×${SIGNATURE.weeklyMul}）：灵石 +${stones}，${getItem(d.material).name} +${mats}${this.slotText(slotMats)}，秘境积分 +${points}。`
     }
   }
 
@@ -795,7 +861,9 @@ class DungeonSystem {
         matPerH: d.matPerH,
         dispatchBase: {
           stonesPerHour: this.hToStones(baseRateH),
-          matsPerHour: this.hToMats(d, baseRateH),
+          // V7.3 口径同步（D5）：字段名是「每小时」，原实现传 1 小时当量去 `Math.round`（小数率会得 0）；
+          //   改为**低档槽的精确份/h**（0.30 ÷ 主材料当量），语义与字段名一致。
+          matsPerHour: slotPartsPerH(d, matHOf(d.material)),
           rateH: baseRateH,
           stars: clearedStars,
           depthName: clearedDep.name,
