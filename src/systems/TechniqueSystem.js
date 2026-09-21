@@ -21,10 +21,19 @@
 
 import {
   TECHNIQUES, SLOT_META, STARTER_TECHNIQUE,
-  getTechnique, levelCost, tierLabel, slotKindsOf, cultivateSecOf
+  getTechnique, levelCost, tierLabel, slotKindsOf, cultivateSecOf,
+  // V6.11 多世界功法库：门槛校验 / 图鉴分组 / 本界可用集
+  COMMON_LIB, canLearnByData, libraryIndex, availableInWorld
 } from '../data/techniques.js'
+import { rootBaseOf } from '../data/roots.js'   // 世界专属灵根按其 base 归档到四档（data→data）
+import { REALM_META } from '../data/realms.js'  // 境界名（门槛提示文案）
 
 const REALM_SIZE = 9
+
+/** 灵根档中文名（顶级灵根专属门槛的提示文案用） */
+const RARITY_LABEL = { false: '伪灵根', true: '真灵根', mutant: '变异灵根', heaven: '天灵根', hidden: '混沌灵根' }
+/** 门槛提示：把 rootReq 的档位数组转成中文 */
+const rootReqText = (list) => (Array.isArray(list) ? list.map((x) => RARITY_LABEL[x] || x).join(' / ') : '')
 
 class TechniqueSystem {
   constructor (state) {
@@ -59,6 +68,38 @@ class TechniqueSystem {
     return !!this.owned[id]
   }
 
+  /** V6.11：当前灵根档（归档到 伪/真/变异/天/混沌；未测灵根 → null） */
+  get rootRarity () {
+    const r = this.state.player.root
+    if (!r || !r.rarity) return null
+    return rootBaseOf(r.rarity)
+  }
+
+  /**
+   * V6.11：能否**习得**该功法 —— **只卡「学」，不卡「装」**（主人口径）。
+   *   · 境界门槛：`unlockRealm ≤ realmIndex`（0~7 大境界下标）
+   *   · 灵根硬门槛：`rootReq` 命中当前灵根档（顶级灵根专属本）
+   *   装备侧（`canEquip` / `equip`）**一律不校验**，故老档已装功法不受影响。
+   * @returns {{ok:boolean, reason:'none'|'owned'|'realm'|'root'|'', text:string}}
+   */
+  canLearn (id) {
+    const t = getTechnique(id)
+    if (!t) return { ok: false, reason: 'none', text: '未登记的功法' }
+    if (this.has(id)) return { ok: false, reason: 'owned', text: `《${t.name}》已在囊中` }
+    const r = canLearnByData(t, this.realmIndex, this.rootRarity)
+    if (r.ok) return { ok: true, reason: '', text: '' }
+    if (r.reason === 'realm') {
+      const nm = (REALM_META[r.needRealm] && REALM_META[r.needRealm].name) || `${r.needRealm} 境`
+      return { ok: false, reason: 'realm', text: `《${t.name}》需晋入${nm}期方可习得` }
+    }
+    return { ok: false, reason: 'root', text: `《${t.name}》为顶级灵根专属（需${rootReqText(r.needRoots)}）` }
+  }
+
+  /** 本界可用功法数（＝ 公用库 ＋ 本界专属；主人口径 **144 本**）——供面板与自测 */
+  availableCount (worldId) {
+    return availableInWorld(worldId).length
+  }
+
   /**
    * 直接授予（宗门按境界下发 / 秘境残卷所得）；幂等：已持有则不改动
    * —— 供装配层注入调用（SectSystem / DungeonSystem 亦经注入引用调用，不横向 import）
@@ -70,6 +111,9 @@ class TechniqueSystem {
     const t = getTechnique(id)
     if (!t) return { ok: false, message: '未登记的功法，无法授予' }
     if (this.has(id)) return { ok: false, message: `《${t.name}》已在囊中` }
+    // V6.11：**习得门槛**（只卡学）——境界与顶级灵根专属；装槽仍不校验
+    const gate = this.canLearn(id)
+    if (!gate.ok) return { ok: false, message: gate.text, blocked: gate.reason }
     this.owned[id] = { level: Math.max(1, level | 0 || 1) }
     return { ok: true, id, name: t.name, message: `习得《${t.name}》（${tierLabel(t)}）——去功法面板装槽即可生效。` }
   }
@@ -394,6 +438,7 @@ class TechniqueSystem {
     return TECHNIQUES.map((t) => {
       const owned = this.has(t.id)
       const kind = this.slotOf(t.id)
+      const gate = owned ? { ok: true, text: '' } : this.canLearn(t.id)
       return {
         tech: t,
         tierLabel: tierLabel(t),
@@ -406,9 +451,49 @@ class TechniqueSystem {
         combatPct: owned ? this.combatPctOf(t.id) : 0,
         train: owned ? this.trainInfo(t.id) : null,
         match: this.tagMatch(t, attrs),
-        upgrade: owned ? this.upgradeInfo(t.id) : null
+        upgrade: owned ? this.upgradeInfo(t.id) : null,
+        // V6.11 多世界功法库字段（分组 / 门槛 / 顶级专属标识）
+        worldId: t.worldId,
+        unlockRealm: t.unlockRealm,
+        rootReq: t.rootReq || null,
+        top: !!t.rootReq,
+        learnable: !owned && !!gate.ok,
+        learnBlock: gate.ok ? '' : gate.text
       }
     })
+  }
+
+  /**
+   * V6.11：图鉴**分组视图**（公用库 ＋ 各界库），供功法面板跨世界浏览。
+   * @param {Array<string>} worldIds 12 界 id（保序；由面板/装配层注入）
+   * @param {Function|null} nameOf   界名解析（面板注入 worlds.js 的查名函数；system 不 import worlds.js）
+   * @returns {Array<{worldId, isCommon, name, total, owned, items:Array}>}
+   */
+  libraryView (worldIds = [], nameOf = null) {
+    const attrs = (this.state.player.root && this.state.player.root.attrs) || []
+    return libraryIndex(worldIds).map((g) => ({
+      worldId: g.worldId,
+      isCommon: !!g.isCommon,
+      name: g.isCommon ? '公用库 · 诸界共享' : (nameOf ? nameOf(g.worldId) : g.worldId),
+      total: g.techs.length,
+      owned: g.techs.filter((t) => this.has(t.id)).length,
+      items: g.techs.map((t) => {
+        const owned = this.has(t.id)
+        const gate = owned ? { ok: true, text: '' } : this.canLearn(t.id)
+        return {
+          tech: t,
+          tierLabel: tierLabel(t),
+          slotKinds: slotKindsOf(t),
+          owned,
+          level: owned ? this.levelOf(t.id) : 0,
+          equipped: this.slotOf(t.id),
+          match: this.tagMatch(t, attrs),
+          top: !!t.rootReq,
+          learnable: !owned && !!gate.ok,
+          learnBlock: gate.ok ? '' : gate.text
+        }
+      })
+    }))
   }
 
   /**

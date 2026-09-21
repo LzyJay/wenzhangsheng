@@ -64,8 +64,14 @@ import {
   SECT, RANKS, TASKS, LIBRARY, SHOP, sectDayKey, getTask,
   contribOf, REALM_GRANTS, realmGrant, taskDurationMs, CONTRIB_GROWTH,
   SECT_REFRESH_DAYS, sectMsToNextRefresh, fmtSectRefreshPeriod,
-  DABI, dabiKeyOf, dabiMsToNext, dabiContribOf, OFFERING, offeringContrib
+  DABI, dabiKeyOf, dabiMsToNext, dabiContribOf, OFFERING, offeringContrib,
+  dabiTitleOf,  // V6.4 批 D3：大比头衔按世界分叉（未登记界回落原字面）
+  CONTRIB_REALM_CAP,   // V6.12 批 G5a：境界倍率上界（**与职级档数解耦**，加档不改数值）
+  taskTextOf           // V6.12 批 G5c：任务按职位分叉的名称 / 描述
 } from '../data/sect.js'
+// V6.12 批 G4：多宗（12 界 × 8 宗 ＝ 96 宗）。data→data 单向；系统不横向 import 任何 system。
+import { getSect, defaultSectOf, sectsOfWorld, normalizeSectId, SECT_DAO, rankTitlesOf } from '../data/worldSects.js'
+import { sectTechsOf, SECT_TECH_LEVELS } from '../data/sectTechniques.js'
 // V5.5 弟子线（首批：收徒 / 培养 / 职权 / 贡献）——数据先行，参数全在 data 层
 import {
   RECRUIT, recruitCooldownMs, slotsOf,
@@ -145,7 +151,44 @@ class SectSystem {
         if (typeof x.captured !== 'boolean') x.captured = false
       }
     }
+    // V6.12 批 G5b：**换界散修化（懒检测）** —— 所入宗门不在当前界 → 自动转散修。
+    //   放在这里可**一次覆盖三条换界路径**（GM 自选世界 / 界镜道具 / 转世换界），
+    //   不必给任何 UI 加回调；幂等（转一次后 joined=false，之后不再触发）。
+    //   ⚠ 只吃 sec 对象、不读 this.s（防 getter 递归）。
+    const sec = this.state.sect
+    if (sec.joined && sec.sectId) {
+      const cur = getSect(normalizeSectId(sec.sectId))
+      const w = this.state.world && this.state.world.worldId
+      if (cur && w && cur.worldId !== w) this._turnRogue(sec)
+    }
     return this.state.sect
+  }
+
+  /**
+   * V6.12 批 G5b：**转散修**（换界后自动执行）。
+   *   · **清**：宗门归属 / 职级 / 累计贡献 / 任务板 / 授功台账 / 周常键 / 大比 —— 本宗事务一笔勾销
+   *   · **留**：贡献**货币**（已赚的钱）、门下弟子、已习得功法（跨宗资产跟着人走）
+   *   只吃传入的 `sec` 对象、**不读 `this.s`** —— 避免在 `s` getter 内递归。
+   */
+  _turnRogue (sec) {
+    sec.joined = false
+    sec.sectId = null
+    sec.rank = 0
+    sec.totalContrib = 0
+    sec.slots = []
+    sec.techGrants = {}
+    sec.offerKey = ''
+    sec.dabi = { key: '', wins: 0, best: 0, title: '' }
+    return true
+  }
+
+  /**
+   * V6.12 批 G5b：显式同步「宗门 ↔ 当前界」（装配层在换界后可直接调用；懒检测已覆盖，此处为双保险）。
+   *   触发一次 `this.s` 即完成检测 —— 界别不符会自动转散修。
+   */
+  syncWorld () {
+    const s = this.s
+    return { attached: !!s.joined, sectId: s.sectId || null, worldId: this.worldId }
   }
 
   /** 当前大境界下标（0 炼气 …）——任务解锁与奖励缩放共用 */
@@ -157,12 +200,53 @@ class SectSystem {
     return !!(this.state.sect && this.state.sect.joined)
   }
 
+  /**
+   * 当前职级。V6.12 批 G5a：**称号按「宗 > 界 > 阵营」三级取**（`worldSects.rankTitlesOf`）——
+   *   数值（门槛 / 俸禄 / 槽位 / 折扣 / unlocks）仍一律来自 `RANKS`，此处只覆盖 `name`。
+   *   故各宗称号不同而数值口径完全同源。
+   */
   get rankMeta () {
-    return RANKS[clamp(this.s.rank | 0, 0, RANKS.length - 1)]
+    const r = RANKS[clamp(this.s.rank | 0, 0, RANKS.length - 1)]
+    const titles = rankTitlesOf(this.s.sectId, null)
+    return { ...r, name: titles[r.idx] || r.name }
   }
 
   get contribution () {
     return this.state.resources.contribution | 0
+  }
+
+  // ── V6.12 批 G4：多宗（12 界 × 8 宗 ＝ 96 宗）────────────────────────────
+
+  /**
+   * 当前所在宗（名册条目）；未入宗时返回 null。
+   *   老档 `sectId='sect_yunlan'`（旧表 id）由 `normalizeSectId` 映射到 `'sect_ql_yunlan'` ——
+   *   不映射则 `getSect()` 返回 null，按宗查道统 / 名册 / 传承会**静默失效**。
+   */
+  get currentSect () {
+    if (!this.joined) return null
+    return getSect(normalizeSectId(this.s.sectId)) || null
+  }
+
+  /** 面板用的「本界默认宗」（未入宗时作推荐入口；无世界信息时回落旧表 SECT） */
+  get homeSect () {
+    const w = this.worldId
+    return (w && defaultSectOf(w)) || getSect('sect_ql_yunlan') || SECT
+  }
+
+  /**
+   * 道统加成（V6.12 批 G4 实装）。**未入宗 → 全 0**（不白给加成）。
+   *   数值唯一真源在 `data/worldSects.js` 的 `SECT_DAO[dao].bonus`，本处只读不算。
+   *   各乘区按 key 取：`power` 战力 / `qi` 挂机产出 / `pill` 丹药 / `event` 事件收益。
+   */
+  get daoBonus () {
+    const cur = this.currentSect
+    const b = (cur && SECT_DAO[cur.dao] && SECT_DAO[cur.dao].bonus) || null
+    return {
+      power: (b && b.power) || 0,
+      qi: (b && b.qi) || 0,
+      pill: (b && b.pill) || 0,
+      event: (b && b.event) || 0
+    }
   }
 
   /** **基准战力**（不含功法 / 灵兽乘区）：战力校验任务的定标基准。
@@ -176,23 +260,104 @@ class SectSystem {
     return Math.round(this.basePower * (this.powerMul ? this.powerMul() : 1))
   }
 
-  /** 入宗（免费；新手引导口径＝测灵根后由玩家自行拜入） */
-  join (now = Date.now()) {
+  /**
+   * 入宗（免费；新手引导口径＝测灵根后由玩家自行拜入）。
+   * V6.12 批 G4：**可指定宗门** `sectId`（名册 id 或老档别名）；省略则取**本界默认宗**。
+   *   ⚠ 签名由 `join(now)` 变为 `join(sectId, now)`：既有调用（面板 / 自测）一律无参 →
+   *     `sectId` 为 null → 走默认宗，**行为与改造前完全一致**。
+   */
+  join (sectId = null, now = Date.now()) {
     if (this.joined) return { ok: false, message: '已在宗门之中。' }
+    const pick = getSect(normalizeSectId(sectId)) || this.homeSect
+    if (!pick) return { ok: false, message: '未找到该宗门。' }
+    // V6.12 批 G5b：只能拜**本界**宗门（名册按界给，跨界的宗不在本界名册内）
+    const w = this.worldId
+    if (w && pick.worldId && pick.worldId !== w) {
+      return { ok: false, message: `${pick.name}不在本界，无从拜入。` }
+    }
     const s = this.s
     s.joined = true
-    s.sectId = SECT.id
+    s.sectId = pick.id
     s.rank = 0
     s.totalContrib = 0
     s.lastDay = sectDayKey(now)
     this.rerollTasks()
     // 主人 2026-09-18：入宗即按当前修为境界下发一本普通功法
     const grants = this.grantTick()
+    const dao = SECT_DAO[pick.dao] || { name: '散修', desc: '无道统加成' }
     return {
       ok: true,
+      sectId: pick.id,
+      sectName: pick.name,
       grants,
-      message: `拜入${SECT.name}，列身外门。道统·${SECT.daoTong.name}：${SECT.daoTong.desc}；任务板已开放，做满贡献可在藏经阁借阅功法。`
+      message: `拜入${pick.name}，列身外门。道统·${dao.name}：${dao.desc}；任务板已开放，做满贡献可在藏经阁借阅功法。`
     }
+  }
+
+  /**
+   * 换宗（V6.12 批 G4）：照 `WorldSystem.changeWorld / _swapAtomic` 的**原子范式** ——
+   *   一次性写完「宗门 + 本宗事务归零」，不留半成品状态。
+   *   · **重置**（本宗事务，类比换界清「熟练度与世数」）：职级 / 累计贡献 / 任务板 /
+   *     授功台账 / 周常键 / 大比战绩
+   *   · **保留**（类比跨界资产）：贡献**货币**（`resources.contribution`，已赚的钱）、
+   *     门下弟子、已习得功法与装备
+   *   ⚠ 换宗会清职级，属**不可撤销**的重操作 —— 二次确认在 UI 层（照 WorldPanel 的
+   *     `pendingSwap` 闭包标志范式），系统层只做原子切换、不弹确认。
+   * @returns {{ok:boolean, message:string, from?:string, to?:string, sect?:object}}
+   */
+  changeSect (sectId, now = Date.now()) {
+    if (!this.joined) return { ok: false, message: '尚未拜入宗门，请先入宗。' }
+    const pick = getSect(normalizeSectId(sectId))
+    if (!pick) return { ok: false, message: '未登记此宗门。' }
+    // V6.12 批 G5b：换宗同样限**本界**（跨界的宗不在本界名册内）
+    const w = this.worldId
+    if (w && pick.worldId && pick.worldId !== w) {
+      return { ok: false, message: `${pick.name}不在本界，无从改投。` }
+    }
+    const cur = this.currentSect
+    if (cur && cur.id === pick.id) return { ok: false, message: `你已在${pick.name}。` }
+    const from = cur ? cur.name : '（无）'
+    const s = this.s
+    s.sectId = pick.id
+    s.rank = 0
+    s.totalContrib = 0
+    s.slots = []
+    s.techGrants = {}
+    s.lastDay = sectDayKey(now)
+    s.offerKey = ''
+    s.dabi = { key: '', wins: 0, best: 0, title: '' }
+    this.rerollTasks()
+    const grants = this.grantTick()
+    const dao = SECT_DAO[pick.dao] || { name: '散修', desc: '无道统加成' }
+    return {
+      ok: true,
+      from,
+      to: pick.id,
+      sect: pick,
+      grants,
+      message: `改投${pick.name}：职级与累计贡献重头来，贡献余额与门下弟子仍归你。道统·${dao.name}：${dao.desc}。`
+    }
+  }
+
+  /** 名册视图（本界 8 宗 ＋ 当前宗标记；供面板「宗门名册 / 换宗」区渲染，纯读） */
+  rosterView () {
+    const w = this.worldId
+    const curId = this.currentSect ? this.currentSect.id : null
+    return sectsOfWorld(w).map((x) => {
+      const dao = SECT_DAO[x.dao] || { name: '—', desc: '' }
+      return {
+        id: x.id,
+        name: x.name,
+        dao: x.dao,
+        daoName: dao.name,
+        daoDesc: dao.desc,
+        align: x.align,
+        intro: x.intro,
+        isCurrent: x.id === curId,
+        isHome: !!x.defaultForWorld,
+        techCount: sectTechsOf(x.id).length
+      }
+    })
   }
 
   // ── 按境界下发普通功法（主人 2026-09-18）───────────────────────────────────
@@ -267,7 +432,7 @@ class SectSystem {
   /** 晋升（境界 + 累计贡献达标；不扣贡献） */
   promote () {
     const info = this.promoInfo()
-    if (info.maxed) return { ok: false, message: '已至掌门之位，宗门之内再无可晋。' }
+    if (info.maxed) return { ok: false, message: `已至${this.rankMeta.name}之位，宗门之内再无可晋。` }
     if (!info.realmOk) return { ok: false, message: `晋升${info.next.name}需 ${info.realmName}期修为。` }
     if (!info.contribOk) return { ok: false, message: `晋升${info.next.name}需累计贡献 ${info.next.contrib}（还差 ${info.next.contrib - info.totalContrib}）。` }
     this.s.rank = info.next.idx
@@ -330,11 +495,24 @@ class SectSystem {
     return true
   }
 
-  /** 当前境界可接的任务池（V3.3.1：minRealm ≤ 大境界） */
+  /**
+   * 当前可接的任务池。V3.3.1：`minRealm ≤ 大境界`；V6.12 批 G5c 追加**职位门槛** `minRank`。
+   *   双门槛都过才进池 —— 低职级只出粗活，高职级才出重赏与**职责任务**；
+   *   职位不够者**连看都看不到**（而非「看得到接不了」）。
+   */
   taskPool () {
     const r = this.realmIndex
-    const pool = TASKS.filter((t) => (t.minRealm | 0) <= r)
-    return pool.length ? pool : TASKS.filter((t) => (t.minRealm | 0) === 0)
+    const rank = this.s.rank | 0
+    const pool = TASKS.filter((t) => (t.minRealm | 0) <= r && (t.minRank | 0) <= rank)
+    return pool.length ? pool : TASKS.filter((t) => (t.minRealm | 0) === 0 && (t.minRank | 0) === 0)
+  }
+
+  /**
+   * V6.12 批 G5c：任务在**当前职位**下的显示名（日志 / 提示 / 面板统一走它）。
+   *   名称与描述按「满足 `minRank` 的最高一档变体」取，真源见 `data/sect.js` 的 `taskTextOf`。
+   */
+  _taskName (def) {
+    return taskTextOf(def, this.s.rank | 0).name
   }
 
   /** 重掷任务板：槽数随职级、池随境界，尽量不与相邻槽重复 */
@@ -383,10 +561,10 @@ class SectSystem {
       return {
         ...res,
         instant: true,
-        message: `接下「${def.name}」——战力胜于定标 ${slot.req}，当场办妥：贡献 +${res.contrib}${res.matText}。`
+        message: `接下「${this._taskName(def)}」——战力胜于定标 ${slot.req}，当场办妥：贡献 +${res.contrib}${res.matText}。`
       }
     }
-    return { ok: true, message: `接下「${def.name}」（限时 ${def.hours} 时辰），到点自会办妥；中途也可提前交差。` }
+    return { ok: true, message: `接下「${this._taskName(def)}」（限时 ${def.hours} 时辰），到点自会办妥；中途也可提前交差。` }
   }
 
   /** 可交差门槛（毫秒）：min(10% 时长, 1 秒) —— 见 MIN_CLAIM_MS 注释 */
@@ -434,7 +612,7 @@ class SectSystem {
       return {
         ok: false,
         ratio: prog.ratio,
-        message: `「${def.name}」才刚接手（${(prog.elapsedMs / 1000).toFixed(1)} 秒），至少办够 ${(gateMs / 1000).toFixed(1)} 秒才好交差（约 ${Math.max(1, Math.ceil(waitMs / 1000))} 秒后）。`
+        message: `「${this._taskName(def)}」才刚接手（${(prog.elapsedMs / 1000).toFixed(1)} 秒），至少办够 ${(gateMs / 1000).toFixed(1)} 秒才好交差（约 ${Math.max(1, Math.ceil(waitMs / 1000))} 秒后）。`
       }
     }
     return this._resolve(slot, def, now, {})
@@ -504,7 +682,7 @@ class SectSystem {
       ratio,
       early,
       matText,
-      message: `「${def.name}」${tag}${verdict}：贡献 +${contrib}${matText}。`
+      message: `「${this._taskName(def)}」${tag}${verdict}：贡献 +${contrib}${matText}。`
     }
   }
 
@@ -605,18 +783,25 @@ class SectSystem {
   /** 贡献兑换功法（落到 tech.ownedTechniques，1 级；去功法面板自行装备） */
   buyLibrary (id) {
     if (!this.joined) return { ok: false, message: '尚未拜入宗门。' }
-    const entry = LIBRARY.find((x) => x.id === id)
+    // V6.12 批 G4：条目源扩为「静态 LIBRARY ＋ 本宗传承」（见 _libEntries）
+    const entry = this._libEntries().find((x) => x.id === id)
     if (!entry) return { ok: false, message: '藏经阁没有这部功法。' }
     const t = getTechnique(id)
     if (!t) return { ok: false, message: '功法登记缺失，暂不可借阅。' }
     if (this.rankMeta.idx < entry.rank) return { ok: false, message: `${RANKS[entry.rank].name}方可入${entry.rank === 1 ? '二' : '一'}层借阅。` }
     if (this.tech && this.tech.has(id)) return { ok: false, message: `《${t.name}》已在囊中。` }
+    // V6.12 批 G4：顶级专属本**仍卡灵根硬门槛** —— 旧实现直写 `owned` 会绕过 canLearn
+    if (t.rootReq && this.tech && typeof this.tech.canLearn === 'function') {
+      const chk = this.tech.canLearn(id)
+      if (!chk.ok) return { ok: false, message: chk.text || '资格不足，暂不可借阅。' }
+    }
     if (this.contribution < entry.cost) {
       return { ok: false, message: `贡献不足：借阅《${t.name}》需 ${entry.cost}，还差 ${entry.cost - this.contribution}。` }
     }
     this.state.resources.contribution = this.contribution - entry.cost
     if (this.tech) this.tech.owned[id] = { level: 1 }
-    return { ok: true, message: `以 ${entry.cost} 贡献借得《${t.name}》——去功法面板装槽即可生效。` }
+    const tag = entry.top ? '（顶级传承）' : (entry.isHeritage ? '（本宗传承）' : '')
+    return { ok: true, message: `以 ${entry.cost} 贡献借得《${t.name}》${tag}——去功法面板装槽即可生效。` }
   }
 
   /** 商店价（职级折扣；藏经阁不打折） */
@@ -1128,6 +1313,15 @@ class SectSystem {
   }
 
   /**
+   * 当前世界 id（V6.4 批 D3；只读直读 `state.world.worldId`，照 DungeonSystem.worldId 惯例**不经懒建**）。
+   * 未抽定 / 未登记界 → `''`，大比头衔回落 `DABI` 原字面。
+   */
+  get worldId () {
+    const w = this.state.world
+    return (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+  }
+
+  /**
    * 赴大比（周常）：战力比率（当前战力 / 基准战力 × reqMul，clamp 0.25~0.95）
    *   → 贡献带内插值 × 境界增长；rate ≥ 0.9 记魁首（wins+1）
    *   设计稿的「＋灵石」奖已裁除（压缩日历下会放大 ~205 倍/日顶破 §七，见 data/sect.js DABI 注释）
@@ -1140,7 +1334,8 @@ class SectSystem {
     const req = Math.max(1, Math.round(this.basePower * DABI.reqMul))
     const rate = clamp(this.power / req, 0.25, 0.95)
     const contrib = dabiContribOf(rate, this.realmIndex)
-    const title = rate >= 0.9 ? DABI.titleTop : rate >= 0.6 ? DABI.titleMid : DABI.titleLow
+    // V6.4 批 D3：头衔按当前世界取（未抽定 / 未登记界回落 DABI 原字面，默认界逐位不变）
+    const title = dabiTitleOf(this.worldId, rate >= 0.9 ? 'top' : rate >= 0.6 ? 'mid' : 'low')
     d.key = key
     if (rate >= 0.9) d.wins = (d.wins | 0) + 1
     d.best = Math.max(d.best | 0, contrib)
@@ -1199,7 +1394,7 @@ class SectSystem {
     if (dl.evtKey === key) return out
     dl.evtKey = key
     const stoneH = this.stonePerHour()
-    const growth = 1 + CONTRIB_GROWTH * Math.min(RANKS.length - 1, this.realmIndex)
+    const growth = 1 + CONTRIB_GROWTH * Math.min(CONTRIB_REALM_CAP, this.realmIndex)
     const dL = DISC_EVENTS.dLoyalty
 
     // ① 叛离（轻惩罚：失去弟子与其产出，名额腾出）
@@ -1254,15 +1449,44 @@ class SectSystem {
 
   // ── 视图（装配层渲染用，纯读）────────────────────────────────────────────
 
+  /**
+   * 名册条目 → 面板视图。**保留旧字段 `daoTong`**（`{id,name,desc}`）——
+   *   面板既有渲染读的是 `info.sect.daoTong.*`，归一后 UI 侧零连锁改动。
+   *   兼容两种来源形状：名册条目（有 `dao`）与旧表 `SECT`（有 `daoTong`）。
+   */
+  _sectView (x) {
+    if (!x) return null
+    const daoId = x.dao || (x.daoTong && x.daoTong.id) || 'law'
+    const dao = SECT_DAO[daoId] || (x.daoTong || { name: '—', desc: '' })
+    return {
+      id: x.id,
+      name: x.name,
+      dao: daoId,
+      align: x.align || '正',
+      intro: x.intro,
+      techs: x.techs || [],
+      origin: x.origin || '项目',
+      daoTong: { id: daoId, name: dao.name, desc: dao.desc }
+    }
+  }
+
   infoView (now = Date.now()) {
     if (!this.joined) {
-      return { joined: false, sect: SECT }
+      // V6.12 批 G4：未入宗时给**本界默认宗**作推荐入口（面板同时列出 8 宗名册供选）
+      return {
+        joined: false,
+        sect: this._sectView(this.homeSect),
+        roster: this.rosterView(),
+        daoBonus: this.daoBonus
+      }
     }
     const cur = this.rankMeta
     const promo = this.promoInfo()
     return {
       joined: true,
-      sect: SECT,
+      sect: this._sectView(this.currentSect || this.homeSect),
+      roster: this.rosterView(),
+      daoBonus: this.daoBonus,
       rank: cur,
       contribution: this.contribution,
       totalContrib: this.s.totalContrib | 0,
@@ -1300,9 +1524,15 @@ class SectSystem {
       const ratio = slot.state === 'running' ? prog.ratio : 0
       const claimRatio = Math.max(prog.done ? 1 : ratio, 0)
       const gateMs = this.claimGateMs(def)
+      // V6.12 批 G5c：任务的**名称与描述按当前职位分叉**（取满足 minRank 的最高一档变体）；
+      //   面板一律读 `title` / `descText`，`def.name` / `def.desc` 仍作兜底原值。
+      const tx = taskTextOf(def, this.s.rank | 0)
       return {
         index: i,
         def,
+        title: tx.name,
+        descText: tx.desc,
+        minRank: def.minRank | 0,
         state: slot.state,           // open | running | empty
         req: slot.req || 0,
         elapsedMs: prog.elapsedMs,
@@ -1324,8 +1554,35 @@ class SectSystem {
     })
   }
 
+  /**
+   * 藏经阁条目（V6.12 批 G4 扩展）：静态 `LIBRARY` ＋ **本宗传承**（该宗 `techs` 里的专属功法）。
+   *   传承本按品阶定价；**顶级专属本（有 `rootReq`）价 ×3 且需执事长老** ——
+   *   「高价 ＋ 高职级 ＋ 灵根硬门槛」三者共同承担「难获取」，**不以境界限制卡人**。
+   */
+  _libEntries () {
+    const out = LIBRARY.map((e) => ({ ...e, isHeritage: false, top: false }))
+    const cur = this.currentSect
+    if (!cur) return out
+    const tierCost = { fan: 500, huang: 3000, xuan: 8000, di: 20000, tian: 40000 }
+    const tierRank = { fan: 0, huang: 1, xuan: 1, di: 2, tian: 2 }
+    for (const id of (cur.techs || [])) {
+      const t = getTechnique(id)
+      if (!t) continue
+      if (out.some((e) => e.id === id)) continue
+      const top = !!t.rootReq
+      out.push({
+        id,
+        cost: (tierCost[t.tier] || 20000) * (top ? 3 : 1),
+        rank: top ? 3 : (tierRank[t.tier] || 1),
+        isHeritage: true,
+        top
+      })
+    }
+    return out
+  }
+
   libraryView () {
-    return LIBRARY.map((e) => {
+    return this._libEntries().map((e) => {
       const t = getTechnique(e.id)
       return {
         ...e,

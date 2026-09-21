@@ -833,6 +833,21 @@
     }
     #world-overlay.show { display: flex; }
 
+    /* ═══════════ 层 5k：GM 控制台（V6.2 · 非 .ov 遮罩，照 #world-overlay 先例） ═══════════ */
+    #gm-overlay {
+      -webkit-app-region: no-drag;
+      position: absolute; inset: 5px; z-index: 5;
+      display: none;
+      flex-direction: column;
+      border-radius: 12px;
+      background: radial-gradient(circle at 50% 42%, rgba(var(--bg-world-rgb), 0.90), rgba(var(--bg-veil-lo-rgb), 0.96));
+      border: 1px solid rgba(var(--world-rgb), 0.30);
+      backdrop-filter: blur(9px);
+      pointer-events: auto;
+    }
+    #gm-overlay.show { display: flex; }
+    #gm-overlay .ov-head { flex: 0 0 auto; }
+
     #world-card { width: 100%; padding: 0 22px; text-align: center; }
 
     #world-desc { margin-top: 9px; font-size: 11px; line-height: 1.7; color: var(--dim-light); }
@@ -1480,8 +1495,11 @@
       <div class="tech-sec">已习得</div>
       <div id="tech-owned"></div>
       <div class="divider"></div>
-      <div class="tech-sec">图鉴 · 来源</div>
-      <div id="tech-catalog"></div>
+      <!-- V6.11 功法库改造：图鉴收成**折叠头**（点开才展开，按「公用库 ＋ 12 界」跨世界分组）；
+           不新增遮罩，`.ov` 总数仍 11 -->
+      <div class="tech-sec" id="tech-cat-head" data-cat-toggle="1" role="button" tabindex="0"
+           title="点开：按「公用库 ＋ 各界」浏览全部世界功法">功法图鉴 · 共 0 本 ▸</div>
+      <div id="tech-catalog" hidden></div>
       <div class="bag-note" id="tech-note"></div>
     </div>
   </div>
@@ -1495,6 +1513,10 @@
     </div>
     <div class="ov-body">
       <div id="sect-info"></div>
+      <div class="divider"></div>
+      <!-- V6.12 批 G4：宗门名册（本界 8 宗 · 可拜入 / 换宗）。塞进既有 #sect-overlay，**不新增 .ov 遮罩** -->
+      <div class="tech-sec">宗门名册 · 本界 8 宗（未入宗可拜入；已入宗可换宗 —— 换宗重列外门、累计贡献重头来）</div>
+      <div id="sect-roster"></div>
       <div class="divider"></div>
       <div class="tech-sec">任务板 · 按境界出题（每 7 游戏天刷新）· 限时到点自动交差，战力达标的活接取即办妥</div>
       <!-- V4.7 主人 2026-09-18：一键接取按钮 + 自动接取开关（口径见 SectSystem.startAllOpen / autoStartTick）；
@@ -1778,6 +1800,22 @@
     <span class="hint">点击关闭（5 秒后自动收起）</span>
   </div>
 
+  <!-- 层 5k：GM 控制台（V6.2 · 开发者工具：自选世界开局 / 重测灵根 / 立即触发事件）
+       ⚠ 与 #world-overlay 同例：**不带 .ov class**——`.ov` 遮罩家族仍 11，历史批次的计数钉不动；
+         开合自行登记（closeAllOverlays 的 closers + Esc 链，见 main.js）。 -->
+  <div id="gm-overlay">
+    <div class="ov-head">
+      <span class="ov-title">GM 控制台</span>
+      <span class="spacer"></span>
+      <span id="gm-head"></span>
+      <button class="ov-close" id="btn-gm-close" title="关闭（Esc）">×</button>
+    </div>
+    <div class="ov-body">
+      <div id="gm-worlds"></div>
+      <div class="bag-note" id="gm-note"></div>
+    </div>
+  </div>
+
   <!-- 层 5：设置 / 存档（覆盖式面板，骨架复用 .ov；位置同样只盖修行日志区） -->
   <div class="ov" id="panel-overlay">
     <div id="panel-head">
@@ -1831,6 +1869,9 @@
         <div class="hint2">低性能自动降载：帧率不足时先减稀粒子、必要时停天气，恢复后自动升回（无需你操心；窗口被遮挡时不会误判）。</div>
         <div class="row"><span class="k">皮肤</span><span class="spacer"></span><button class="toggle" id="tg-skin">鎏金</button></div>
         <div class="hint2">四套色板 + 一档「随世界」（按当前世界色系自动跟随，重掷此界即时换）：鎏金 / 朱砂 / 玄墨 / 月白。只换色彩语义，版式与数值一律不动。</div>
+        <div class="divider"></div>
+        <div class="row"><span class="k">GM 控制台</span><span class="spacer"></span><span class="v dim">Ctrl+Shift+G</span><button class="mini" id="btn-open-gm">打开</button></div>
+        <div class="hint2">开发者工具：自选世界开局 / 重测灵根 / 立即触发一次事件（用于验收各界的专属事件池与灵根池）。</div>
         <div class="divider"></div>
         <div class="row"><span class="k">今日收益归因</span><span class="spacer"></span><span class="v" id="v-econ-day">—</span></div>
         <div class="mono" id="v-econ">—</div>

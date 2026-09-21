@@ -43,6 +43,8 @@ import { getLevelInfo, getRealmMeta, REALM_META } from '../data/realms.js'
 // V5.1 招牌秘境：十二界本源映射（data→data 直读，纯函数；不 import 任何 system）
 import { signatureStateOf, originSignaturesOf } from '../data/worlds.js'
 import { getItem } from '../data/items.js'
+import { signatureFirstTextOf } from '../data/signatureTexts.js'   // V6.4 批 D2：招牌首通叙事（叠加，不改 dungeon.js）
+import { LEGACY } from '../data/storyEndings.js'   // V6.8 批 F：天工「傀儡位」跨世位上限（真源在 data 层）
 import { stoneHourly } from '../data/events.js'
 // 游戏历（主人 2026-09-17）：面板与日志里的时长一律游戏历文案
 import { fmtGameDuration } from '../data/gametime.js'
@@ -104,9 +106,17 @@ class DungeonSystem {
     return Math.floor((this.level - 1) / 9)
   }
 
-  /** 当前分身槽位（金丹 1 槽起） */
+  /**
+   * 当前分身槽位（金丹 1 槽起）。
+   * V6.8 批 F：叠加天工「机关坊傀儡」的**跨世保留位**（`state.legacy.puppetSlots`，最多 +2）。
+   *   ⚠ 只在 getter 上叠加 —— `slotCountFor`（data 层阶梯真源）一字不动，阶梯断言不受影响。
+   */
   get slotCount () {
-    return slotCountFor(this.level)
+    const lg = this.state.legacy
+    const puppet = (lg && Number.isFinite(lg.puppetSlots))
+      ? Math.max(0, Math.min(LEGACY.puppetSlots.max, lg.puppetSlots))
+      : 0
+    return slotCountFor(this.level) + puppet
   }
 
   /**
@@ -544,11 +554,14 @@ class DungeonSystem {
     const points = SIGNATURE.points.firstClear
     this._addPoints(points)
     s[id] = { first: true, cycleKey: sigCycleKey(now) }
+    // V6.4 批 D2：首通叙事（叠加在既有账目文案之后；未登记招牌为空 → 逐位不变）
+    const firstText = signatureFirstTextOf(id)
 
     return {
       ok: true, kind: 'sig-first', id, dungeon: d, state: e.state, mul: e.mul, h, stones, mats,
-      matId: d.material, matName: getItem(d.material).name, points,
-      message: `首通${d.name}（${e.stateName} · 产出 ${Math.round(e.mul * 100)}%）：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。`
+      matId: d.material, matName: getItem(d.material).name, points, firstText,
+      message: `首通${d.name}（${e.stateName} · 产出 ${Math.round(e.mul * 100)}%）：灵石 +${stones}，${getItem(d.material).name} +${mats}，秘境积分 +${points}。` +
+        (firstText ? `　——${firstText}` : '')
     }
   }
 

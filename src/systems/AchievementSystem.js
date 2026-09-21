@@ -12,7 +12,8 @@
  *   · 事件驱动计数（渡劫结果 / 因果兑现 / 善恶事件）由 main.js 调 note(kind)
  *
  * 口径（设计库《世界纪事与成就系统 v1》）：
- *   · 成就 94 个（境界18/秘境19/宗门12/灵兽10/事件因果12/探索收集13/隐藏10），5~50 点
+ *   · 成就 107 个（境界18/秘境19/宗门25/灵兽10/事件因果12/探索收集13/隐藏10），5~80 点
+ *     （V6.12 批 G5a：职级补「太上长老 / 太上祖师」2 条；V6.15：12 界各一条入宗彩蛋 —— 身份型成就）
  *   · 五档阶梯（凡/灵/玄/王/皇）按累计成就点发放称号 + 外观碎片 + 少量材料；称号纯展示
  *   · 纪事：三频道（本界/宗门/天下）+「你」频道；定时汇总一批，玩家里程碑即时插入
  *   · V4.7 主人 2026-09-18 重构：消息逐条带**等级**（凡/良/珍/绝/仙，与事件同源）＋
@@ -30,6 +31,8 @@ import {
 } from '../data/achievements.js'
 import { REALM_META } from '../data/realms.js'
 import { SECT } from '../data/sect.js'
+// V6.12 批 G4：宗门名按**当前宗主**取（换宗后纪事文案不串味）；未入宗 / 认不出 → 回落旧表 SECT
+import { getSect, normalizeSectId } from '../data/worldSects.js'
 import { getItem } from '../data/items.js'
 // V4.7：等级语言与自动策略与事件系统同源（data 层单一真源，系统之间不互相 import）
 import {
@@ -165,7 +168,14 @@ class AchievementSystem {
       m.unlockedCount = Object.keys(a.unlocked).length
       m.titlesOwned = a.titles.length
       m.chronicleCount = a.chronicle.length
-      const v = Number(m[def.metric])
+      const raw = m[def.metric]
+      // V6.15：**身份型成就**（`need` 为字符串）按**相等**判定 —— 用于「拜入某界某宗」的彩蛋，
+      //   如 `metric:'sectId', need:'sect_ql_yunlan'`（数值型仍走 >= 老口径，逐位不变）。
+      if (typeof def.need === 'string') {
+        if (typeof raw === 'string' && raw !== '' && raw === def.need) unlocked.push(this._unlock(def, now))
+        continue
+      }
+      const v = Number(raw)
       if (Number.isFinite(v) && v >= def.need) unlocked.push(this._unlock(def, now))
     }
     const tierUps = this._checkTier(now)
@@ -510,7 +520,12 @@ class AchievementSystem {
       beast: () => this._pick(CHRONICLE_BEASTS, used),
       title: () => this._pick(CHRONICLE_SECT_TITLES, used),
       realm: () => REALM_META[Math.floor(Math.random() * REALM_META.length)].name,
-      sect: () => SECT.name,
+      // V6.12 批 G4：按**当前宗主**取名（换宗后纪事不再写死「云岚宗」）
+      sect: () => {
+        const id = this.state.sect && this.state.sect.sectId
+        const cur = getSect(normalizeSectId(id))
+        return cur ? cur.name : SECT.name
+      },
       you: () => (this.state.player && this.state.player.name) || '无名散修',
       n: () => String(3 + Math.floor(Math.random() * 9)),
       years: () => String((3 + Math.floor(Math.random() * 9)) * 100)
@@ -599,7 +614,10 @@ class AchievementSystem {
             got,
             at: a.unlocked[x.id] || 0,
             hidden: c.id === 'hidden',
-            progress: { cur: Number.isFinite(cur) ? Math.max(0, Math.min(cur, x.need)) : 0, need: x.need }
+            // V6.15：身份型成就（`need` 为字符串）进度统一记 0/1 —— 避免面板与断言算出 NaN
+            progress: typeof x.need === 'string'
+              ? { cur: got ? 1 : 0, need: 1 }
+              : { cur: Number.isFinite(cur) ? Math.max(0, Math.min(cur, x.need)) : 0, need: x.need }
           }
         })
         return { id: c.id, name: c.name, total: list.length, got: list.filter((x) => x.got).length, list }

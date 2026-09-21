@@ -31,6 +31,9 @@ import {
   STRATEGY_PREF, isAutoQuality, strategyAutoLabel
 } from '../data/events.js'
 import { clamp, fmtNum } from '../util/num.js'   // 区间钳制 + 大数简写（零依赖叶子层 src/util/）
+import { eventModsOf } from '../data/worldEvents.js'   // V6.9 批 G：世界事件修正（幽傩心魔 ×2 / 通天负面 −10%）
+import { learnCandidates } from '../data/techniques.js'   // V6.11：他界功法奇遇的候选池（data→data）
+import { rootBaseOf } from '../data/roots.js'             // V6.11：灵根档归档（顶级专属门槛判定）
 
 export const STRATEGY_NAME = { steady: '稳健', balanced: '均衡', aggressive: '激进' }
 
@@ -38,8 +41,12 @@ export const STRATEGY_NAME = { steady: '稳健', balanced: '均衡', aggressive:
 //（批2 口径统一：<1万 由四舍五入改为向下取整，与主界面显示层同一把尺）。
 
 class EventSystem {
-  constructor (state) {
+  /**
+   * V6.12 批 G4：`sect` 为**可选注入**（不传 / 未入宗 → 符修道统加成为 0，行为逐位不变）。
+   */
+  constructor (state, sect = null) {
     this.state = state
+    this.sect = sect
   }
 
   /** 事件子树快捷访问（自动补全结构，老档不崩——照 AlchemySystem.items 兜底写法） */
@@ -109,10 +116,31 @@ class EventSystem {
   // ── 采样（类别 → 品质 → 池 → 去重）─────────────────────────────────────
 
   /**
+   * 本界事件池 id（V6.1 批 C）。
+   * 只读直读 state.world.worldId（照 DungeonSystem.worldId 惯例，**不经懒建**——查询不该长出子树）；
+   * 未抽定 / 未登记该界池 → 回退 'common'，保证任何情况下都不出空事件。
+   */
+  get worldPoolId () {
+    const w = this.state.world
+    const id = (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+    return WORLD_POOLS[id] ? id : 'common'
+  }
+
+  /**
+   * V6.9 批 G：本界「事件修正」（幽傩心魔加权 / 通天负面减负）。
+   *   只读直读 `state.world.worldId`（不懒建）；未抽定 / 未登记界 → 中性档（逐位不变）。
+   */
+  get eventMods () {
+    const w = this.state.world
+    const id = (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+    return eventModsOf(id)
+  }
+
+  /**
    * 从合并池采样一条事件。
    * ① 类别：机缘概率 = 气运档位 goodPct（替代基准 40%），其余按日常/恩怨/灾劫均分；
    * ② 机缘品质：权重 × qualCoef^i（良0/珍1/绝2/仙3），池内缺档向下回退；
-   * ③ 池：世界池/通用池各 50%，缺档回退另一池；
+   * ③ 池：本界池/通用池各 50%（本界池见 worldPoolId，缺档回退另一池）；
    * ④ 去重：同事件 dedupeMs 内不重复；全部冷却中则放开去重兜底。
    */
   _sampleEvent (now) {
@@ -121,8 +149,14 @@ class EventSystem {
     if (Math.random() < tier.goodPct) {
       cat = 'jiyuan'
     } else {
-      const r = Math.random()
-      cat = r < 1 / 3 ? 'richang' : (r < 2 / 3 ? 'enyuan' : 'zaijie')
+      // V6.9 批 G：类别权重过一遍本界修正（幽傩「心魔 ×2」把灾劫/恩怨加权）；
+      //   权重全 1 时 total=3，与旧的等权 1/3 · 1/3 · 1/3 **逐位等价**。
+      const m = this.eventMods.catWeightMul
+      const wR = 1 * (m.richang || 1)
+      const wE = 1 * (m.enyuan || 1)
+      const wZ = 1 * (m.zaijie || 1)
+      const r = Math.random() * (wR + wE + wZ)
+      cat = r < wR ? 'richang' : (r < wR + wE ? 'enyuan' : 'zaijie')
     }
 
     let quality
@@ -147,7 +181,10 @@ class EventSystem {
       quality = Math.random() < 0.5 ? 'liang' : 'zhen'
     }
 
-    const pools = Math.random() < TRIGGER.poolSplit ? ['qinglan', 'common'] : ['common', 'qinglan']
+    // V6.1 批 C：世界池按当前世界选取（未抽定 / 未登记该界池 → 回退 common，见 worldPoolId）；
+    //   poolSplit 与「本界池 / 通用池各半」口径不变 → 青岚界（首界世界池）行为逐位不变。
+    const wp = this.worldPoolId
+    const pools = Math.random() < TRIGGER.poolSplit ? [wp, 'common'] : ['common', wp]
     const downgrades = { xian: 'jue', jue: 'zhen', zhen: 'liang', liang: null, fan: null }
 
     const pick = (poolId, q, respectDedupe) => {
@@ -289,19 +326,26 @@ class EventSystem {
     let netH = 0
     const state = this.state
     const es = this.es
+    // V6.9 批 G：世界事件修正 —— 通天「喜剧减负」把**负面**强度打折（其余界恒 1 → 逐位不变）
+    const negMul = this.eventMods.negativeMul
+
+    // V6.12 批 G4：符修道统（事件收益 +10%）——**只作用于正收益**，负面事件不被放大
+    const evtGainMul = 1 + ((this.sect && this.sect.daoBonus) ? this.sect.daoBonus.event : 0)
 
     const apply = (fx) => {
       if (!fx || typeof fx !== 'object') return
       if (typeof fx.qiH === 'number' && fx.qiH !== 0) {
-        const amt = Math.round(fx.qiH * eff * 3600)
+        const q1 = fx.qiH < 0 ? fx.qiH * negMul : fx.qiH
+        const amt = Math.round(q1 * eff * 3600 * (q1 > 0 ? evtGainMul : 1))
         state.resources.qi = Math.max(0, state.resources.qi + amt)
-        netH += fx.qiH
+        netH += q1
         parts.push(`灵气 ${amt >= 0 ? '+' : '−'}${fmtNum(Math.abs(amt))}`)
       }
       if (typeof fx.stonesH === 'number' && fx.stonesH !== 0) {
-        const amt = Math.round(fx.stonesH * stoneRate)
+        const s1 = fx.stonesH < 0 ? fx.stonesH * negMul : fx.stonesH
+        const amt = Math.round(s1 * stoneRate * (s1 > 0 ? evtGainMul : 1))
         state.resources.stones = Math.max(0, state.resources.stones + amt)
-        netH += fx.stonesH
+        netH += s1
         parts.push(`灵石 ${amt >= 0 ? '+' : '−'}${fmtNum(Math.abs(amt))}`)
       }
       if (typeof fx.luck === 'number' && fx.luck !== 0) {
@@ -346,6 +390,30 @@ class EventSystem {
       if (typeof fx.tribCdExtraSec === 'number' && fx.tribCdExtraSec !== 0) {
         es.tribCdExtraSec += fx.tribCdExtraSec
         parts.push(`下次渡劫调息 +${Math.round(fx.tribCdExtraSec / 3600)}h（2.5 消费）`)
+      }
+      // V6.10 批 H：渡劫「备考」符 —— 下次渡劫单雷成功率 +N%（一次性，渡劫结算后消费清除）
+      //   懒建不入兜底（只在写入时出现），读取侧一律 `Number.isFinite ? : 0`。
+      if (typeof fx.tribEasePct === 'number' && fx.tribEasePct !== 0) {
+        es.tribEasePct = clamp((Number(es.tribEasePct) || 0) + fx.tribEasePct, 0, 0.30)
+        parts.push(`下次渡劫单雷 +${Math.round(fx.tribEasePct * 100)}%`)
+      }
+      // V6.11 功法库改造：**他界功法奇遇** —— 命中则把 id 推入 `es.pendingTech`，
+      //   装配层下一拍取走并调 `tech.grant(id)`（EventSystem 不 import TechniqueSystem，同 fitDelta 范式）。
+      if (fx.learnTech) {
+        const p = Number(fx.learnTech.p)
+        const hit = Math.random() < (Number.isFinite(p) ? p : 1)
+        if (!hit) {
+          parts.push('残卷字迹模糊，终究没能参透')
+        } else {
+          const t = this._pickForeignTech(fx.learnTech.from)
+          if (!t) {
+            parts.push('翻遍残卷，这一门学不上手')
+          } else {
+            if (!Array.isArray(es.pendingTech)) es.pendingTech = []
+            es.pendingTech.push(t.id)
+            parts.push(`另得一门他界功法《${t.name}》（待入袋）`)
+          }
+        }
       }
       if (fx.cause) {
         es.causes.push({ name: fx.cause.name, val: fx.cause.val, at: nowMs })
@@ -421,6 +489,54 @@ class EventSystem {
    * 结算一条待抉择事件。
    * @returns {{ok:boolean, good?:boolean, message:string}}
    */
+  /**
+   * V6.11 功法库改造：从「他界（＋公用库）」候选池里抽一本**未持有**的功法。
+   *   候选由 data 层纯函数 `learnCandidates` 过滤（境界门槛 ＋ 顶级灵根硬门槛 已在内）；
+   *   本方法只负责「排除已持有」与随机取一。EventSystem **不 import TechniqueSystem**。
+   * @param {'other'|'common'|'any'} from 池范围
+   * @returns {object|null} 功法定义；无候选 → null
+   */
+  _pickForeignTech (from = 'other') {
+    const s = this.state
+    const w = s.world
+    const wid = (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+    const lv = (s.player && s.player.realm && Number.isFinite(s.player.realm.level)) ? s.player.realm.level : 1
+    const realmIndex = Math.floor((Math.max(1, lv) - 1) / 9)
+    const rarity = rootBaseOf(s.player && s.player.root ? s.player.root.rarity : null)
+    const owned = (s.techniques && s.techniques.ownedTechniques) || {}
+    const pool = learnCandidates(wid, realmIndex, rarity, from).filter((t) => !owned[t.id])
+    if (!pool.length) return null
+    return pool[Math.floor(Math.random() * pool.length)]
+  }
+
+  /**
+   * V6.11：取走「待入袋的他界功法」id（**取走即清**，照 `drainFitDelta` 范式）。
+   *   装配层在下一拍取走并调 `tech.grant(id)` 入袋 —— 跨系统一律由 main.js 中转（13.1②）。
+   * @returns {string[]} 功法 id 数组（无则空数组）
+   */
+  drainPendingTech () {
+    const es = this.es
+    const list = Array.isArray(es.pendingTech) ? es.pendingTech : []
+    if (!list.length) return []
+    es.pendingTech = []
+    return list
+  }
+
+  /**
+   * V6.6 批 B：把一条**指定**事件推入待抉择（供命运节拍器 / 剧情节拍等外部调用）。
+   * 只做「入簿」这一件事：不经采样、不看自动策略、不写去重表——
+   * 结算仍走既有 `resolvePending()`（UI「关键事件」卡零改动）。
+   * @returns {{ok:boolean, uid?:number, eventId?:string, name?:string, message:string}}
+   */
+  pushPending (eventId, nowMs = Date.now()) {
+    const ev = getEvent(eventId)
+    if (!ev) return { ok: false, message: '事件定义缺失。' }
+    const es = this.es
+    es.seq = (es.seq | 0) + 1
+    es.pending.push({ uid: es.seq, eventId: ev.id, at: nowMs })
+    return { ok: true, uid: es.seq, eventId: ev.id, name: ev.name, message: `【${ev.name}】已记入事件簿，待你亲自抉择。` }
+  }
+
   resolvePending (uid, optionId, eff = 0, stoneRate = 0, nowMs = Date.now()) {
     const es = this.es
     const idx = es.pending.findIndex((p) => p.uid === uid)

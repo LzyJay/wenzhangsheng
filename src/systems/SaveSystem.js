@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '5.9.1'                                // V5.9.1（源码去重与口径统一：新增 src/util/ 零依赖叶子层——clamp ×7 / 品质色板副本 / dayKey 包装收敛，品质 5 档词表与大数格式化统一到单一真源）；与 package.json 同步
+const APP_VERSION = '6.9.0'                                // V6.9.0（阶段六终版：剧情线批 A~H / 12 界宗门 96 宗 / 功法库 144 本·界 / 换界散修化 / 转世与各界继承 / GM 控制台 / 12 界事件池与入宗彩蛋）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
@@ -110,6 +110,9 @@ class SaveSystem {
       sect: null,
       beast: null,             // 2.8 灵兽：null＝尚无灵兽资产（BeastSystem 懒建兜底）
       achievements: null,      // 2.10 成就与纪事：null＝老档（AchievementSystem 懒建兜底）
+      storyState: null,        // V6.6 命运节拍器：null＝老档（StorySystem 懒建兜底；与 world.specialState 分叶）
+      // V6.8 批 F 跨世遗产（转世结算，一世内有效）：天逆珠余量 / 跨世功德 / 傀儡挂机位 / 隐性战力
+      legacy: { tiannizhu: 1, gongde: 0, puppetSlots: 0, powerPct: 0 },
       dungeonState: { cleared: {}, stars: {}, dispatch: { slots: 0, runs: [] } },
       petState: { pets: [] },
       trialState: { node: 0, consecutiveFails: 0, lastAttemptAt: 0, daoShangUntil: 0 },

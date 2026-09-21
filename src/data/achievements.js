@@ -7,10 +7,11 @@
  * 边界：纯配置 + 纯函数（getAchievement / shichenOf）。禁止 import systems / Phaser / DOM。
  *
  * 成就口径（设计第二部分）：
- *   · 规模 94 个：境界 18 ｜秘境 19 ｜宗门 12 ｜灵兽 10 ｜事件与因果 12 ｜探索收集 13 ｜隐藏 10
+ *   · 规模 107 个：境界 18 ｜秘境 19 ｜宗门 25 ｜灵兽 10 ｜事件与因果 12 ｜探索收集 13 ｜隐藏 10
+ *     （V6.15：12 界各一条「拜入本界首宗」彩蛋 —— 身份型成就，`need` 为宗门 id 字符串）
  *     （V5.1.3 校正：原注释写「90 个 / 秘境 15」，秘境档后续增至 19 未同步，致测试与说明文案
  *      两处都按 90 写死；现按实际条数回写，并由 tests/V5.1.3-自测.mjs 固化「注释条数 = 实际条数」）
- *   · 成就点 5~50 点/个；五档阶梯（凡/灵/玄/王/皇）按**累计成就点**发放称号 + 外观碎片 + 少量材料
+ *   · 成就点 5~80 点/个（V6.12 批 G5a：太上两档续掌门之上递增）；五档阶梯（凡/灵/玄/王/皇）按**累计成就点**发放称号 + 外观碎片 + 少量材料
  *   · 硬护栏：不发境界直通型奖励；称号纯展示（不影响任何数值），同时只可佩戴 1 个
  *   · 判定：metric 达到 need 即解锁（>=）；metric 由装配层 main.js 现算快照传入（跨模块只走装配层）
  *   · 隐藏成就：未解锁时名字显示「???」、只给 hint 暗示（设计："由社区自然求解"）
@@ -98,8 +99,21 @@ export const ACHIEVEMENTS = [
   { id: 'achv_sigpoints', cat: 'dungeon', name: '积分为凭', desc: '秘境积分累计到 300。', points: 20, metric: 'sigPoints', need: 300 },
   { id: 'achv_sigweekly', cat: 'dungeon', name: '限时一趟', desc: '探过一次当周限时秘境。', points: 15, metric: 'sigWeeklyDone', need: 1 },
 
-  // ── 宗门（12）─────────────────────────────────────────────────────────
-  { id: 'achv_yunlan', cat: 'sect', name: '云岚弟子', desc: '拜入云岚宗。', points: 10, metric: 'joined', need: 1, chronicle: '你在云岚宗的山门前递了名帖——从此有处可回，也有人等你交差。' },
+  // ── 宗门（14）─────────────────────────────────────────────────────────
+  // ── V6.15：**12 界入宗彩蛋**（身份型成就：拜入本界「首宗」即解锁；换界转散修后需重拜）──
+  //   metric='sectId' + need=<宗门 id>（**字符串相等**判定，见 AchievementSystem.evaluate）
+  { id: 'achv_yunlan', cat: 'sect', name: '云岚弟子', desc: '拜入青岚界的云岚宗。', points: 10, metric: 'sectId', need: 'sect_ql_yunlan', chronicle: '你在云岚宗的山门前递了名帖 —— 从此有处可回，也有人等你交差。' },
+  { id: 'achv_sect_poxiao', cat: 'sect', name: '恒岳门人', desc: '拜入破晓星域的恒岳派。', points: 10, metric: 'sectId', need: 'sect_px_hengyue', chronicle: '边陲小宗的山门矮得可怜。你递上名帖时，守门的老修士多看了你一眼。' },
+  { id: 'achv_sect_denghuo', cat: 'sect', name: '观云弟子', desc: '拜入观云界的观云峰。', points: 10, metric: 'sectId', need: 'sect_dh_guanyun', chronicle: '入门第一课不授吐纳，只问一句「什么最危险」。你答完，才算是这里的人。' },
+  { id: 'achv_sect_qingyun', cat: 'sect', name: '青云弟子', desc: '拜入青云古界的青云门。', points: 10, metric: 'sectId', need: 'sect_qy_qingyun', chronicle: '青云七峰，晨钟一响满山都是御剑声 —— 你从此也是其中一声。' },
+  { id: 'achv_sect_wangzu', cat: 'sect', name: '青池族人', desc: '拜入望族山河的青池宗。', points: 10, metric: 'sectId', need: 'sect_wz_qingchi', chronicle: '族谱上添了你的名字：一笔写下去，往后三十年都在这本册子里。' },
+  { id: 'achv_sect_younuo', cat: 'sect', name: '清风道童', desc: '拜入幽傩界的清风观。', points: 10, metric: 'sectId', need: 'sect_yn_qingfeng', chronicle: '药房的门一推开，苦味先扑上来。你在这里学会了先辨药，再辨自己。' },
+  { id: 'achv_sect_tongtian', cat: 'sect', name: '灵溪弟子', desc: '拜入通天界的灵溪宗。', points: 10, metric: 'sectId', need: 'sect_tt_lingxi', chronicle: '香云山下的灶房很吵，可那本被翻烂的功法，你就是在这儿读完的。' },
+  { id: 'achv_sect_tiangong', cat: 'sect', name: '不空门人', desc: '拜入天工界的不空门。', points: 10, metric: 'sectId', need: 'sect_tg_bukong', chronicle: '第一次结丝，十根指头抖了九根。师父只说了一句：再结一次。' },
+  { id: 'achv_sect_liumian', cat: 'sect', name: '问道弟子', desc: '拜入六面囚笼的问道宗。', points: 10, metric: 'sectId', need: 'sect_lm_wendao', chronicle: '宗主不语，弟子只好自己读。你在这里学会的第一件事是：别急着信。' },
+  { id: 'achv_sect_jiuding', cat: 'sect', name: '道宗弟子', desc: '拜入九鼎九州的道宗。', points: 10, metric: 'sectId', need: 'sect_jd_dao', chronicle: '州县里发下来的启蒙功法，扉页上印着两个小字：道宗。' },
+  { id: 'achv_sect_wuyuan', cat: 'sect', name: '负山门人', desc: '拜入无缺古界的负山宗。', points: 10, metric: 'sectId', need: 'sect_wy_fushan', chronicle: '负山宗早已没落，山门上的匾额掉了漆。你还是把名帖递了进去。' },
+  { id: 'achv_sect_xianghuo', cat: 'sect', name: '伏龙道童', desc: '拜入人间香火的伏龙观。', points: 10, metric: 'sectId', need: 'sect_xh_fulong', chronicle: '晨钟一响，青芜山上的第一页就翻开了 —— 观里的猫比你先到。' },
   { id: 'achv_jichen', cat: 'sect', name: '积羽沉舟', desc: '累计贡献 1000。', points: 15, metric: 'totalContrib', need: 1000 },
   { id: 'achv_qinmian', cat: 'sect', name: '门中勤勉', desc: '累计贡献 3000。', points: 20, metric: 'totalContrib', need: 3000 },
   { id: 'achv_gonggai', cat: 'sect', name: '功盖内外', desc: '累计贡献 10000。', points: 30, metric: 'totalContrib', need: 10000 },
@@ -108,7 +122,10 @@ export const ACHIEVEMENTS = [
   { id: 'achv_zhenchuan', cat: 'sect', name: '真传弟子', desc: '职级晋至真传。', points: 20, metric: 'sectRank', need: 2 },
   { id: 'achv_zhishi', cat: 'sect', name: '执事长老', desc: '职级晋至执事长老。', points: 30, metric: 'sectRank', need: 3 },
   { id: 'achv_shouzuo', cat: 'sect', name: '首座', desc: '职级晋至首座。', points: 40, metric: 'sectRank', need: 4 },
-  { id: 'achv_zhangmen', cat: 'sect', name: '掌门', desc: '职级晋至掌门（六档之顶）。', points: 50, metric: 'sectRank', need: 5, title: '掌门', chronicle: '你把掌门印接在手里——云岚宗上下都在看你会把它带去哪里。' },
+  { id: 'achv_zhangmen', cat: 'sect', name: '掌门', desc: '职级晋至掌门。', points: 50, metric: 'sectRank', need: 5, title: '掌门', chronicle: '你把掌门印接在手里——{sect}上下都在看你会把它带去哪里。' },
+  // V6.12 批 G5a：职级扩到 8 档，补掌门之上两档（称号随宗而变，成就名取通用档名）
+  { id: 'achv_taishang', cat: 'sect', name: '太上长老', desc: '职级晋至太上长老。', points: 60, metric: 'sectRank', need: 6, chronicle: '你退到幕后那天，山门里的规矩换了一版 —— 你写的那一版。' },
+  { id: 'achv_zushi', cat: 'sect', name: '太上祖师', desc: '职级晋至太上祖师。', points: 80, metric: 'sectRank', need: 7, chronicle: '后辈提起你时不再说名字，只说「本门祖师」。' },
   { id: 'achv_tongmen', cat: 'sect', name: '同门之谊', desc: '向宗门请过一次结阵护法。', points: 15, metric: 'sectAid', need: 1 },
   { id: 'achv_jigu', cat: 'sect', name: '积谷防饥', desc: '手上攒着 500 贡献未花。', points: 15, metric: 'contrib', need: 500 },
 
@@ -229,7 +246,8 @@ export const CHRONICLE_PLACES = [
 export const CHRONICLE_BEASTS = [
   '啸月狼', '铁背苍熊', '赤瞳狐', '背甲玄龟', '雷纹豹', '三眼灵狈', '青翼蛇', '吞云兽'
 ]
-export const CHRONICLE_SECT_TITLES = ['外门弟子', '内门弟子', '真传', '执事长老', '首座', '掌门']
+// V6.12 批 G5a：称号池随职级扩到 8 档（掌门之上补太上长老 / 太上祖师）
+export const CHRONICLE_SECT_TITLES = ['外门弟子', '内门弟子', '真传', '执事长老', '首座', '掌门', '太上长老', '太上祖师']
 
 /**
  * 纪事模板（text 为事件，note 为一句点评）

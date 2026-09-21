@@ -47,7 +47,11 @@ export const RANKS = [
   { idx: 2, id: 'zhenchuan', name: '真传弟子', realmIndex: 2, realmName: '金丹', contrib: 1200,  salaryHours: 0.9, slots: 5, discount: 0.10, unlocks: '商店 9 折（个人洞府待内容批次 2）' },
   { idx: 3, id: 'zhishi',    name: '执事长老', realmIndex: 3, realmName: '元婴', contrib: 4000,  salaryHours: 1.4, slots: 5, discount: 0.15, unlocks: '商店 85 折' },
   { idx: 4, id: 'shouzuo',   name: '首座',     realmIndex: 4, realmName: '化神', contrib: 12000, salaryHours: 2.0, slots: 5, discount: 0.15, unlocks: '收徒名额 +2（V5.5 弟子线已实装，见 disciples.js RECRUIT.rankBonus）' },
-  { idx: 5, id: 'zhangmen',  name: '掌门',     realmIndex: 5, realmName: '炼虚', contrib: 40000, salaryHours: 3.0, slots: 5, discount: 0.15, unlocks: '收徒名额 +3；宗门宣言（轻社交待内容批次 3）' }
+  { idx: 5, id: 'zhangmen',  name: '掌门',     realmIndex: 5, realmName: '炼虚', contrib: 40000, salaryHours: 3.0, slots: 5, discount: 0.15, unlocks: '收徒名额 +3；宗门宣言（轻社交待内容批次 3）' },
+  // ── V6.12 批 G5a：掌门之上再加两档（idx 6/7，与 8 大境界一一对应：合体 / 大乘）──
+  //   表里的 `name` 是**阵营基线兜底名**；实际称号由 worldSects.rankTitlesOf() 按「宗 > 界 > 阵营」三级取（见该文件）。
+  { idx: 6, id: 'taishang',  name: '太上长老', realmIndex: 6, realmName: '合体', contrib: 120000, salaryHours: 4.0, slots: 5, discount: 0.20, unlocks: '商店 8 折；本宗顶级传承（专属本）可兑换' },
+  { idx: 7, id: 'zushi',     name: '太上祖师', realmIndex: 7, realmName: '大乘', contrib: 300000, salaryHours: 5.0, slots: 5, discount: 0.25, unlocks: '商店 75 折；宗门之内已无更高之位' }
 ]
 
 /**
@@ -72,47 +76,134 @@ export const RANKS = [
  */
 export const TASKS = [
   {
-    id: 'task_xunluo', name: '巡逻', kind: 'idle', hours: 2, minRealm: 0,
+    id: 'task_xunluo', name: '巡逻', kind: 'idle', hours: 2, minRealm: 0, minRank: 0,
     contrib: 60, material: null,
-    desc: '在山门内外巡视两个时辰，看顾阵眼。'
+    desc: '在山门内外巡视两个时辰，看顾阵眼。',
+    // V6.12 批 G5c：按**职位**分叉的名称与描述（取满足 minRank 的最高一档）
+    variants: [
+      { minRank: 0, name: '巡逻', desc: '在山门内外巡视两个时辰，看顾阵眼。' },
+      { minRank: 3, name: '巡山督察', desc: '以执事之尊巡察全山：各峰阵眼、丹房火候、药圃结界，一一看过。' },
+      { minRank: 6, name: '镇守山门', desc: '太上长老亲镇山门，一坐便是一季 —— 寻常弟子终其一生也见不到这一幕。' }
+    ]
   },
   {
-    id: 'task_caiji', name: '采集', kind: 'idle', hours: 1, minRealm: 0,
+    id: 'task_caiji', name: '采集', kind: 'idle', hours: 1, minRealm: 0, minRank: 0,
     contrib: 55, material: { id: 'mat_lingcao', min: 1, max: 2 },
-    desc: '去灵田采收灵草，顺手替丹房打杂。'
+    desc: '去灵田采收灵草，顺手替丹房打杂。',
+    variants: [
+      { minRank: 0, name: '采集', desc: '去灵田采收灵草，顺手替丹房打杂。' },
+      { minRank: 2, name: '督采灵田', desc: '督着一整片药圃的采收 —— 哪畦该催、哪株该留，你说了算。' },
+      { minRank: 5, name: '勘定药脉', desc: '为宗门勘定新药脉：灵气走向、土性寒温，一笔定下百年药源。' }
+    ]
   },
   {
-    id: 'task_husong', name: '护送', kind: 'power', hours: 2, minRealm: 0,
+    id: 'task_husong', name: '护送', kind: 'power', hours: 2, minRealm: 0, minRank: 0,
     contrib: 80, material: null, reqMul: 1.2, failHalf: true,
-    desc: '护送商队过乱石岭，路上或有妖人劫道（战力校验，失败贡献减半）。'
+    desc: '护送商队过乱石岭，路上或有妖人劫道（战力校验，失败贡献减半）。',
+    variants: [
+      { minRank: 0, name: '护送', desc: '护送商队过乱石岭，路上或有妖人劫道（战力校验，失败贡献减半）。' },
+      { minRank: 3, name: '接引外宾', desc: '代宗门迎送他派修士：礼数、路线、暗哨，一样都不能出错。' }
+    ]
   },
   {
-    id: 'task_chuyao', name: '除妖', kind: 'power', hours: 3, minRealm: 0,
+    id: 'task_chuyao', name: '除妖', kind: 'power', hours: 3, minRealm: 0, minRank: 0,
     contrib: 100, material: { id: 'mat_yaohu', min: 1, max: 2 }, reqMul: 1.5, failHalf: true,
-    desc: '清剿啸月岭妖兽，取其精血交差（战力校验，失败贡献减半且无材料）。'
+    desc: '清剿啸月岭妖兽，取其精血交差（战力校验，失败贡献减半且无材料）。',
+    variants: [
+      { minRank: 0, name: '除妖', desc: '清剿啸月岭妖兽，取其精血交差（战力校验，失败贡献减半且无材料）。' },
+      { minRank: 4, name: '讨伐妖王', desc: '亲率一队弟子讨伐盘踞多年的妖王 —— 此活只有首座以上才接得下。' }
+    ]
   },
   // ═══ 筑基起（minRealm 1~4）：随境界解锁的重赏活计 ═══
   {
-    id: 'task_yujian', name: '御剑巡山', kind: 'idle', hours: 2, minRealm: 1,
+    id: 'task_yujian', name: '御剑巡山', kind: 'idle', hours: 2, minRealm: 1, minRank: 0,
     contrib: 140, material: { id: 'mat_lingcao', min: 2, max: 3 },
-    desc: '御剑绕宗门辖境一周，勘验护山大阵有无松动。'
+    desc: '御剑绕宗门辖境一周，勘验护山大阵有无松动。',
+    variants: [
+      { minRank: 0, name: '御剑巡山', desc: '御剑绕宗门辖境一周，勘验护山大阵有无松动。' },
+      { minRank: 5, name: '坐镇护山大阵', desc: '不巡不查，只坐阵眼：阵在则宗在，阵破则你先知道。' }
+    ]
   },
   {
-    id: 'task_hufang', name: '丹房护火', kind: 'idle', hours: 3, minRealm: 2,
+    id: 'task_hufang', name: '丹房护火', kind: 'idle', hours: 3, minRealm: 2, minRank: 0,
     contrib: 220, material: { id: 'mat_qinglingcao', min: 1, max: 2 },
-    desc: '替长老看住丹炉地火七日不熄，出丹时分得一份清灵草。'
+    desc: '替长老看住丹炉地火七日不熄，出丹时分得一份清灵草。',
+    variants: [
+      { minRank: 0, name: '丹房护火', desc: '替长老看住丹炉地火七日不熄，出丹时分得一份清灵草。' },
+      { minRank: 3, name: '主持开炉', desc: '一炉九转丹由你主持：火候、投料、开炉时辰，出丹成败皆系于此。' }
+    ]
   },
   {
-    id: 'task_zhanyaomo', name: '镇压心魔', kind: 'power', hours: 4, minRealm: 3,
+    id: 'task_zhanyaomo', name: '镇压心魔', kind: 'power', hours: 4, minRealm: 3, minRank: 0,
     contrib: 320, material: { id: 'mat_yaodan', min: 1, max: 2 }, reqMul: 1.35, failHalf: true,
-    desc: '入镇魔窟清剿心魔余孽（战力校验，失败贡献减半且无材料）。'
+    desc: '入镇魔窟清剿心魔余孽（战力校验，失败贡献减半且无材料）。',
+    variants: [
+      { minRank: 0, name: '镇压心魔', desc: '入镇魔窟清剿心魔余孽（战力校验，失败贡献减半且无材料）。' },
+      { minRank: 6, name: '镇守心魔窟', desc: '不再剿杀，只镇守 —— 你坐在洞口，窟里的东西便不敢动。' }
+    ]
   },
   {
-    id: 'task_tianji', name: '天机勘秘', kind: 'power', hours: 5, minRealm: 4,
+    id: 'task_tianji', name: '天机勘秘', kind: 'power', hours: 5, minRealm: 4, minRank: 0,
     contrib: 460, material: { id: 'mat_kuang', min: 2, max: 3 }, reqMul: 1.5, failHalf: true,
-    desc: '循天机榜残图探一处上古禁地（战力校验，失败贡献减半且无材料）。'
+    desc: '循天机榜残图探一处上古禁地（战力校验，失败贡献减半且无材料）。',
+    variants: [
+      { minRank: 0, name: '天机勘秘', desc: '循天机榜残图探一处上古禁地（战力校验，失败贡献减半且无材料）。' },
+      { minRank: 6, name: '定夺禁地归属', desc: '禁地开与不开、归谁看守 —— 此等决断，历来只由太上长老落笔。' }
+    ]
+  },
+  // ═══ V6.12 批 G5a：**职责任务**（高职级专属；职级不够者既看不到、也接不到）═══
+  {
+    id: 'task_chuangong', name: '传功授业', kind: 'idle', hours: 3, minRealm: 3, minRank: 3,
+    contrib: 300, material: null,
+    desc: '为门下弟子讲法三日：讲什么、不讲什么，都是你的分寸。',
+    variants: [
+      { minRank: 3, name: '传功授业', desc: '为门下弟子讲法三日：讲什么、不讲什么，都是你的分寸。' },
+      { minRank: 6, name: '开坛论道', desc: '一坛论道，全宗听讲 —— 你随口一句，可能就是某个弟子一生的路。' }
+    ]
+  },
+  {
+    id: 'task_zhuchi_dabi', name: '主持大比', kind: 'idle', hours: 4, minRealm: 4, minRank: 4,
+    contrib: 420, material: null,
+    desc: '主持一届宗门大比：排场次、定规矩、判胜负，全门都在看你的公道。',
+    variants: [
+      { minRank: 4, name: '主持大比', desc: '主持一届宗门大比：排场次、定规矩、判胜负，全门都在看你的公道。' }
+    ]
+  },
+  {
+    id: 'task_zhenshou', name: '镇守禁地', kind: 'power', hours: 5, minRealm: 4, minRank: 5,
+    contrib: 520, material: { id: 'mat_kuang', min: 1, max: 2 }, reqMul: 1.6, failHalf: true,
+    desc: '独镇宗门禁地一季。禁地里有东西在动，而你是唯一知道的人（战力校验）。',
+    variants: [
+      { minRank: 5, name: '镇守禁地', desc: '独镇宗门禁地一季。禁地里有东西在动，而你是唯一知道的人（战力校验）。' }
+    ]
+  },
+  {
+    id: 'task_dingce', name: '定宗门大计', kind: 'idle', hours: 5, minRealm: 5, minRank: 6,
+    contrib: 800, material: null,
+    desc: '定下宗门未来百年的路子：收不收人、结不结盟、争不争那一口气。',
+    variants: [
+      { minRank: 6, name: '定宗门大计', desc: '定下宗门未来百年的路子：收不收人、结不结盟、争不争那一口气。' }
+    ]
   }
 ]
+
+/**
+ * V6.12 批 G5c：取某条任务在**某职位**下应显示的名称与描述。
+ *   取满足 `minRank` 的**最高一档**变体；未写 `variants` 的任务回落自身 `name`/`desc` ——
+ *   故既有的旧断言（读 `def.name` / `def.desc`）行为不变。
+ */
+export function taskTextOf (def, rankIdx = 0) {
+  if (!def) return { name: '', desc: '' }
+  const k = Math.max(0, rankIdx | 0)
+  let hit = null
+  for (const v of (def.variants || [])) {
+    if ((v.minRank | 0) <= k && (!hit || (v.minRank | 0) >= (hit.minRank | 0))) hit = v
+  }
+  return {
+    name: (hit && hit.name) || def.name,
+    desc: (hit && hit.desc) || def.desc
+  }
+}
 
 /**
  * 任务悬赏随境界的放大量（主人口径「跟随境界奖励增加」）：
@@ -121,9 +212,17 @@ export const TASKS = [
  */
 export const CONTRIB_GROWTH = 0.6
 
+/**
+ * 贡献 / 大比 / 师徒恩义的**境界倍率上界**（0~5 ＝ 炼气~炼虚）。
+ *   ⚠ **与职级档数解耦**（V6.12 批 G5a）：职级由 6 档扩到 8 档时，若此处仍写
+ *     `RANKS.length - 1`，合体 / 大乘的贡献倍率会从 4.0× 悄悄解封到 4.6× / 5.2× ——
+ *     那是「加职位」顺带改了数值，属不该发生的副作用。故钉成显式常量。
+ */
+export const CONTRIB_REALM_CAP = 5
+
 export function contribOf (def, realmIndex = 0) {
   if (!def) return 0
-  const k = Math.max(0, Math.min(RANKS.length - 1, realmIndex | 0))
+  const k = Math.max(0, Math.min(CONTRIB_REALM_CAP, realmIndex | 0))
   return Math.max(1, Math.round(def.contrib * (1 + CONTRIB_GROWTH * k)))
 }
 
@@ -246,7 +345,38 @@ export const DABI = {
   reqMul: 1.2,                // 大比定标＝基准战力 × 1.2（同「护送」口径）
   titleTop: '大比魁首',        // rate ≥ 0.9
   titleMid: '大比之秀',        // rate ≥ 0.6
-  titleLow: '大比优胜'
+  titleLow: '大比优胜',
+  /**
+   * V6.4 批 D3：12 界大比头衔（**青岚取原字面** → 默认界与既有断言逐位不变）。
+   * 口径：头衔是「这一界怎么称呼一次好名次」，2~4 字为宜（面板行内显示）。
+   */
+  titleByWorld: {
+    qinglan: { top: '大比魁首', mid: '大比之秀', low: '大比优胜' },
+    poxiao: { top: '逆星夺魁', mid: '榜上有名', low: '尚在人间' },
+    denghuo: { top: '算无遗策', mid: '稳中有进', low: '全身而退' },
+    qingyun: { top: '剑压群英', mid: '名列前茅', low: '初露锋芒' },
+    wangzu: { top: '族中魁首', mid: '支脉之秀', low: '崭露头角' },
+    younuo: { top: '真伪莫辨', mid: '胆气过人', low: '全身而返' },
+    tongtian: { top: '活得最久', mid: '稳扎稳打', low: '重在参与' },
+    tiangong: { top: '匠造第一', mid: '巧手之作', low: '已然上手' },
+    liumian: { top: '盲盒之王', mid: '运气不错', low: '聊胜于无' },
+    jiuding: { top: '功德魁首', mid: '善行可嘉', low: '与有荣焉' },
+    wuyuan: { top: '走满一线', mid: '无暇之姿', low: '有缺待补' },
+    xianghuo: { top: '香火最盛', mid: '愿力可期', low: '信众初聚' }
+  }
+}
+
+/**
+ * 大比头衔（V6.4 批 D3）：按当前世界取本界头衔。
+ * 未抽定 / 未登记界 → 回落 `DABI.titleTop / titleMid / titleLow`（青岚在表内且值与原字面相同，
+ * 故默认界与 V5.5.1 既有断言一字不变）。
+ * @param {string} worldId state.world.worldId
+ * @param {'top'|'mid'|'low'} tier
+ */
+export function dabiTitleOf (worldId, tier) {
+  const t = DABI.titleByWorld[worldId]
+  if (t && t[tier]) return t[tier]
+  return tier === 'top' ? DABI.titleTop : tier === 'mid' ? DABI.titleMid : DABI.titleLow
 }
 
 /** 大比一轮的周期毫秒 / 周期键（同一届内幂等）/ 距下一届（现实毫秒） */
@@ -269,7 +399,7 @@ export function dabiMsToNext (ts) {
 export function dabiContribOf (rate, realmIndex = 0) {
   const r = Math.min(0.95, Math.max(0.25, Number(rate) || 0))
   const base = DABI.contribMin + (DABI.contribMax - DABI.contribMin) * r
-  const k = Math.max(0, Math.min(RANKS.length - 1, realmIndex | 0))
+  const k = Math.max(0, Math.min(CONTRIB_REALM_CAP, realmIndex | 0))
   return Math.max(1, Math.round(base * (1 + CONTRIB_GROWTH * k)))
 }
 
@@ -283,6 +413,8 @@ export function offeringContrib (valuePerUnit, n) {
 
 export default {
   SECT, DAO_TONG, RANKS, TASKS, LIBRARY, SHOP, REALM_GRANTS, CONTRIB_GROWTH,
+  CONTRIB_REALM_CAP,   // V6.12 批 G5a：境界倍率上界（与职级档数解耦）
+  taskTextOf,          // V6.12 批 G5c：任务按职位分叉的名称/描述
   DABI, dabiRefreshMs, dabiKeyOf, dabiMsToNext, dabiContribOf,
   OFFERING, offeringContrib,
   SECT_REFRESH_DAYS, sectRefreshMs, sectDayKey, sectMsToNextRefresh, fmtSectRefreshPeriod,

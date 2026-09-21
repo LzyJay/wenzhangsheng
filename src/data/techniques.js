@@ -26,6 +26,11 @@
  * ═══════════════════════════════════════════════════════════════════════════
  */
 
+// V6.11 功法库改造：分界库增量（各界专属 144 本 ＋ 公用库增量 110 本）。data→data 单向依赖。
+import { LIBRARY_TECHS } from './techniqueLibrary.js'
+// V6.12 批 G3：宗门功法库（12 界 × 8 宗 × 3 ＝ 288 本）。同为纯增量，不反向依赖。
+import { SECT_TECHS } from './sectTechniques.js'
+
 /** 品阶元数据（颜色沿用项目既有的"品质语汇"：灰→金→玉→紫→青；只用于铭牌/徽记，不参与数值着色） */
 export const TIER_META = [
   { tier: 'fan', name: '凡', color: '#b9b3a8' },
@@ -93,7 +98,9 @@ export function cultivateSecOf (t, level = 1) {
 }
 
 // ── 功法表（22 本：V3.5.7 起含「原著首批」入库，出处见各条注释）──────────────
-export const TECHNIQUES = [
+// V6.11 功法库改造：本数组改称 BASE_TECHNIQUES（**公用库入门段**，id 与数值一字未改），
+//   与 techniqueLibrary.js 的分界增量合并为全表 TECHNIQUES（见下方归一化）。
+const BASE_TECHNIQUES = [
   // ═══ 凡阶（修为 +5%/级 · 战力 +0.4%/级）═══
   {
     id: 'tech_yinqi', name: '引气吐纳法', tier: 'fan', grade: 1,
@@ -286,10 +293,103 @@ export const TECHNIQUES = [
   }
 ]
 
+/**
+ * **全表**（V6.12 批 G3 扩充）：旧表 22 本（公用库入门段）＋ 分界库增量（`techniqueLibrary.js`）
+ *   ＋ **宗门功法库**（`sectTechniques.js`，12 界 × 8 宗 × 3 ＝ 288 本）。
+ *   旧条目未显式登记 `worldId` / `unlockRealm` / `rootReq` → 一律取归一化默认
+ *   （公用库 · 无境界门槛 · 不限灵根）—— **现有 22 本的 id 与数值一字未改**，老档零风险。
+ *   主人口径（批 G3 更新）：每界可用 ＝ 公用 132 ＋ 本界专属 12 ＋ **本界宗门 24 ＝ 168 本**。
+ */
+export const TECHNIQUES = [...BASE_TECHNIQUES, ...LIBRARY_TECHS, ...SECT_TECHS]
+  .map((t) => ({ worldId: 'common', unlockRealm: 0, rootReq: null, ...t }))
+
 export const TECH_MAP = TECHNIQUES.reduce((acc, t) => {
   acc[t.id] = t
   return acc
 }, {})
+
+// ═══════════════════════════════════════════════════════════════════════════
+// V6.11 功法库改造 · 多世界查询面
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** 未显式登记时的默认字段（现有 22 本走此默认：公用库 · 无境界门槛 · 不限灵根） */
+export const TECH_DEFAULTS = { worldId: 'common', unlockRealm: 0, rootReq: null }
+
+/** 公用库 id（跨界的通用功法；任何世界都能学到） */
+export const COMMON_LIB = 'common'
+
+/**
+ * 某界的**可用功法**（＝ 公用库 ＋ 本界专属）。
+ *   主人口径：**每界可用 ＝ 公用 132 ＋ 本界 12 ＝ 144 本**。
+ * @param {string} worldId 世界 id；空值 → 只有公用库
+ */
+export function availableInWorld (worldId) {
+  const wid = typeof worldId === 'string' && worldId ? worldId : ''
+  return TECHNIQUES.filter((t) => t.worldId === COMMON_LIB || (wid && t.worldId === wid))
+}
+
+/** 某界**专属**功法（不含公用库）；未登记界返回 [] */
+export function techsOf (worldId) {
+  return TECHNIQUES.filter((t) => t.worldId === worldId)
+}
+
+/** 按 id 取功法（public alias，便于数据层外部引用） */
+export function techById (id) {
+  return TECH_MAP[id] || null
+}
+
+/**
+ * 图鉴分组索引：`[{ worldId, name, isCommon, techs:[] }]`
+ *   顺序固定为「公用库 → 12 界（worlds.js 卡池顺序）」；界名由调用方按 worlds.js 渲染（本层只给 id）。
+ * @param {Array<string>} worldIds 12 界 id（由装配层/面板传入，保持数据层不 import worlds.js）
+ */
+export function libraryIndex (worldIds = []) {
+  const out = [{
+    worldId: COMMON_LIB,
+    isCommon: true,
+    techs: TECHNIQUES.filter((t) => t.worldId === COMMON_LIB)
+  }]
+  for (const wid of worldIds) {
+    out.push({ worldId: wid, isCommon: false, techs: techsOf(wid) })
+  }
+  return out
+}
+
+/**
+ * 数据层习得校验（**纯函数**，供 TechniqueSystem.canLearn 与事件抽取共用）：
+ *   · 境界：`unlockRealm ≤ realmIndex`
+ *   · 灵根：`rootReq.rarities` 命中当前灵根档（`wr_*` 世界专属灵根按其 `base` 归档 —— 由调用方传入已归档的 rarity）
+ * @returns {{ok:boolean, reason:string, needRealm:number, needRoots:string[]|null}}
+ */
+export function canLearnByData (t, realmIndex = 0, rootRarity = null) {
+  const needRealm = Number.isFinite(t && t.unlockRealm) ? t.unlockRealm : 0
+  const ri = Number.isFinite(realmIndex) ? realmIndex : 0
+  const needRoots = (t && t.rootReq && Array.isArray(t.rootReq.rarities)) ? t.rootReq.rarities : null
+  if (ri < needRealm) {
+    return { ok: false, reason: 'realm', needRealm, needRoots }
+  }
+  if (needRoots && (!rootRarity || !needRoots.includes(rootRarity))) {
+    return { ok: false, reason: 'root', needRealm, needRoots }
+  }
+  return { ok: true, reason: '', needRealm, needRoots }
+}
+
+/**
+ * 事件奇遇候选池（**过滤门槛后**随机抽一本）：
+ *   · 来源：`from='other'` → 除本界外的各界专属 ＋ 公用；`'common'` → 只公用；`'any'` → 全部
+ *   · 过滤：不属于本界已可学者（避免抽到"本来就学得到"的）、境界与灵根门槛、已持有（由调用方再过滤）
+ * @returns {Array<object>} 候选功法数组（调用方自行随机取一）
+ */
+export function learnCandidates (worldId, realmIndex, rootRarity, from = 'other') {
+  const wid = typeof worldId === 'string' ? worldId : ''
+  return TECHNIQUES.filter((t) => {
+    const w = t.worldId
+    if (from === 'common' && w !== COMMON_LIB) return false
+    if (from === 'other' && (w === COMMON_LIB || w === wid)) return false
+    if (from === 'any' && w === wid) return false     // 本界专属不算「他界」
+    return canLearnByData(t, realmIndex, rootRarity).ok
+  })
+}
 
 /** 开局赠予的功法（新手脚本：测灵根后获得第一份功法） */
 export const STARTER_TECHNIQUE = 'tech_yinqi'
@@ -335,5 +435,8 @@ export default {
   TECHNIQUES, TECH_MAP, TIER_META, TIER_MAP, SLOT_META, TAG_NAME, SCHOOL_TAGS,
   STARTER_TECHNIQUE, getTechnique, levelCost, totalCost, maxRatePct, maxCombatPct,
   tierLabel, slotKindsOf,
-  TIER_CULTIVATE, CULTIVATE_GROWTH, cultivateSecOf
+  TIER_CULTIVATE, CULTIVATE_GROWTH, cultivateSecOf,
+  // V6.11 多世界功法库查询面
+  TECH_DEFAULTS, COMMON_LIB, availableInWorld, techsOf, techById, libraryIndex,
+  canLearnByData, learnCandidates
 }

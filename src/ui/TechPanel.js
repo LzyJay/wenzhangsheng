@@ -8,6 +8,7 @@
  */
 
 import { TIER_MAP, maxRatePct, maxCombatPct } from '../data/techniques.js'
+import { WORLDS } from '../data/worlds.js'   // V6.11：图鉴按界分组，界名取卡池真源（data→data）
 
 function tierColor (tier) {
   const m = TIER_MAP[tier]
@@ -45,6 +46,8 @@ export function createTechPanel (ctx) {
 /** 槽位短名（按钮文案用） */
 const SLOT_LABEL = { main: '主修', side0: '辅修一', side1: '辅修二' }
 let lastTechRender = 0 // 功法面板轻刷节拍（V3.5.2：时间驱动，见 PANEL_MS）
+let catOpen = false    // V6.11：功法图鉴折叠状态（运行期变量，不入档；关面板不复位，玩家回来后仍是上次的样子）
+const WORLD_IDS = WORLDS.map((w) => w.id)   // 图鉴分组顺序（＝卡池顺序，与 worlds.js 同源）
 
 /** 品阶名带的颜色（品质语汇：灰→金→玉→紫→青） */
 
@@ -188,35 +191,66 @@ function render () {
   }
   dom.techOwned.replaceChildren(ownedFrag)
 
-  // ③ 图鉴（未习得：只露名字/品阶/来源，作为内容预告）
-  const catFrag = document.createDocumentFragment()
-  for (const c of cat.filter((x) => !x.owned)) {
-    const row = document.createElement('div')
-    row.className = 'tech-row locked'
-
-    const tn = document.createElement('span')
-    tn.className = 'tn'
-    tn.textContent = c.tech.name
-
-    const tg = document.createElement('span')
-    tg.className = 'tg'
-    tg.textContent = `${c.tierLabel} · ${slotKindText(c.slotKinds)}`
-
-    const ta = document.createElement('span')
-    ta.className = 'ta'
-    ta.textContent = `${c.tech.source.label} · 满级 修为+${(maxRatePct(c.tech) * 100).toFixed(0)}% 战力+${(maxCombatPct(c.tech) * 100).toFixed(1)}%`
-
-    row.append(tn, tg, ta)
-    catFrag.appendChild(row)
+  // ③ 功法图鉴（V6.11：**折叠头** ＋ 按「公用库 ＋ 12 界」跨世界分组）
+  //   收起时不渲染（省 DOM）；展开时按分组渲染，且用 dataset.sig 做重绘短路（照项目既有 buff 条范式）
+  if (dom.techCatHead) {
+    dom.techCatHead.textContent = `功法图鉴 · 共 ${cat.length} 本 ${catOpen ? '▾' : '▸'}`
   }
-  dom.techCatalog.replaceChildren(catFrag)
+  if (dom.techCatalog) {
+    dom.techCatalog.hidden = !catOpen
+    const sig = `${cat.length}|${cat.filter((x) => x.owned).length}|${catOpen}`
+    if (!catOpen) {
+      dom.techCatalog.replaceChildren()
+      dom.techCatalog.dataset.sig = ''
+    } else if (dom.techCatalog.dataset.sig !== sig) {
+      dom.techCatalog.dataset.sig = sig
+      const catFrag = document.createDocumentFragment()
+      const groups = tech.libraryView(WORLD_IDS, (id) => {
+        const w = WORLDS.find((x) => x.id === id)
+        return w ? w.name : id
+      })
+      for (const g of groups) {
+        const gh = document.createElement('div')
+        gh.className = 'tech-sec'
+        gh.style.margin = '6px 0 2px'
+        gh.textContent = `${g.name} · ${g.total} 本（已习 ${g.owned}）`
+        catFrag.appendChild(gh)
+
+        for (const c of g.items) {
+          if (c.owned) continue          // 已习得的在上一区，图鉴只做「内容预告」
+          const row = document.createElement('div')
+          row.className = 'tech-row locked'
+
+          const tn = document.createElement('span')
+          tn.className = 'tn'
+          tn.textContent = c.top ? `${c.tech.name} ◆` : c.tech.name
+          if (c.top) tn.title = '顶级灵根专属（硬门槛）'
+
+          const tg = document.createElement('span')
+          tg.className = 'tg'
+          tg.textContent = `${c.tierLabel} · ${slotKindText(c.slotKinds)}`
+
+          const ta = document.createElement('span')
+          ta.className = 'ta'
+          ta.textContent = c.learnBlock
+            ? c.learnBlock
+            : `${c.tech.source.label} · 满级 修为+${(maxRatePct(c.tech) * 100).toFixed(0)}% 战力+${(maxCombatPct(c.tech) * 100).toFixed(1)}%`
+
+          row.append(tn, tg, ta)
+          catFrag.appendChild(row)
+        }
+      }
+      dom.techCatalog.replaceChildren(catFrag)
+    }
+  }
 
   // ④ 脚注
   if (dom.techNote) {
     dom.techNote.textContent =
       `已装备功法合计：修为 ×${(1 + sm.pct).toFixed(2)}（+${(sm.pct * 100).toFixed(0)}%），战力 +${(sm.combatPct * 100).toFixed(1)}%。` +
       `两条升级路：① 花灵气 + 灵石即刻参悟（灵气与境界推进共用同一池）；② 装备中的功法随时间自行精进（在线挂机才计，免费但更慢）。` +
-      `品阶越高，每一级给的修为与战力都越多 —— 玄阶每级 +17% 修为，天阶每级 +40%。未习得的功法见「图鉴 · 来源」`
+      `品阶越高，每一级给的修为与战力都越多 —— 玄阶每级 +17% 修为，天阶每级 +40%。` +
+      `未习得的功法见上方「功法图鉴」（点开可按「公用库 ＋ 各界」浏览全部世界的功法；他界功法可在本界奇遇中学到）`
   }
 }
 
@@ -245,6 +279,12 @@ H.onPress(dom.techOverlay, (e) => {
       H.render()
       H.emit('cult:burst', { kind: 'breakthrough' })
     }
+    return
+  }
+  const ct = e.target.closest('[data-cat-toggle]')
+  if (ct) {
+    catOpen = !catOpen                 // V6.11：图鉴折叠开合（运行期变量）
+    render()
     return
   }
   const un = e.target.closest('[data-unequip]')

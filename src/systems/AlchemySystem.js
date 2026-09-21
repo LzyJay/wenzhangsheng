@@ -17,8 +17,14 @@ import { QUALITY_NAME } from '../util/quality.js'   // 品质档名单一真源�
 import { getItem } from '../data/items.js'
 
 class AlchemySystem {
-  constructor (state) {
+  /**
+   * V6.12 批 G4：`sect` 为**可选注入**（装配层后置注入 `alchemy.sect = sect`）——
+   *   用于丹修道统（丹药产出 +15%）。不传 / 未入宗 → 加成为 0，行为与改造前逐位一致。
+   */
+  constructor (state, sect = null) {
     this.state = state
+    this.sect = sect
+    this._pillAcc = 0          // 丹修加成的**确定性累加器**（运行期变量，不入存档）
   }
 
   /** 库存快捷访问（自动补全结构，避免老档缺字段崩溃） */
@@ -93,13 +99,22 @@ class AlchemySystem {
       }
     }
 
-    this.items[r.pillId] = this._count(r.pillId) + 1
+    // V6.12 批 G4：丹修道统（丹药产出 +15%）——走**确定性累加器**：每炼若干炉必多得 1 枚，
+    //   **不引入新的随机数**（否则会扰动既有「成丹率」的 Math.random 序列与相关断言）。
+    let n = 1
+    const pillPct = (this.sect && this.sect.daoBonus) ? this.sect.daoBonus.pill : 0
+    if (pillPct > 0) {
+      this._pillAcc = (this._pillAcc || 0) + pillPct
+      while (this._pillAcc >= 1) { n++; this._pillAcc -= 1 }
+    }
+    this.items[r.pillId] = this._count(r.pillId) + n
     this.state.stats.brewSuccess = (this.state.stats.brewSuccess | 0) + 1
     return {
       ok: true,
       success: true,
       pillId: r.pillId,
-      message: `丹成！${getItem(r.pillId).name} ×1 入囊中（成丹率 ${Math.round(r.rate * 100)}%）`
+      amount: n,
+      message: `丹成！${getItem(r.pillId).name} ×${n} 入囊中（成丹率 ${Math.round(r.rate * 100)}%${n > 1 ? '· 道统加成' : ''}）`
     }
   }
 

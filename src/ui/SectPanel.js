@@ -26,6 +26,7 @@ export function createSectPanel (ctx) {
   const getState = ctx.state
   const getSect = ctx.sect
   const H = ctx.helpers
+  let pendingSect = ''   // V6.12 批 G4：换宗二次确认的闭包标志（运行期变量，不入存档）
   if (!dom.sectOverlay) return null
 
 // ── 宗门面板（2.4）：信息 / 任务板 / 藏经阁 / 商店 ─────────────────────────
@@ -319,6 +320,33 @@ function renderDisciples (info) {
   }
 }
 
+/**
+ * V6.12 批 G4：宗门名册（本界 8 宗 · 拜入 / 换宗）。
+ *   纯展示（动作走下方事件委托）；样式类沿用任务板既有的 `sect-row / tn / td / tp`。
+ */
+function renderRoster (info) {
+  if (!dom.sectRoster) return
+  const rows = (info.roster || []).map((x) => {
+    const tags = [
+      x.isCurrent ? '<span class="jade">当前</span>' : '',
+      x.isHome ? '<span class="dim">本界首宗</span>' : '',
+      x.align === '魔' ? '<span class="red">魔道</span>' : ''
+    ].filter(Boolean).join(' ')
+    const btn = x.isCurrent
+      ? ''
+      : (info.joined
+          ? `<button class="mini" data-change-sect="${x.id}" title="换宗会重列外门、累计贡献重头来（贡献余额与门下弟子保留）">改 投</button>`
+          : `<button class="mini" data-join="${x.id}" title="拜入${x.name}">拜 入</button>`)
+    return '<div class="sect-row">' +
+      `<span class="tn">${x.name} ${tags}</span>` +
+      `<span class="td dim">${x.daoName} · ${x.align}道 · 传承 ${x.techCount} 本</span>` +
+      `<span class="tp"><span class="dim">${x.intro}</span></span>` +
+      `<span class="mini gap">${btn}</span>` +
+      '</div>'
+  }).join('')
+  dom.sectRoster.innerHTML = rows || '<div class="bag-empty">本界宗门名册待补</div>'
+}
+
 function render () {
   const state = getState()
   const sect = getSect()
@@ -328,17 +356,17 @@ function render () {
   // ① 宗门信息（未入宗给「拜入」入口）
   let infoHtml = ''
   if (!info.joined) {
+    // V6.12 批 G4：未入宗不再固定「拜入云岚宗」—— 改由下方**名册**选宗（本界 8 家）
     infoHtml =
-      `<div class="si-name">${info.sect.name}</div>` +
-      `<div class="si-line">${info.sect.intro}</div>` +
-      `<div class="si-line">道统：<span class="violet">${info.sect.daoTong.name}</span> —— ${info.sect.daoTong.desc}</div>` +
-      `<div class="si-line">入宗免费，列身外门：领宗门任务攒贡献，可在藏经阁借功法、商店换丹药材料。</div>` +
-      `<div class="si-btns"><button class="mini" data-join>拜 入 云 岚 宗</button></div>`
+      `<div class="si-name">尚未入宗</div>` +
+      `<div class="si-line">本界有 <b>${(info.roster || []).length}</b> 家宗门可供拜入（见下方名册）：入宗免费、列身外门。</div>` +
+      `<div class="si-line">道统决定加成：<span class="violet">剑修</span>战力 ｜ <span class="violet">丹修</span>丹药 ｜ <span class="violet">体修</span>秘境判定 ｜ <span class="violet">符修</span>事件收益 ｜ <span class="violet">法修</span>挂机产出。</div>` +
+      `<div class="si-line">入宗后领任务攒贡献，可借阅<b>本宗传承功法</b>、在商店换丹药材料。</div>`
   } else {
     const r = info.rank
     const p = info.promo
     const promoLine = p.maxed
-      ? `职级：<b>${r.name}</b>（已至掌门）`
+      ? `职级：<b>${r.name}</b>（已至宗门顶位）`
       : `<b>${r.name}</b> → 下一职 ${p.next.name}（需 ${p.realmName}期 ／ 累计贡献 ${p.next.contrib}，现 ${info.totalContrib}）`
     // V3.3.1：宗门按境界下发功法的进度（哪一档已领、哪一档待领）
     const granted = (info.realmGrants || [])
@@ -360,6 +388,9 @@ function render () {
   }
   dom.sectInfo.innerHTML = infoHtml
 
+  // ①b V6.12 批 G4：宗门名册（本界 8 宗；未入宗可拜入，已入宗可换宗）
+  renderRoster(info)
+
   // ② 任务板
   if (!info.joined) {
     dom.sectTasks.innerHTML = '<div class="bag-empty">入宗后开放</div>'
@@ -374,11 +405,12 @@ function render () {
 
       const tn = document.createElement('span')
       tn.className = 'tn'
-      tn.textContent = t.def.name
+      // V6.12 批 G5c：任务名 / 描述按**当前职位**分叉（tasksView 已算好，真源 SectSystem.taskTextOf）
+      tn.textContent = t.title || t.def.name
 
       const td = document.createElement('span')
       td.className = 'td'
-      td.textContent = t.def.desc
+      td.textContent = t.descText || t.def.desc
       // 悬赏：贡献 +（材料）——主人 2026-09-17 标清奖励；09-18 起随境界递增
       const reward = document.createElement('div')
       const mat = t.def.material ? ` · ${getItem(t.def.material.id).name} ×${t.def.material.min}~${t.def.material.max}` : ''
@@ -389,6 +421,13 @@ function render () {
         const tag = document.createElement('em')
         tag.textContent = `${getRealmMeta(t.def.minRealm).name}期解锁 · 重赏`
         tag.style.color = 'rgba(185,140,255,0.8)'
+        td.appendChild(tag)
+      }
+      // V6.12 批 G5c：**职责任务**标记（minRank ≥ 1 才提示 —— 初入宗门根本看不到这些活）
+      if ((t.minRank | 0) > 0) {
+        const tag = document.createElement('em')
+        tag.textContent = `任职解锁 · 需第 ${t.minRank + 1} 档职级以上`
+        tag.style.color = 'rgba(232,185,106,0.85)'
         td.appendChild(tag)
       }
       // 战力类：达标提示（接取即办妥 / 达标必成）
@@ -533,7 +572,7 @@ function render () {
         '战力校验类的定标以「基准战力 × 系数」为准：**战力已达标者接取即办妥**，未达标则到时按概率判定、失败贡献减半。' +
         '每晋一大境界，宗门还会下发一本该境界的普通功法（藏经阁高阶功法仍须贡献借阅）。' +
         '俸禄只随在线时间发放，闭关（离线）不结俸。'
-      : '青岚界三宗：云岚宗（剑）｜丹霞谷（丹）｜磐石门（体）。本档开放云岚宗；名册随世界替换（2.9 世界卡池接入）。入宗即按当前境界下发普通功法，可在藏经阁以贡献借阅更多。'
+      : '本界 8 宗任你拜入（见上方名册）：道统决定加成（剑修战力 / 丹修丹药 / 体修秘境判定 / 符修事件收益 / 法修挂机产出）。入宗即按当前境界下发普通功法；本宗传承功法可在藏经阁以贡献借阅 —— 顶级传承另需执事长老之职，且须满足其灵根要求。'
   }
 }
 
@@ -570,9 +609,10 @@ dom.sectOverlay.addEventListener('click', (e) => {
     render()
     return
   }
+  // V6.12 批 G4：拜入（名册按钮带宗门 id；无 id 时回落本界默认宗 —— 与改造前行为一致）
   const join = e.target.closest('[data-join]')
   if (join) {
-    const res = sect.join()
+    const res = sect.join(join.dataset.join || null)
     H.pushLog(res.message, res.ok ? 'root' : 'info')
     if (res.ok) {
       // 入宗即按境界下发功法（主人 2026-09-18）
@@ -580,6 +620,30 @@ dom.sectOverlay.addEventListener('click', (e) => {
         H.pushLog(`宗门授功：${g.realmName}期弟子当习《${g.name}》，已录入功法册（去「功法」装槽）。`, 'root')
       }
       H.persist('sect-join')
+      H.emitBurst({ kind: 'breakthrough' })
+    }
+    render()
+    return
+  }
+  // V6.12 批 G4：换宗 —— **二次确认**（第一次点只作确认，再点方生效，照换界既有范式）
+  const cs = e.target.closest('[data-change-sect]')
+  if (cs && !cs.disabled) {
+    const id = cs.dataset.changeSect
+    if (pendingSect !== id) {
+      pendingSect = id
+      const x = (sect.rosterView() || []).find((r) => r.id === id)
+      H.pushLog(`【换宗】再点一次「改投 ${x ? x.name : id}」即生效：职级与累计贡献重头来（贡献余额与门下弟子保留，不可撤销）。`, 'fail')
+      render()
+      return
+    }
+    pendingSect = ''
+    const res = sect.changeSect(id)
+    H.pushLog(res.message, res.ok ? 'ok' : 'info')
+    if (res.ok) {
+      for (const g of (res.grants || [])) {
+        H.pushLog(`宗门授功：${g.realmName}期弟子当习《${g.name}》，已录入功法册（去「功法」装槽）。`, 'root')
+      }
+      H.persist('sect-change')
       H.emitBurst({ kind: 'breakthrough' })
     }
     render()

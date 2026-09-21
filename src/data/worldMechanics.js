@@ -4,7 +4,7 @@
  * 来源：《设计增补 v1.2》§二 十二世界卡池总表 + §三 世界详情卡（01~12 全 12 张）；
  *       展示口径的 exclusive / friction 一律照抄 src/data/worlds.js 同名字段原文（两处漂移由自测盯）。
  * 归属：设计库**内容批次 2/3（世界篇）**；V5.2 首批三界样板 → A4a 照同一「一界一个参数块」模板铺满余 9 界
- *   （破晓星域 / 灯火人间 / 幽傩界 / 通天界 / 天工界 / 六面囚笼 / 九鼎九州 / 武元大陆 / 人间香火）——
+ *   （破晓星域 / 观云界 / 幽傩界 / 通天界 / 天工界 / 六面囚笼 / 九鼎九州 / 无缺古界 / 人间香火）——
  *   **只动本文件，面板与世界机制系统零改动**（A4a 自测据此断言）。
  *
  * 设计原则（增补 v1.2 §一.5 平衡护栏）：专属机制**不得绕过 72 级骨架**——只做加速 / 旁路 / 兑换，
@@ -40,12 +40,12 @@
  *   · 静态日产出见 staticDailyH()；结论（L47 静态，派遣线 0.9 h/h ≈ 992 灵石/h）：
  *       V5.2 首批三界：青岚 ≈ 1.71h/日（0.071 h/h ≈ 派遣线 7.9%）· 青云 ≈ 0.33~1.18h/日 ·
  *         望族 ≈ 0.42~1.60h/日（取决于职级与抽成开关）；
- *       V5.2.1 铺量九界（满配静态）：幽傩 3.00 · 武元 2.80 · 六面 2.50 · 通天 2.00 · 天工 2.00 ·
- *         灯火 1.80 · 九鼎 1.70 · 破晓 1.63 · 香火 1.23（h/日）。
+ *       V5.2.1 铺量九界（满配静态）：幽傩 3.00 · 无缺（原 武元）2.80 · 六面 2.50 · 通天 2.00 · 天工 2.00 ·
+ *         观云 1.80 · 九鼎 1.70 · 破晓 1.63 · 香火 1.23（h/日）。
  *   · 护栏：单界 ≤ MECH.dailyHCap（4 h/日）；12 界里最大者幽傩 3.00 h/日 = 0.125 h/h ≈ 派遣线 13.9%，
  *     **全部远低于招牌线（V5.1 发现的 62~78 倍）**，且同一时刻只有一界机制在生效（世界唯一）。
  *   · ⚠ 支出口径（A3 已定，A4a 沿用）：staticDailyH() 只折 h 与计分支出，**材料支出不计**——
- *     凡以 mats 作耗材的动作（本批只有武元「炼丹」）静态净额偏乐观，故该动作另收一笔 h 兜底
+ *     凡以 mats 作耗材的动作（本批只有无缺「炼丹」）静态净额偏乐观，故该动作另收一笔 h 兜底
  *     （真实净额 ≈ 静态 − 1h 妖丹，见回执-A4a §4 对照表）。
  * ═══════════════════════════════════════════════════════════════════════════
  */
@@ -170,7 +170,7 @@ export const WORLD_MECHANICS = {
     frictionRule: {
       kind: 'mark',
       label: '无飞升 · 终局「剑意超脱」',
-      note: '飞升结算与转世系统尚未实装 → 本轮只做标记与展示（+20% 满级转世奖励待转世排期）。'
+      note: '已实装（V6.7 批 E ＋ V6.8 批 F）：转世走 RebirthSystem；本界熟练度按 ×1.2 结算（+3.6%/世，封顶仍 15%）——对齐「满级转世奖励 +20%」。'
     }
   },
 
@@ -241,7 +241,7 @@ export const WORLD_MECHANICS = {
         cycleDays: MECH.weekGameDays,        // 「每世 1 枚」（增补 §三 02）→ 本轮按现实 7 日一轮
         needPowerMul: 1.05,
         gain: { h: 3 },
-        note: '战力校验：过则凝出一枚「天逆珠」（每世 1 枚）。免罚效果需渡劫链接线（回执-A4a §5），本轮先承载为凝珠所得机缘。'
+        note: '战力校验：过则凝出一枚「天逆珠」（每世 1 枚）。免罚**已接线**（V6.8 批 F）：破晓界渡劫失败时由 state.legacy.tiannizhu 免罚一次（跳过修为损失与道伤，连败计数照记）。'
       }
     ],
     frictionRule: {
@@ -251,38 +251,40 @@ export const WORLD_MECHANICS = {
     }
   },
 
-  // ══ 03 · 灯火人间（《修真聊天群》）══════════════════════════════════════
+  // ══ 03 · 观云界（《我师兄实在太稳健了》）════════════════════════════
+  //   原型换源（2026-09-21）：只改 label / note / exclusive / friction 的措辞，
+  //   **id / kind / 成本 / 收益 / 周期 / quota 一律不动**（照无缺古界换源先例）。
   denghuo: {
     id: 'denghuo',
-    name: '灯火人间',
-    source: '《设计增补 v1.2》§二 总表 #3 · §三 详情卡 03',
-    exclusive: '「灵气费」灵石买灵气；聊天群任务板（日常任务 ×2）',
-    friction: '基础产出最低（×0.90），依赖任务收益',
+    name: '观云界',
+    source: '《设计增补 v1.2》§二 总表 #3 · §三 详情卡 03（原型口径已换源，见剧情册 §1.6）',
+    exclusive: '「山门例课」稳定灵石补差（日常任务 ×2）；「功德簿」灵石兑灵气',
+    friction: '基础产出最低（×0.90），依赖例课与功德补差',
     acts: [
       {
         id: 'denghuo_renwuban',
         kind: 'grant',
-        label: '聊天群 · 任务板',
+        label: '山门 · 例课',
         cycleDays: MECH.dayGameDays,
         quota: { base: 2, perRank: 0 },       // 「日常任务 ×2」（增补 §三 03）
         gain: { h: 0.6 },
-        note: '群任务板每日两趟（设计「日常任务 ×2」的机制侧承载）：稳定的灵石补差，正好抵此界 ×0.90 的低产出。'
+        note: '山门例课每日两趟（设计「日常任务 ×2」的机制侧承载）：稳定的灵石补差，正好抵此界 ×0.90 的低产出。'
       },
       {
         id: 'denghuo_lingqifei',
         kind: 'exchange',
-        label: '灵气费 · 引灵气',
+        label: '功德簿 · 兑灵气',
         cycleDays: MECH.dayGameDays,
         // 增补 §三 03：「1 灵石 = 10 分钟产出」——按折让口径只给小偏利，不做绕骨架的加速
         cost: { h: 1.2 },
         gain: { h: 1.8 },
-        note: '花灵石即时引灵气入体（「灵气费」的机制侧承载）：按折让口径只给小偏利，不做绕 72 级骨架的加速。'
+        note: '以功德簿的记功折算，即时引灵气入体（原「灵气费」的机制侧承载，id 与成本收益不动）：按折让口径只给小偏利，不做绕 72 级骨架的加速。'
       }
     ],
     frictionRule: {
       kind: 'mark',
-      label: '基础产出最低（×0.90），依赖任务收益',
-      note: '已在世界修正生效（worlds.js rateMul 0.90 → WorldSystem.rateMul 进产出乘区）；机制侧只做登记展示——本界机制本身就是「任务补差」。'
+      label: '基础产出最低（×0.90），依赖例课与功德补差',
+      note: '已在世界修正生效（worlds.js rateMul 0.90 → WorldSystem.rateMul 进产出乘区）；机制侧只做登记展示——本界机制本身就是「例课补差」。'
     }
   },
 
@@ -308,16 +310,29 @@ export const WORLD_MECHANICS = {
         kind: 'grant',
         label: '诡异资源 · 采撷',
         cycleDays: MECH.dayGameDays,
-        // 增补 §三 06「诡异资源（炼器强化 +15%）」——本批以既有妖丹承载（新材料需动 items.js，见回执-A4a §5）
+        // 增补 §三 06「诡异资源（炼器强化 +15%）」——**最终口径**以既有妖丹承载「诡异残料」，
+        //   不再新开材料（避免动 items.js 与既有材料表；「+15%」由下方「诡异炼器」动作体现）
         cost: { h: 1 },
         gain: { mats: [{ id: 'mat_yaodan', n: 2 }] },
         note: '采撷诡异材料（以妖丹承载「炼器强化专用料」）：付一线灵石换两份妖丹。'
+      },
+      {
+        id: 'younuo_lianqi',
+        kind: 'exchange',
+        label: '诡异炼器 · 出炉',
+        cycleDays: MECH.dayGameDays,
+        // V6.10 批 H：「炼器强化 +15%」落地 —— 两份诡异残料入炉出一件器物，价比常规高 **+14%**。
+        //   ⚠ 净额刻意压在 +0.2h/日：幽傩静态值原为 3.00h/日、护栏线 3.24h/日（派遣线 15%），
+        //     留足余量才不越带（V5.2.1「九界最强仍 ≤ 派遣线 15%」）。
+        cost: { h: 1.4, mats: [{ id: 'mat_yaodan', n: 2 }] },
+        gain: { h: 1.6 },
+        note: '以诡异残料炼器（增补 §三 06「炼器强化 +15%」）：两份妖丹入炉出一件器物，价比常规高一成四 —— 此界的器物认主，也认胆量。'
       }
     ],
     frictionRule: {
       kind: 'mark',
       label: '心魔事件 ×2 · 寿元流速 1s = 2.5 天',
-      note: '心魔密度属事件池侧；寿元流速已生效（worlds.js lifespanMul 1.25 → WorldSystem.lifespanDays → LifespanSystem）。机制侧只做登记展示。'
+      note: '心魔密度**已接线**（V6.9 批 G）：data/worldEvents.js 的 younuo 档把灾劫类权重 ×2、恩怨类 ×1.5（EventSystem._sampleEvent 取值）；寿元流速已生效（worlds.js lifespanMul 1.25 → WorldSystem.lifespanDays → LifespanSystem）。'
     }
   },
 
@@ -342,10 +357,14 @@ export const WORLD_MECHANICS = {
         kind: 'grant',
         label: '天道 · 赌一把',
         cycleDays: MECH.dayGameDays,
-        // 增补 §三 07「天道：45% 省 20% 成本 + 额外奖励 / 55% 成本 +10%」——本批以「高赔率」承载
+        // 增补 §三 07「天道：45% 省 20% 成本 + 额外奖励 / 55% 成本 +10%」
         cost: { h: 1.6 },
-        gain: { h: 3 },
-        note: '设计「天道」档（赌）：高赔率的机制侧承载；真随机档位需突破链接线（回执-A4a §5）。'
+        gain: { h: 1.2 },
+        // V6.10 批 H：真随机档位落地 —— 45% 讲成价（额外 +4h，且**下次突破成本 −20%**）/ 55% 失手（下次 +10%）
+        //   期望口径：1.2 ＋ 0.45×4 ＝ 3.0h ＝ 旧「确定 3h」（**静态值守恒**，护栏带不动）
+        gamble: { p: 0.45, gain: { h: 4 } },
+        priceMul: { hit: 0.8, miss: 1.1 },
+        note: '设计「天道」档（赌）：四成半讲成价（额外 +4h，且下次突破成本 −20%），失手则下次 +10% —— 账要后算，愿赌服输。'
       }
     ],
     frictionRule: {
@@ -402,10 +421,12 @@ export const WORLD_MECHANICS = {
         kind: 'grant',
         label: '天劫盲盒 · 开盒',
         cycleDays: MECH.dayGameDays,
-        // 增补 §三 09：「20% 强化天劫 + 额外奖励 / 30% 弱化天劫」——本批按期望值折成固定收益
+        // 增补 §三 09：「20% 强化天劫 + 额外奖励 / 30% 弱化天劫」
         cost: { h: 0.8 },
-        gain: { h: 1.8 },
-        note: '按期望值折成固定收益（真随机爆改需渡劫链接线，见回执-A4a §5）：开一盒，天道随便改。'
+        gain: { h: 1.0 },
+        // V6.10 批 H：真随机爆改 —— 五成开出好货（额外 +1.6h）；期望 1.0 ＋ 0.5×1.6 ＝ 1.8h ＝ 旧固定值
+        gamble: { p: 0.5, gain: { h: 1.6 } },
+        note: '开一盒，天道随便改：五成开出好货（额外 +1.6h），五成只余盒底一层灰 —— 期望与旧固定值同，风险自担。'
       },
       {
         id: 'liumian_kanchuan',
@@ -440,7 +461,7 @@ export const WORLD_MECHANICS = {
         label: '善行 · 积功德',
         cycleDays: MECH.dayGameDays,
         gain: { h: 0.5, gongde: 10 },
-        note: '行善积德（设计「善行产功德」）：功德可换突破成本折扣（最高 −20%）与心魔规避——折扣链需突破链接线（回执-A4a §5），本轮先入账与展示。'
+        note: '行善积德（设计「善行产功德」）：功德产出于此。突破折扣**已接线**（V6.8 批 F：经转世按 35% 结转，每 500 点 −20% 封顶）；「心魔规避」以「功德 · 静心」换气运承载（V6.10 批 H）。'
       },
       {
         id: 'jiuding_renhuangdian',
@@ -449,49 +470,65 @@ export const WORLD_MECHANICS = {
         cycleDays: MECH.dayGameDays,
         gain: { h: 1.2, gongde: 5 },
         note: '人皇殿任务网（设计「奖励规范化」）：每日一趟，灵石与功德同收。'
+      },
+      {
+        id: 'jiuding_jingxin',
+        kind: 'exchange',
+        label: '功德 · 静心',
+        cycleDays: MECH.dayGameDays,
+        // V6.10 批 H：功德「心魔规避」落点 —— 以气运承载（气运是唯一真源：越高则机缘越密、凶险越少）
+        cost: { gongde: 30 },
+        gain: { luck: 5 },
+        note: '以功德静心（设计「心魔规避」）：30 点功德换气运 +5 —— 行善的人，心魔也要掂量一下。'
       }
     ],
     frictionRule: {
       kind: 'mark',
       label: '飞升禁用至末期（终局以「功德圆满」替代）',
-      note: '飞升 / 转世系统尚未实装（与青云「剑意超脱」同批）；机制侧只做标记与展示。'
+      note: '已实装（V6.7 批 E ＋ V6.8 批 F）：转世走 RebirthSystem；本界功德按 35% 结转跨世，每 500 点折突破成本 −20%（CultivationSystem.gongdeCostMul）。'
     }
   },
 
-  // ══ 11 · 武元大陆（《没钱修什么仙？》）══════════════════════════════════
+  // ══ 11 · 无缺古界（《我欲封天》）══════════════════════════════════════
+  //   11 号换源（原型改用《我欲封天》，原《没钱修什么仙？》文件已删）：id / 成本 / 收益 / 周期**一律不动**，
+  //   只换对外名与文案口径，**数值零改动**。
+
   wuyuan: {
     id: 'wuyuan',
-    name: '武元大陆',
-    source: '《设计增补 v1.2》§二 总表 #11 · §三 详情卡 11',
-    exclusive: '元石经济；技炼公会（丹/器/符/阵四条生产链，可交易）',
-    friction: '境界细分更密（每境九重天，小瓶颈 +20%）',
+    name: '无缺古界',
+    source: '《设计增补 v1.2》§二 总表 #11 · §三 详情卡 11（2026-09-20 换源同步）',
+    exclusive: '无缺三档（有缺／无暇／无缺，走满额外收益）；赐名点化（第二产线）',
+    friction: '境界细分更密（同一境亦有品相，小瓶颈 +20%）',
     acts: [
       {
+        // ⚠ id 锁定（存档 / 万事系统键位，2026-09-20 换源）：只改 label / note（技炼公会炼丹 → 丹阁·炼丹），
+        //   id / cost / gain / cycleDays **一律不动**，禁止按旧名回改 id。
         id: 'wuyuan_shenglian',
         kind: 'grant',
-        label: '技炼公会 · 炼丹',
+        label: '丹阁 · 炼丹',
         cycleDays: MECH.dayGameDays,
-        // 增补 §三 11：「四条生产链（产物可交易可自用）」——本批以「妖丹入炉、出货换灵石」承载
+        // 换源 §11：「赐名点化第二产线」以丹道承载（本命丹炉）——本批以「妖丹入炉、出货换灵石」落地
         // ⚠ staticDailyH() 的支出口径只折 h 与计分（材料支出不计，A3 已定）→ 故实物耗材之外再收一笔 h，
         //   静态量级才不虚高（真实净额 ≈ 静态净额 − 1h 妖丹，回执-A4a §4 有对照）
         cost: { h: 0.5, mats: [{ id: 'mat_yaodan', n: 1 }] },
         gain: { h: 2.2 },
-        note: '技炼公会四条生产链（丹 / 器 / 符 / 阵，可交易）：以一粒妖丹入炉，出货换灵石（另付半份引火灵石）。'
+        note: '守着本命丹炉开炉炼丹：以一粒妖丹入炉，成丹自用或出货换灵石（另付半份引火灵石）。'
       },
       {
+        // ⚠ 同上：id 锁定不动；label / note 为换源后新文案（倒卖 → 赐名·点化随行），成本 / 收益 / 周期零改动。
         id: 'wuyuan_daomai',
         kind: 'exchange',
-        label: '倒卖 · 低买高卖',
+        label: '赐名 · 点化随行',
         cycleDays: MECH.dayGameDays,
         cost: { h: 1.5 },
         gain: { h: 2.6 },
-        note: '元石倒卖（设计「赌坊 / 拍卖倒卖玩法」）：低买高卖，赚一笔差价。'
+        note: '给器物与灵物一一赐名，使其成形听用；使唤得顺手的留下，用不上的折价换灵石。'
       }
     ],
     frictionRule: {
       kind: 'mark',
-      label: '境界细分更密（每境九重天，小瓶颈 +20%）',
-      note: '属境界 / 突破链侧（九重天细分与小瓶颈 +20%）；机制侧只做登记展示。'
+      label: '境界细分更密（同一境亦有品相，小瓶颈 +20%）',
+      note: '属境界 / 突破链侧（三档品相与走满加成）；机制侧只做登记展示。'
     }
   },
 
@@ -511,7 +548,7 @@ export const WORLD_MECHANICS = {
         label: '香火庙宇 · 收香火',
         cycleDays: MECH.dayGameDays,
         gain: { h: 0.8, xianghuo: 12 },
-        note: '建庙收香火（设计「第二产线」）：每日香火入账，可换延寿与气运（兑换链见回执-A4a §5）。'
+        note: '建庙收香火（设计「第二产线」）：每日香火入账 —— 可换**延寿**（「香火 · 续命」）与**气运**（「香火 · 祈气运」），兑换链已落地（V6.10 批 H）。'
       },
       {
         id: 'xianghuo_qiyun',
@@ -519,8 +556,20 @@ export const WORLD_MECHANICS = {
         label: '香火 · 祈气运',
         cycleDays: MECH.weekGameDays,
         cost: { xianghuo: 60 },
-        gain: { h: 3 },
-        note: '以香火祈一份气运（增补 §三 12）：七日一祈，得机缘折作灵石。'
+        // V6.10 批 H：兑换链落地 —— 香火真换**气运**（原先只折灵石）。
+        //   ⚠ 保留 h:3：香火静态日产出与 A4a 基线**逐位守恒**（气运是叠加收益，不从灵石里扣）。
+        gain: { luck: 3, h: 3 },
+        note: '以香火祈气运（增补 §三 12）：七日一祈，气运 +3 —— 民心所向，天机也随之偏你一分（气运越高，机缘越密）。'
+      },
+      {
+        id: 'xianghuo_xuming',
+        kind: 'exchange',
+        label: '香火 · 续命',
+        cycleDays: MECH.weekGameDays,
+        // V6.10 批 H：兑换链落地 —— 香火真换**寿元**（「可换延寿」，封顶本境上限）
+        cost: { xianghuo: 40 },
+        gain: { years: 5 },
+        note: '以庙中香火续命（增补 §三 12「可换延寿」）：40 点香火换 5 年寿元（封顶本境上限）—— 此界 1 秒走 3 天，香火就是命。'
       }
     ],
     frictionRule: {
@@ -648,7 +697,8 @@ export function pointKeysOf (act) {
   for (const side of [act && act.cost, act && act.gain]) {
     if (!side) continue
     for (const k of Object.keys(side)) {
-      if (k === 'h' || k === 'mats') continue
+      // V6.10 批 H：years（寿元）/ luck（气运）是**实物收益**，不是界内计分 —— 不参与计分折算与写入
+      if (k === 'h' || k === 'mats' || k === 'years' || k === 'luck') continue
       if (typeof side[k] === 'number' && !keys.includes(k)) keys.push(k)
     }
   }
@@ -746,6 +796,12 @@ export function staticDailyH (worldId, ctx = {}) {
       gainH += (Number(act.gain.h) || 0) * (1 + (Number(act.gain.hPerSkillLevel) || 0) * skill)
       gainH += matsHOf(act.gain.mats)
       for (const k of keys) gainH += (Number(act.gain[k]) || 0) * pointHPerOf(block, k)
+    }
+    // V6.10 批 H：真随机档位（通天「天道」/ 六面「天劫盲盒」）——静态口径按**期望**计入。
+    //   否则「确定收益拆成 确定 ＋ 随机」会让静态净额凭空缩水，护栏会误判。
+    if (act.gamble && act.gamble.gain) {
+      const mul = 1 + (Number(act.gain && act.gain.hPerSkillLevel) || 0) * skill
+      gainH += (Number(act.gamble.p) || 0) * (Number(act.gamble.gain.h) || 0) * mul
     }
     let costH = (act.cost && Number(act.cost.h)) || 0
     if (act.cost) {

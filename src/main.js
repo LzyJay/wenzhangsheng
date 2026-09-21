@@ -26,6 +26,8 @@ import EventSystem from './systems/EventSystem.js'
 import DungeonSystem from './systems/DungeonSystem.js'
 import MarketSystem from './systems/MarketSystem.js'
 import AchievementSystem from './systems/AchievementSystem.js'
+import StorySystem from './systems/StorySystem.js'          // V6.6 批 B 命运节拍器（跨卷本界纪事 + 仪式抉择）
+import RebirthSystem from './systems/RebirthSystem.js'      // V6.7 批 E 终局与转世（一世归零 · 跨世资产保留）
 import { getLevelInfo, getRealmMeta, getNextBreakthrough, REALM_META, TRIBULATION } from './data/realms.js'
 import { DRAW_ANIMATION, XISUI_DROP, REROLL_PITY, ROOT_TIERS, HIDDEN_ROOT, HIDDEN_CHANCE } from './data/roots.js'
 import { getItem, getUnit } from './data/items.js'
@@ -64,6 +66,7 @@ import { createSectPanel } from './ui/SectPanel.js'                         // V
 import { createBagPanel } from './ui/BagPanel.js'                           // V3.5.6 拆分：行囊面板（src/ui/ 新层）
 import { createAlchemyPanel } from './ui/AlchemyPanel.js'                   // V3.5.6 拆分：丹房面板（src/ui/ 新层）
 import { createWorldPanel } from './ui/WorldPanel.js'                       // V5.2 世界日常面板（#world-overlay 的 daily 态）
+import { createGmPanel } from './ui/GmPanel.js'                             // V6.2 GM 控制台（#gm-overlay · 开发者工具）
 import { pickRenderMs } from './data/powersave.js'                          // P4.4 性能与省电：渲染间隔决策（纯函数）
 import { fmtNum } from './util/num.js'                                      // 显示层数值格式化唯一真源（本地别名 fmt 见下）
 
@@ -104,6 +107,8 @@ let sect = null
 let beasts = null
 let world = null
 let worldMech = null     // V5.2 世界专属机制（懒建 state.world.specialState / frictionState）
+let story = null         // V6.6 命运节拍器（懒建 state.storyState；与 world.specialState 分叶）
+let rebirth = null       // V6.7 批 E 终局与转世（不落新档叶：只读 state + 调 WorldSystem 既有方法）
 let events = null
 let dungeon = null
 let market = null
@@ -116,6 +121,7 @@ let sectPanel = null     // V3.5.6 拆分：宗门面板实例（boot 创建）
 let bagPanel = null      // V3.5.6 拆分：行囊面板实例（boot 创建）
 let alchemyPanel = null  // V3.5.6 拆分：丹房面板实例（boot 创建）
 let worldPanel = null    // V5.2 世界日常面板实例（boot 创建）
+let gmPanel = null       // V6.2 GM 控制台实例（boot 创建）
 let achv = null
 let life = null
 let game = null
@@ -269,6 +275,7 @@ const dom = {
   btnTechClose: el('btn-tech-close'),
   techSlots: el('tech-slots'),
   techOwned: el('tech-owned'),
+  techCatHead: el('tech-cat-head'),       // V6.11：图鉴折叠头（点击展开/收起；本数并入标题文本）
   techCatalog: el('tech-catalog'),
   techNote: el('tech-note'),
   // 宗门（2.4）
@@ -280,6 +287,7 @@ const dom = {
   sectLibrary: el('sect-library'),
   sectShop: el('sect-shop'),
   sectDisciples: el('sect-disciples'),   // V5.5 弟子线（收徒 / 传功 / 派职 / 贡献）
+  sectRoster: el('sect-roster'),         // V6.12 批 G4 宗门名册（本界 8 宗 · 拜入 / 换宗）
   sectNote: el('sect-note'),
   btnTaskStartall: el('btn-task-startall'),       // V4.7 一键接取
   btnTaskAutostart: el('btn-task-autostart'),     // V4.7 自动接取（开关）
@@ -397,7 +405,14 @@ const dom = {
   worldResultMods: el('world-result-mods'),
   worldResultDesc: el('world-result-desc'),
   worldResultExclusive: el('world-result-exclusive'),
-  worldResultFriction: el('world-result-friction')
+  worldResultFriction: el('world-result-friction'),
+  // V6.2 GM 控制台（#gm-overlay · 开发者工具）
+  gmOverlay: el('gm-overlay'),
+  gmHead: el('gm-head'),
+  gmWorlds: el('gm-worlds'),
+  gmNote: el('gm-note'),
+  btnGmClose: el('btn-gm-close'),
+  btnOpenGm: el('btn-open-gm')
 }
 
 // ── 数值格式化（显示层统一：<1万 整数 / ≥1万 X.XX万 / ≥1亿 X.XX亿 / ≥1万亿 X.XX万亿）──
@@ -471,7 +486,11 @@ function powerMulClosure () {
     const techPct = tech ? tech.combatPct() : 0
     const petPct = beasts ? beasts.powerBonusPct() : 0
     const mechPct = worldMech ? worldMech.powerPct : 0
-    return (1 + techPct) * (1 + petPct) * (1 + mechPct)
+    // V6.8 批 F：观云界（03 界）「藏拙」跨世隐性战力（转世保留一部分；其余界恒 0）
+    const legacyPct = (state && state.legacy && Number.isFinite(state.legacy.powerPct)) ? state.legacy.powerPct : 0
+    // V6.12 批 G4：宗门道统（剑修战力 +10% / 体修秘境判定 +8%，二者共用战力乘区）；未入宗恒 0
+    const sectPct = (sect && sect.daoBonus) ? sect.daoBonus.power : 0
+    return (1 + techPct) * (1 + petPct) * (1 + mechPct) * (1 + legacyPct) * (1 + sectPct)
   }
 }
 
@@ -607,9 +626,9 @@ const TIP_BUILDERS = {
       cls
     )
     if (!roots.drawn) {
-      const baseTotal = ROOT_TIERS.reduce((s, x) => s + x.weight, 0)
+      const baseTotal = roots.tiers.reduce((s, x) => s + x.weight, 0)   // V6.2：本界可抽池（四档 + 本界专属灵根）
       // V3.5.1（主人）：标题分三栏 —— 灵根 ｜ 修炼速度 ｜ 概率；每档速度独立成列
-      const baseRows = ROOT_TIERS.map((x) => tipRow3(
+      const baseRows = roots.tiers.map((x) => tipRow3(
         x.name,
         `×${x.mods.rateMul.toFixed(2)}`,
         `${Math.round((x.weight / baseTotal) * 100)}%`
@@ -625,7 +644,7 @@ const TIP_BUILDERS = {
     const pills = roots.pillCount
     const hardLeft = Math.max(0, REROLL_PITY.hardGuaranteeAt - roots.lowStreak)
     const p = roots.previewReroll()
-    const probRows = ROOT_TIERS.map((x) => tipRow3(
+    const probRows = roots.tiers.map((x) => tipRow3(
       x.name + (x.rarity === t.rarity ? '（现在）' : ''),
       `×${x.mods.rateMul.toFixed(2)}`,
       `${(p.prob[x.rarity] * 100).toFixed(1)}%`,
@@ -665,7 +684,7 @@ const TIP_BUILDERS = {
     const v = world && world.drawn ? world.view() : null
     if (!v) {
       return '<span class="t-h">世界 · 尚未抽定</span>' +
-        tipRow('十二界', '青岚 · 破晓 · 灯火 · 青云 · 望族 · 幽傩 · 通天 · 天工 · 六面 · 九鼎 · 武元 · 香火') +
+        tipRow('十二界', '青岚 · 破晓 · 观云 · 青云 · 望族 · 幽傩 · 通天 · 天工 · 六面 · 九鼎 · 无缺 · 香火') +
         `<span class="t-note">每局从十二界等概率抽一界开局；产出 / 寿元 / 天劫各有修正。</span>` +
         `<div class="t-act"><button class="violet" data-act="draw-world">抽 取 世 界</button></div>`
     }
@@ -1548,6 +1567,29 @@ async function doReset () {
   window.location.reload()
 }
 
+/**
+ * V6.7 批 E：转世（一世归零、重开一世）。
+ *   复用 doReset 的「保存 + 整页重载」范式 —— 重载后所有懒建子树由各 system 的 ensure() 自动重建，
+ *   比在进程内逐个重建安全（转世是重置存档级操作，不能留半成品状态）。
+ *   两个入口：① 渡劫面板「转世」区块（飞升后主动选同界 / 换界）
+ *             ② 寿元耗尽 → 坐化（被动强制转世，见 tickLifespan，`{ force: true }`）
+ */
+async function doRebirth (mode = 'same', opts = {}) {
+  if (!rebirth) return { ok: false, message: '转世系统未就绪。' }
+  const res = rebirth.rebirth(mode, opts)
+  if (!res.ok) {
+    if (!opts.silent) pushLog(res.message, 'info')
+    return res
+  }
+  pushLog(res.message, 'ok')
+  pushLog(`【${res.show.title}】${res.show.scene}`, 'sys')
+  pushLog(`【${res.show.title}】${res.show.line}`, 'ok')
+  emitFloat({ text: `${res.show.title} · 重开一世`, kind: 'life' })
+  await persist('rebirth')
+  setTimeout(() => window.location.reload(), 1200)   // 留一点时间让玩家看见闭幕词
+  return res
+}
+
 // ── 寿元（增补 v1.1）：与产出共用同一份 dt，保证口径一致 ───────────────────
 function tickLifespan (dtSec) {
   if (!life || !(dtSec > 0)) return
@@ -1556,7 +1598,9 @@ function tickLifespan (dtSec) {
     pushLog(`寿元将尽：仅剩 ${life.remainText} 年 —— 速寻破境之机（破境即回满）。`, 'fail')
   }
   if (r.exhaustedNow) {
-    pushLog('寿元已尽 —— 坐化（强制转世）将于阶段二随转世系统开放，当前不中断修行。', 'fail')
+    // V6.7 批 E：寿元耗尽 → 坐化（强制转世，同界轮回）。**不须已飞升** —— 寿元尽即一世终了。
+    pushLog('寿元已尽 —— 坐化。一世到此为止，重入轮回，再走一遍。', 'fail')
+    doRebirth('same', { force: true, silent: true })
   }
 }
 
@@ -1569,6 +1613,26 @@ function drainFitDelta () {
   const r = life.addFit(d, '（事件·行止果报）')
   pushLog(r.message, d > 0 ? 'ok' : 'fail')
   if (r.tierChanged) emitFloat({ text: `天道契合 · ${r.toTier}`, kind: d > 0 ? 'life' : 'info' }, 200)
+}
+
+/**
+ * V6.11 功法库改造：**他界功法奇遇**入袋。
+ *   `EventSystem` 只把功法 id 暂存在 `eventState.pendingTech`（它不 import TechniqueSystem）；
+ *   跨系统一律由装配层中转（13.1②）—— 照上方 `drainFitDelta` 的既有范式。
+ *   门槛已在事件侧过滤（境界 ＋ 顶级灵根），此处 `grant` 会再校验一次（双保险）。
+ */
+function drainPendingTech () {
+  if (!events || !tech) return
+  const ids = events.drainPendingTech()
+  if (!ids.length) return
+  for (const id of ids) {
+    const r = tech.grant(id)
+    pushLog(r.message, r.ok ? 'ok' : 'info')
+    if (r.ok) {
+      emitFloat({ text: `习得他界功法《${r.name}》`, kind: 'ok' })
+      persist('tech-foreign')
+    }
+  }
 }
 
 // ── 2.11 延寿丹接线：库存 → 寿元入账（+50 年，封顶本境上限）────────────────
@@ -1649,6 +1713,52 @@ function closeWorldDaily () {
   if (!worldPanel) return
   if (dom.worldOverlay.dataset.state !== 'daily') return
   worldPanel.close()
+}
+
+// ── V6.2 GM 控制台（#gm-overlay · 开发者工具）──────────────────────────────
+// 同 #world-overlay 先例：本遮罩**不在 .ov 家族**（`.ov` 计数钉保持 11），
+// 故必须自行登记 ① closeAllOverlays 的 closers ② Esc 链（二者见下方同名区块）。
+function closeGm () {
+  if (gmPanel) gmPanel.close()
+}
+
+/** GM：打开（设置面板入口与 Ctrl+Shift+G 共用） */
+function openGm () {
+  if (!gmPanel) return
+  gmPanel.open()
+}
+
+/** GM：世界变更后刷新（世界徽记 / 皮肤 / 主渲染）——面板不碰 main 的渲染函数 */
+function gmAfterWorld () {
+  // V6.12 批 G5b：换界即转散修 —— 此处显式同步一次（懒检测已覆盖全部换界路径，此为双保险）
+  if (sect) sect.syncWorld()
+  renderWorldChip()
+  applySkin({ silent: true })
+  render()
+}
+
+/** GM：灵根重测后刷新灵根徽记与主渲染（照 doReroll 的既有模式） */
+function gmAfterRoot () {
+  renderRootChip()
+  render()
+}
+
+/** V6.8 批 F：GM 模拟飞升后刷新突破按钮与主画面（验收本世终局与转世用） */
+function gmAfterAscend () {
+  renderBreakthroughButton()
+  render()
+}
+
+/**
+ * GM：立即触发一次随机事件 —— 与主循环**同走 EventSystem._trigger 一条链路**
+ * （产出与时薪在装配层现算传入，13.1② 口径不变）。返回事件结果数组供面板提示。
+ */
+function gmForceEvent () {
+  if (!events || !state || !cult) return []
+  const now = Date.now()
+  const out = events._trigger(now, cult.getEffRate(now).eff, stoneHourly(state.player.realm.level))
+  for (const r of out) pushLog(r.message, r.good ? 'ok' : 'fail')
+  return out
 }
 
 function toggleWorldDaily () {
@@ -2021,7 +2131,8 @@ function closeAllOverlays (except = '') {
     chronicle: closeChronicle,
     achv: closeAchv,
     panel: closePanel,
-    world: closeWorldDaily    // V5.2 世界日常态（#world-overlay daily）：不在 .ov 家族，故需自行登记互斥
+    world: closeWorldDaily,   // V5.2 世界日常态（#world-overlay daily）：不在 .ov 家族，故需自行登记互斥
+    gm: closeGm               // V6.2 GM 控制台（#gm-overlay）：同上，非 .ov 家族
   }
   for (const key of Object.keys(closers)) {
     if (key === except) continue
@@ -2290,6 +2401,33 @@ function reportOfflineEvents (results) {
   }
 }
 
+/**
+ * V6.6 批 B：命运节拍器一拍结果的落地（装配层中转 —— StorySystem 自己不 import 任何 system）。
+ *   ① 卷首叙事 → 进纪事流（`achv.push` 不传 options 即纯条目，可在纪事册回看）
+ *   ② 仪式抉择 → 进事件簿「待抉择」（`events.pushPending` → 既有「关键事件」卡，**UI 零改动**）
+ */
+function pushStoryBeat (beat) {
+  if (!beat) return
+  pushLog(beat.message, 'sys')
+  const line = beat.realmLine ? `（${beat.realmLine}）` : ''
+  if (achv) {
+    achv.push({
+      ch: 'world',
+      q: 'zhen',
+      text: `【${beat.title}】${beat.text}${line}`,
+      note: beat.note || ''
+    })
+  }
+  if (beat.ritual && events) {
+    const r = events.pushPending(beat.ritual.id)
+    if (r.ok) {
+      pushLog(`【${beat.ritual.name}】本界的仪式到了 —— 已记入事件簿，待你亲自抉择。`, 'root')
+      emitFloat({ text: beat.ritual.name, kind: 'ok' })
+      emitBurst({ kind: 'breakthrough' })
+    }
+  }
+}
+
 // ══ 2.6 坊市 装配区结束 ═════════════════════════════════════════════════
 
 // ══ 2.10 成就与纪事 装配区（改动仅限本区块 + 各互斥开关联动行 + 主循环一行）══
@@ -2421,6 +2559,8 @@ function collectMetrics () {
     ...dungeon.signatureStats(now),
     // 宗门（2.4）
     joined: info.joined ? 1 : 0,
+    // V6.15：**当前宗主 id**（身份型成就用 —— 12 界各一条「拜入本界某宗」彩蛋）
+    sectId: (sect && sect.currentSect) ? sect.currentSect.id : '',
     sectRank: info.joined ? ((info.rank && info.rank.idx) | 0) : 0,
     contrib: info.joined ? (info.contribution | 0) : 0,
     totalContrib: info.joined ? (info.totalContrib | 0) : 0,
@@ -3691,7 +3831,28 @@ window.addEventListener('keydown', (e) => {
   else if (dom.panelOverlay.classList.contains('show')) closePanel()
   // V5.2 世界日常态（#world-overlay daily）：该遮罩不在 .ov 家族，故需自行插进 Esc 链
   else if (dom.worldOverlay.classList.contains('show') && dom.worldOverlay.dataset.state === 'daily') closeWorldDaily()
+  // V6.2 GM 控制台（#gm-overlay）：非 .ov 家族，同样自行插进 Esc 链
+  else if (dom.gmOverlay && dom.gmOverlay.classList.contains('show')) closeGm()
   else if (dom.overlay.classList.contains('show') && roots && roots.drawn) hideOverlay()
+})
+
+// ── V6.2 GM 控制台入口：设置面板按钮 + Ctrl+Shift+G 快捷键 ──────────────────
+//   本遮罩非 .ov 家族，开合与互斥全在这两处自行管理（见 closeGm / closers / Esc 链）。
+if (dom.btnOpenGm) {
+  dom.btnOpenGm.addEventListener('click', () => {
+    closePanel()
+    openGm()
+  })
+}
+window.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey || !e.shiftKey || (e.key !== 'G' && e.key !== 'g')) return
+  e.preventDefault()
+  if (dom.gmOverlay && dom.gmOverlay.classList.contains('show')) {
+    closeGm()
+  } else {
+    closePanel()
+    openGm()
+  }
 })
 
 if (desktop) {
@@ -3720,6 +3881,13 @@ async function boot () {
   //   懒建兜底、零迁移、不动 SaveSystem 迁移链；world 注入仅用于摩擦项的展示联动（不读它的子树）
   worldMech = new WorldMechanicSystem(state, world, powerMulClosure())
   worldMech.ensure()
+  // V6.6 批 B 命运节拍器：**另起一叶** state.storyState（懒建兜底、零迁移；不动 world.specialState）；
+  //   跨卷推送由主循环按「卷号 diff」触发（见下方 events 段之后的 story 段），不依赖 realmChanged。
+  story = new StorySystem(state)
+  story.ensure()
+  // V6.7 批 E 终局与转世：**不落新档叶**——只读 state（player.flags.ascended / world 熟练度），
+  //   世界侧一律调 WorldSystem 既有公开方法（onRebirth 同界 / changeWorld 换界），不改其语义。
+  rebirth = new RebirthSystem(state, world)
   roots = new RootSystem(state)
   tech = new TechniqueSystem(state)
   alchemy = new AlchemySystem(state)
@@ -3727,7 +3895,10 @@ async function boot () {
   beasts.ensure()                   // V4.7：老档补字段（辅助位名单 assistUids / 星级 star / 成长计数 exp·gf）
   // 战力乘区闭包（功法 × 灵兽）：宗门战力校验与秘境战力门槛共用同一口径（2026-09-19）
   sect = new SectSystem(state, tech, powerMulClosure())
-  events = new EventSystem(state)
+  // V6.12 批 G4：宗门道统加成的两处**后置注入**（不改构造顺序，避免牵动既有装配）
+  //   丹修 → AlchemySystem；符修 → EventSystem（剑/体/法三系走既有乘区，无需注入）
+  alchemy.sect = sect
+  events = new EventSystem(state, sect)
   events.ensure()          // 老档补字段（eventState 结构 / 气运钳位 / 策略档校准）
   dungeon = new DungeonSystem(state, tech, powerMulClosure())
   dungeon.ensure()         // 老档补字段（秘境子树：cleared / stars / dispatch）
@@ -3747,8 +3918,9 @@ async function boot () {
     // 直传实例会被捕获成 null，面板静默全空（实测 bug：渡劫面板八关口/准备/说明三块永远空）
     cult: () => cult,
     alchemy: () => alchemy,
+    rebirth: () => rebirth,   // V6.7 批 E：终局演出 + 转世入口（同 cult/alchemy，一律 getter）
     dom,
-    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, fmt, fmtDuration, render: () => render(), onBreakthrough }
+    helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, fmt, fmtDuration, render: () => render(), onBreakthrough, doRebirth }
   })
   // V3.5.6 拆分：功法面板（src/ui/TechPanel.js）
   techPanel = createTechPanel({
@@ -3809,6 +3981,15 @@ async function boot () {
     // V5.2：面板点出的灵石净额回传 §七 归因台账；EconLedger 线固定 8 条（硬口径「不新增线」）
     //   → 世界专属机制记入既有 'other' 线（负值也照记：纳贡 / 祭炼 / 催熟都是真实灵石流出）
     helpers: { closeTip, closeAllOverlays, ovShow, ovHide, syncDragRegions, pushLog, persist, emitFloat, fmt, fmtGameDuration, onPress, showWorldOverlay, hideWorldOverlay, noteWorld: (gain) => noteGain(state, 'other', gain) }
+  })
+  // V6.2 GM 控制台（src/ui/GmPanel.js）——#gm-overlay（**非 .ov 家族**：Esc 与互斥由 closeGm 自行登记）
+  //   自选世界：未抽定 → WorldSystem.assign（合法抽界）；已抽定 → changeWorld（原子换界，面板内二次确认）
+  gmPanel = createGmPanel({
+    state: () => state,
+    world: () => world,
+    roots: () => roots,
+    dom,
+    helpers: { closeTip, closeAllOverlays, syncDragRegions, pushLog, gmAfterWorld, gmAfterRoot, gmAfterAscend, gmForceEvent }
   })
   achv = new AchievementSystem(state, { grant: grantAchvReward })  // 2.10：奖励发放经装配层回调落到 resources / inventory
   achv.ensure()            // 老档补字段 + 新档播种纪事 + 凡档称号入袋
@@ -4083,7 +4264,15 @@ async function boot () {
         if (achv) achv.note(r.kind === 'repay' ? 'repay' : (r.good ? 'eventGood' : 'eventBad'))
       }
       drainFitDelta()   // 2.11：事件果报（契合 ±N）在此入账顺天值
+      drainPendingTech()   // V6.11：他界功法奇遇入袋（事件侧只暂存，跨系统经装配层中转）
       noteRes('event', _ea, snapRes())
+    }
+    // V6.6 批 B 命运节拍器：跨卷（每 9 级一跨）推本界专属纪事，仪式卷再附一次有后果的抉择。
+    //   ⚠ 用「卷号 diff」而非 realmChanged（后者是 level%9===1，会漏掉 71→72 那次跨卷）；
+    //   幂等由 StorySystem 内部保证（每「界:卷」终身只推一次，回退档 / GM 改级都不重复推）。
+    if (story) {
+      const beat = story.tick()
+      if (beat) pushStoryBeat(beat)
     }
     // 成就与纪事（2.10）：每秒一判；纪事按真实时间到点汇总一批（离线也照算）
     achvTick = (achvTick + 1) % 10
@@ -4122,7 +4311,7 @@ async function boot () {
 
   // 调试入口（正式包无副作用，仅挂在 window 上便于开发期在 DevTools 里查状态）
   // V5.2：新增调试键 `worldMech`（世界专属机制；§13.2⑥ 登记表由合流会话回填）
-  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, worldMech, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) } }
+  window.__wcs = { game, state, cult, roots, tech, alchemy, life, sect, beasts, world, worldMech, events, dungeon, market, achv, save, audio: sfxEngine, bonus: { lines: bonusLines, recompose: bonusRecompose }, econ: { view: econToday, note: (line, gain) => noteGain(state, line, gain) }, gm: { open: openGm, close: closeGm } }
 }
 
 boot().catch((err) => {

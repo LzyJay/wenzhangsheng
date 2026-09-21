@@ -387,6 +387,48 @@ class WorldMechanicSystem {
       pointsOut[p.key] = p.n
       if (p.key === 'tribute') this.special.donated = (this.special.donated | 0) + p.n
     }
+
+    // ②b V6.10 批 H：**实物型收益**（寿元 / 气运）—— 不是界内计分，单独入账
+    const gain = act.gain || {}
+    const extra = []
+    if (Number.isFinite(gain.years) && gain.years > 0) {
+      const lf = this.state.player.lifespan
+      if (lf && typeof lf === 'object') {
+        const cap = Number.isFinite(lf.maxYears) ? lf.maxYears : Infinity
+        const before = Number(lf.remainYears) || 0
+        lf.remainYears = Math.min(cap, before + gain.years)
+        extra.push(`寿元 +${Math.round((lf.remainYears - before) * 10) / 10} 年`)
+      }
+    }
+    if (Number.isFinite(gain.luck) && gain.luck !== 0) {
+      const before = Number(this.state.player.luck) || 0
+      this.state.player.luck = Math.max(0, Math.min(100, before + gain.luck))
+      extra.push(`气运 ${this.state.player.luck >= before ? '+' : '−'}${Math.abs(this.state.player.luck - before)}（${before}→${this.state.player.luck}）`)
+    }
+
+    // ②c V6.10 批 H：**真随机档位**（通天「天道」/ 六面「天劫盲盒」）—— 命中才额外发放；
+    //   期望值由 data 层对齐（确定部分 + p × 随机部分 ＝ 旧固定值），护栏按期望计入。
+    let gambleHit = false
+    if (act.gamble && act.gamble.gain) {
+      gambleHit = Math.random() < (Number(act.gamble.p) || 0)
+      if (gambleHit) {
+        const bh = (Number(act.gamble.gain.h) || 0) * f.scale * (1 - f.rate)
+        const bs = stonesOfH(bh, this.level)
+        this.state.resources.stones = (this.state.resources.stones | 0) + bs
+        extra.push(`天道开眼，额外 +${bs} 灵石`)
+      } else {
+        extra.push('这一回没讲成价')
+      }
+    }
+    // ②d V6.10 批 H：**一次性突破成本修正**（通天「天道讲价」）
+    //   写入本界 specialState，由 CultivationSystem.mechCostMul 读取、突破结算时消费并清除。
+    if (act.priceMul) {
+      const v = gambleHit ? Number(act.priceMul.hit) : Number(act.priceMul.miss)
+      if (Number.isFinite(v) && v > 0) {
+        this.special.tiandaoMul = v
+        extra.push(v < 1 ? `下次突破成本 ×${v}（讲成了价）` : `下次突破成本 ×${v}（失手加价）`)
+      }
+    }
     // ③ 抽成回流（望族「上缴换权益」）：上缴的灵石额折族贡回流，同时累计纳贡
     const refund = {}
     if (f.taxPoints > 0) {
@@ -411,9 +453,10 @@ class WorldMechanicSystem {
     ].filter(Boolean).join('，')
     const spendText = this._costTextOf(act)
 
+    const extraText = extra.length ? extra.join('，') : ''
     const message = act.kind === 'refine'
       ? `${act.label}：法宝晋至 ${this.skillLevel} 阶（战力 +${(this.powerPct * 100).toFixed(1)}%、剑冢产出 +${(act.ratePctPer * this.skillLevel * 100).toFixed(0)}%），耗 ${spendText}。`
-      : `${act.label}：${gainText || '—'}${spendText !== '无' ? `（耗 ${spendText}）` : ''}。`
+      : `${act.label}：${[gainText, extraText].filter(Boolean).join('，') || '—'}${spendText !== '无' ? `（耗 ${spendText}）` : ''}。`
 
     return {
       ok: true,

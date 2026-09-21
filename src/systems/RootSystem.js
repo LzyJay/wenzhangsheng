@@ -11,7 +11,7 @@
  */
 
 import {
-  ROOT_TIERS, HIDDEN_ROOT, HIDDEN_CHANCE, REROLL_PITY, XISUI_DROP, WUXING, MUTANT, MUTANT_TAG,
+  ROOT_TIERS, WORLD_ROOTS, HIDDEN_ROOT, HIDDEN_CHANCE, REROLL_PITY, XISUI_DROP, WUXING, MUTANT, MUTANT_TAG,
   getRootTier, attrsLabel
 } from '../data/roots.js'
 
@@ -34,6 +34,22 @@ class RootSystem {
   get mods () {
     const t = this.tier
     return t ? { ...t.mods } : { rateMul: 1, costMul: 1 }
+  }
+
+  /**
+   * 本界可抽灵根池（V6.2）＝ 四档 + **本界专属条**（data/roots.js 的 WORLD_ROOTS）。
+   * ⚠ 未抽定世界 / 未登记界 → **只走四档**：这是老档与遗产自测（wcs_selftest2 的四档分布
+   *   与 id 规范）安全的前提，也是"专属灵根只在本界出现"的口径来源。
+   */
+  get tiers () {
+    const w = this.state.world
+    const id = (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+    return ROOT_TIERS.concat(WORLD_ROOTS[id] || [])
+  }
+
+  /** 条目归属档位：世界专属条用 base，四档/隐藏条用自身 rarity（保底与漂移都按它判） */
+  baseOf (t) {
+    return t.base || t.rarity
   }
 
   /**
@@ -74,22 +90,28 @@ class RootSystem {
     return this.state.player.root.rerollCount | 0
   }
 
-  /** 天灵根特权：结丹（第 3 个大境界）无瓶颈（混沌灵根同享——万法归一） */
+  /**
+   * 天灵根特权：结丹（第 3 个大境界）无瓶颈。
+   * 混沌灵根同享（万法归一）；V6.2 起**世界专属条按 base 判定**（如九鼎「鼎镇灵根」base='heaven'）。
+   */
   get noBottleneckOnJindan () {
-    return this.state.player.root.rarity === 'heaven' || this.state.player.root.rarity === HIDDEN_ROOT.rarity
+    const t = this.tier
+    if (!t) return false
+    return this.baseOf(t) === 'heaven' || t.rarity === HIDDEN_ROOT.rarity
   }
 
   // ── 洗髓：权重与保底 ────────────────────────────────────────────────────
 
-  /** 按重掷次数漂移后的权重（未归一化） */
+  /** 按重掷次数漂移后的权重（未归一化）；世界专属条按 `base` 并入同一套漂移 */
   getWeights () {
     const p = REROLL_PITY
     const steps = Math.min(this.rerollCount, p.maxSteps)
     const out = {}
-    for (const t of ROOT_TIERS) {
-      const delta = p.step[t.rarity] || 0
+    for (const t of this.tiers) {
+      const b = this.baseOf(t)
+      const delta = p.step[b] || 0
       let w = t.weight + delta * steps
-      if (p.minWeight[t.rarity] != null) w = Math.max(p.minWeight[t.rarity], w)
+      if (p.minWeight[b] != null) w = Math.max(p.minWeight[b], w)
       out[t.rarity] = Math.max(0.001, w)
     }
     return out
@@ -104,22 +126,24 @@ class RootSystem {
     return this.lowStreak >= REROLL_PITY.hardGuaranteeAt
   }
 
-  /** 洗髓预览（UI 展示用：当前概率、丹药、保底倒计时） */
+  /** 洗髓预览（UI 展示用：当前概率、丹药、保底倒计时）——V6.2 起含本界专属条 */
   previewReroll () {
+    const tiers = this.tiers
     const weights = this.getWeights()
     const total = Object.values(weights).reduce((a, b) => a + b, 0)
     const prob = {}
-    for (const t of ROOT_TIERS) {
+    for (const t of tiers) {
+      const b = this.baseOf(t)
       if (!this.hardGuaranteeReady) {
         prob[t.rarity] = weights[t.rarity] / total
         continue
       }
-      // 硬保底：只出变异 / 天灵根 —— 其余两档真实概率为 0（面板要如实显示，
+      // 硬保底：只出变异 / 天灵根 —— 其余档真实概率为 0（面板要如实显示，
       // 否则玩家会以为还能抽到伪/真灵根）。82 / 18 与 _pickTier 的同源权重一致；
       // 另有 HIDDEN_CHANCE 的混沌灵根彩蛋独立于四档之外（V3.5.1），下方单独给 prob.hidden。
-      const high = ROOT_TIERS.filter((x) => x.rarity === 'mutant' || x.rarity === 'heaven')
-      const highTotal = high.reduce((a, b) => a + b.weight, 0)
-      prob[t.rarity] = (t.rarity === 'mutant' || t.rarity === 'heaven')
+      const high = tiers.filter((x) => ['mutant', 'heaven'].includes(this.baseOf(x)))
+      const highTotal = high.reduce((a, b2) => a + b2.weight, 0)
+      prob[t.rarity] = (b === 'mutant' || b === 'heaven')
         ? (1 - HIDDEN_CHANCE) * t.weight / highTotal
         : 0
     }
@@ -192,15 +216,17 @@ class RootSystem {
   }
 
   _pickTier () {
-    // 硬保底：只允许变异 / 天灵根；另有混沌灵根彩蛋（独立小概率，V3.5.1）
+    // 硬保底：只允许变异 / 天灵根（V6.2 起含**本界专属条中 base∈{mutant,heaven} 者**）；
+    // 另有混沌灵根彩蛋（独立小概率，V3.5.1）
     if (this.hardGuaranteeReady) {
       if (Math.random() < HIDDEN_CHANCE) return HIDDEN_ROOT
-      const high = ROOT_TIERS.filter((t) => t.rarity === 'mutant' || t.rarity === 'heaven')
+      const high = this.tiers.filter((t) => ['mutant', 'heaven'].includes(this.baseOf(t)))
       const w = high.map((t) => t.weight)
       return this._weighted(high, w)
     }
+    const tiers = this.tiers
     const weights = this.getWeights()
-    return this._weighted(ROOT_TIERS, ROOT_TIERS.map((t) => weights[t.rarity]))
+    return this._weighted(tiers, tiers.map((t) => weights[t.rarity]))
   }
 
   _weighted (items, weights) {
@@ -232,8 +258,8 @@ class RootSystem {
     root.drawnAt = Date.now()
     this.state.player.flags.rootDrawn = true
 
-    // 保底计数：出了"变异及以上"（含混沌彩蛋）就清零
-    if (['mutant', 'heaven', HIDDEN_ROOT.rarity].includes(result.tier.rarity)) root.lowStreak = 0
+    // 保底计数：出了"变异及以上"（含混沌彩蛋；**世界专属条按其 base 归档**）就清零
+    if (['mutant', 'heaven', HIDDEN_ROOT.rarity].includes(this.baseOf(result.tier))) root.lowStreak = 0
     else root.lowStreak = this.lowStreak + 1
 
     if (reroll) root.lastRerollAt = Date.now()

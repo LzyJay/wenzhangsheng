@@ -28,7 +28,9 @@ export function createTrialPanel (ctx) {
   // 直取会捕获到 null → render() 每次早退，八关口 / 准备 / 说明三块全空（V4.7 批 0 修复的实测 bug）
   const getCult = ctx.cult
   const getAlchemy = ctx.alchemy
+  const getRebirth = ctx.rebirth      // V6.7 批 E：转世视图（同 cult/alchemy，一律 getter）
   const H = ctx.helpers
+  let pendingRebirth = ''             // V6.7：转世二次确认的闭包标志（运行期变量，不入存档）
   if (!dom.trialOverlay) return null   // 宿主＝渡劫遮罩（V4.7 主人 09-19 恢复）
 
   // 遮罩走 ovShow/ovHide（与其余 .ov 同一套转场与拖拽判定）
@@ -89,8 +91,38 @@ function render () {
   // ① 当前关口
   let head = ''
   if (preview.ascended) {
-    head = '<div class="tn-name">已飞升 · 静待二期</div>' +
-      `<div class="tn-line">八道天关皆已渡过，仙界之门暂封。</div>`
+    // V6.7 批 E：终局演出 + 转世入口（本界专属；未接线 / 未抽定界时回落原「静待二期」）
+    const rb = getRebirth && getRebirth()
+    const rv = rb ? rb.view() : null
+    if (rv) {
+      const btn = (m) => `<button class="mini" data-rebirth="${m.id}" title="${m.desc}">${m.name}</button>`
+      const hintLine = pendingRebirth
+        ? `<span class="red">⚠ 再点一次「${pendingRebirth === 'other' ? '换界转世' : '同界轮回'}」即生效：本世归零、重开一世（不可撤销）</span>`
+        : '<span class="dim">点击即选转世方式；第一次点只作确认，再点一次方生效。</span>'
+      head =
+        `<div class="tn-name">${rv.show.title} · 本世终局</div>` +
+        `<div class="tn-desc">${rv.show.scene}</div>` +
+        `<div class="tn-line">${rv.show.line}</div>` +
+        `<div class="tn-line">本界第 <b>${rv.runsInWorld}</b> 世 ｜ 熟练度 <b>${(rv.masteryPct * 100).toFixed(1)}%</b> / ${Math.round(rv.masteryCap * 100)}% ｜ 已转世 <b>${rv.rebirths}</b> 次</div>` +
+        `<div class="tn-line">${rv.show.inherit}</div>` +
+        (rv.legacyLines && rv.legacyLines.length
+          ? `<div class="tn-line">本界特色继承：${rv.legacyLines.map((l) => `<b>${l.label}</b> · ${l.desc}`).join('　')}</div>`
+          : '') +
+        (() => {
+          const L = rv.legacy || {}
+          const bits = []
+          if (L.tiannizhu > 0) bits.push(`天逆珠 ${L.tiannizhu} 枚`)
+          if (L.gongde > 0) bits.push(`功德 ${L.gongde} 点（突破 −${rv.gongdeCutPct}%）`)
+          if (L.puppetSlots > 0) bits.push(`傀儡位 +${L.puppetSlots}`)
+          if (L.powerPct > 0) bits.push(`隐性战力 +${Math.round(L.powerPct * 100)}%`)
+          return bits.length ? `<div class="tn-line">跨世遗产：${bits.join('　')}</div>` : ''
+        })() +
+        `<div class="tn-line">${rv.modes.map(btn).join(' ')}</div>` +
+        `<div class="tn-line">${hintLine}</div>`
+    } else {
+      head = '<div class="tn-name">已飞升 · 静待二期</div>' +
+        `<div class="tn-line">八道天关皆已渡过，仙界之门暂封。</div>`
+    }
   } else {
     const failBonus = Math.min(fails * TRIBULATION.failBonus.per, TRIBULATION.failBonus.cap)
     const pityNext = fails + 1 >= TRIBULATION.pity.fails
@@ -117,7 +149,7 @@ function render () {
       `<div class="tn-line">${node.fromRealm} → ${node.toRealm} ｜ 关口需求战力 <b>${H.fmt(node.trialReq)}</b>（第 ${node.index + 1} 关系数 ${node.fk}）</div>` +
       rateLine +
       `<div class="tn-line">本关战绩：<b>${node.tries}</b> 试 <b>${node.passes}</b> 成 ｜ 垫劫补正 <b>+${Math.round(failBonus * 100)}%</b>（连败 ${fails} 次${pityNext ? '，第 4 次起按保底计' : ''}）</div>` +
-      `<div class="tn-desc">${node.desc}</div>`
+      `<div class="tn-desc">${node.worldDesc || node.desc}</div>`   // V6.4 批 D1：优先本界文案，未登记界回落原 desc
   }
   dom.trialNode.innerHTML = head + '<div class="tr-gates" id="trial-gates"></div>'
 
@@ -238,6 +270,27 @@ function render () {
     `八道天关（炼气→筑基 · … · 大乘→飞升）每境第九重开启；三道天雷过二即成，` +
     `准备加成合计上限 +${capPct}%（破例项见 item 表：护劫丹 +10% · 镇雷法宝 +8% · 灵兽助战 +7% · 道行天赋 +5% · 宗门援助 +5%）。` +
     `准备只对这一回天雷负责：引雷之后不论成败，服下的丹与请来的援都不留存。渡劫失败损失 30% 修为并落下道伤（可静养或等待消散），不掉级、不遗失宝物。`
+}
+
+// V6.7 批 E：转世交互（事件委托；二次确认照 WorldPanel 换界 / GmPanel 换界的既有范式）
+//   防御式绑定：自测的 stub dom 未必带 trialNode（真实 dom 一定有，见 index.html 的 #trial-node）
+if (dom.trialNode && dom.trialNode.addEventListener) {
+  dom.trialNode.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-rebirth]')
+    if (!b || b.disabled) return
+    const rb = getRebirth && getRebirth()
+    if (!rb || !rb.canRebirth) return
+    const mode = b.dataset.rebirth
+    if (pendingRebirth !== mode) {
+      pendingRebirth = mode
+      H.pushLog(`【转世】再点一次「${mode === 'other' ? '换界转世' : '同界轮回'}」即生效：本世归零、重开一世（不可撤销）。`, 'fail')
+      render()
+      return
+    }
+    pendingRebirth = ''
+    const res = H.doRebirth ? H.doRebirth(mode) : { ok: false, message: '转世入口未接线。' }
+    if (res && res.message) H.pushLog(res.message, res.ok ? 'ok' : 'fail')
+  })
 }
 
 // 渡劫面板交互（事件委托：面板每次重绘，避免丢监听）

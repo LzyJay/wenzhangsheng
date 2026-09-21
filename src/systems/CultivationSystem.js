@@ -26,6 +26,8 @@ import {
   TRIAL_PREPS
 } from '../data/realms.js'
 import { MAT_DROPS } from '../data/alchemy.js'
+import { trialTextOf } from '../data/trialTexts.js'   // V6.4 批 D1：渡劫八关口的分界文案（叠加，不改 TRIAL_NODES）
+import { LEGACY } from '../data/storyEndings.js'      // V6.8 批 F：转世遗产口径（天逆珠免罚 / 功德折扣的真源）
 // 游戏历（主人 2026-09-17）：调息冷却 / 道伤时长一律用游戏历文案
 import { fmtGameDuration } from '../data/gametime.js'
 import { clamp } from '../util/num.js'   // 区间钳制单一真源（零依赖叶子层 src/util/）
@@ -83,11 +85,56 @@ class CultivationSystem {
     return { rateMul: this.world.rateMul, trialMul: this.world.trialMul }
   }
 
+  /**
+   * 当前世界 id（V6.4 批 D1；只读直读 `state.world.worldId`，照 DungeonSystem.worldId 惯例**不经懒建**）。
+   * 未抽定 / 未登记界 → `''`；此时渡劫关口一律回落 `TRIAL_NODES` 原 `desc`（默认界逐位不变）。
+   */
+  get worldId () {
+    const w = this.state.world
+    return (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+  }
+
   /** 世界对当前灵根档位的突破成本修正（青岚界伪灵根 +10%）；未接世界 = 中性 1 */
   get worldRootCostMul () {
     if (!this.world) return 1
     const rarity = this.roots && this.roots.drawn ? this.roots.tier.rarity : null
     return this.world.rootCostMul(rarity)
+  }
+
+  /**
+   * V6.8 批 F：九鼎「功德折扣」——跨世功德换突破成本折让（封顶 −20%）。
+   *   读 `state.legacy.gongde`（由 RebirthSystem 按本界功德结转而来）：无功德 = 中性 1。
+   *   与 `worldRootCostMul` 同为**成本乘区因子**，两者相乘进 `getNeeded`（口径不改骨架）。
+   */
+  get gongdeCostMul () {
+    const g = (this.state.legacy && typeof this.state.legacy.gongde === 'number') ? this.state.legacy.gongde : 0
+    if (!(g > 0)) return 1
+    return clamp(1 - g / LEGACY.gongde.fullAt, 1 - LEGACY.gongde.maxCut, 1)
+  }
+
+  /**
+   * V6.10 批 H：世界机制给的**一次性**突破成本修正（通天「天道 · 赌一把」讲价）。
+   *   读 `state.world.specialState.tiandaoMul`（0.8 讲成价 / 1.1 失手）；**突破结算时消费并清除**。
+   *   未登记 / 未抽定界恒为 1（成本乘区逐位不变）。
+   */
+  get mechCostMul () {
+    const w = this.state.world
+    const sp = w && w.specialState
+    const v = sp && sp.tiandaoMul
+    return (Number.isFinite(v) && v > 0) ? clamp(v, 0.8, 1.2) : 1
+  }
+
+  /**
+   * 消费掉**一次性**突破 / 渡劫效果（成败都算用掉 —— 「下次」的语义）：
+   *   · 世界机制「天道讲价」→ `world.specialState.tiandaoMul`（突破成本 ×0.8 / ×1.1）
+   *   · 事件「真假天劫符」  → `eventState.tribEasePct`（渡劫单雷 +N%）
+   */
+  _consumeMechCostMul () {
+    const w = this.state.world
+    const sp = w && w.specialState
+    if (sp && 'tiandaoMul' in sp) delete sp.tiandaoMul
+    const es = this.state.eventState
+    if (es && 'tribEasePct' in es) delete es.tribEasePct
   }
 
   /** 功法乘区（已装备功法的产出加成合计，加法叠加）；未接功法时为 0 */
@@ -132,15 +179,19 @@ class CultivationSystem {
     // 2.11 天道契合乘区：顺天值档位决定（天谴 ×0.8 … 天命 ×1.3）；未接 life 视为凡常 ×1
     const fitMul = this.life ? this.life.fitRateMul : 1
 
+    // V6.12 批 G4：宗门道统（法修挂机产出 +8%）；未入宗恒 0 —— 落实先前 `parts.sect` 的占位
+    const sectPct = (this.sect && this.sect.daoBonus) ? this.sect.daoBonus.qi : 0
+
     // 公式（《数据模型》§十四）：基准产出 × 世界系数 × 灵根系数 × (1+功法加成) × (1+buff合计) × 契合度系数
-    const mul = clamp(worldRateMul * rootMods.rateMul * (1 + techPct) * (1 + buffPct) * fitMul, 0.05, 100)
+    //   V6.12 批 G4 追加 (1+宗门道统)
+    const mul = clamp(worldRateMul * rootMods.rateMul * (1 + techPct) * (1 + buffPct) * fitMul * (1 + sectPct), 0.05, 100)
     return {
       base,
       mul,
       rootMul: rootMods.rateMul,
       techPct,
       eff: base * mul,
-      parts: { world: worldRateMul, root: rootMods.rateMul, technique: techPct, dwelling: 0, sect: 0, buff: buffPct, fit: fitMul }
+      parts: { world: worldRateMul, root: rootMods.rateMul, technique: techPct, dwelling: 0, sect: sectPct, buff: buffPct, fit: fitMul }
     }
   }
 
@@ -193,7 +244,7 @@ class CultivationSystem {
   /** 升级所需灵气：cost(当前级 + 1) × 灵根成本乘区；满级返回 Infinity */
   getNeeded () {
     if (this.isMaxLevel) return Infinity
-    return getNextBreakthrough(this.level).costQi * this.rootMods.costMul * this.worldRootCostMul
+    return getNextBreakthrough(this.level).costQi * this.rootMods.costMul * this.worldRootCostMul * this.gongdeCostMul * this.mechCostMul
   }
 
   /** 进度 0~1（灵气为单一池：既是进度也是库存） */
@@ -263,8 +314,8 @@ class CultivationSystem {
    */
   getBreakthroughPreview (nowMs = Date.now()) {
     const plan = getNextBreakthrough(this.level)
-    // 成本乘区：灵根（真灵根 −5% / 天灵根 −15%）× 世界（青岚界伪灵根 +10%）
-    plan.need = plan.costQi * this.rootMods.costMul * this.worldRootCostMul
+    // 成本乘区：灵根（真灵根 −5% / 天灵根 −15%）× 世界（青岚界伪灵根 +10%）× 功德（九鼎折扣，封顶 −20%）
+    plan.need = plan.costQi * this.rootMods.costMul * this.worldRootCostMul * this.gongdeCostMul * this.mechCostMul
     const need = plan.need
     const qi = this.state.resources.qi
     const cooldownSec = this.getCooldownRemain(nowMs)
@@ -286,7 +337,10 @@ class CultivationSystem {
       const node = trialNodeIndex(this.level)
       const preps = this.prepSummary(node)
       const fitPct = this.life ? this.life.fitTrialPct : 0
-      const bonus = surplus.bonus + preps.pct + fitPct
+      // V6.10 批 H：事件侧「真假天劫符」—— 下次渡劫单雷 +N%（一次性；与准备 / 契合同一加成位）
+      const es0 = this.state.eventState
+      const easePct = (es0 && Number.isFinite(es0.tribEasePct)) ? es0.tribEasePct : 0
+      const bonus = surplus.bonus + preps.pct + fitPct + easePct
       trial = this.getTrialChance(node, this.state.trialState.consecutiveFails, bonus)
       trial.node = node
       trial.nodeName = this.trialNodeView(node).name
@@ -384,6 +438,9 @@ class CultivationSystem {
     const state = this.state
     const fromName = plan.fromName
 
+    // V6.10 批 H：一次性突破成本修正 —— 成功也算用掉（「下次突破」的语义）
+    this._consumeMechCostMul()
+
     // 开销：清空本级所需灵气（含灵根成本乘区）
     state.resources.qi = Math.max(0, state.resources.qi - preview.need)
 
@@ -463,10 +520,61 @@ class CultivationSystem {
     }
   }
 
+  /**
+   * V6.8 批 F：破晓「天逆珠」免罚（每世 1 枚，转世重发）。
+   *   命中：渡劫关口 + 当前界为破晓 + `state.legacy.tiannizhu > 0`。
+   *   命中后扣 1 枚，**跳过修为损失与道伤**；但垫劫补正 / 连败计数 / 战绩照记 ——
+   *   否则「免罚」反而让玩家更难触发 3 连败保底，与设计意图相反。
+   * @returns {object|null} null = 未命中（照常走失败结算）
+   */
+  _tryTianNiZhu (preview, nowMs) {
+    if (!preview.isTrial) return null
+    const state = this.state
+    const lg = state.legacy
+    if (!lg || !(lg.tiannizhu > 0)) return null
+    const w = state.world
+    const wid = (w && typeof w === 'object' && typeof w.worldId === 'string') ? w.worldId : ''
+    if (wid !== LEGACY.tiannizhu.world) return null
+    lg.tiannizhu -= 1
+
+    const { plan } = preview
+    state.stats.totalFails = (state.stats.totalFails || 0) + 1
+    state.stats.totalTrials += 1
+    state.trialState.consecutiveFails += 1
+    state.trialState.lastAttemptAt = nowMs
+    state.player.cooldownUntil = nowMs + FAILURE_PLAN.tribulation.cooldownSec * 1000
+    this._recordTrial(trialNodeIndex(plan.fromLevel), false, preview.probability)
+    this.clearPreps()   // 服下的丹已化入经脉（与普通失败同口径）
+
+    const pct = (preview.probability * 100).toFixed(1)
+    return {
+      ok: true,
+      success: false,
+      pardoned: true,
+      type: plan.type,
+      label: plan.label,
+      fromName: plan.fromName,
+      toName: plan.targetName,
+      probability: preview.probability,
+      lostQi: 0,
+      cooldownSec: FAILURE_PLAN.tribulation.cooldownSec,
+      floatText: '天逆珠绽裂…',
+      detail: `渡劫失败：三道天雷未能过二（成功率 ${pct}%）—— 天逆珠绽裂，替汝挡下此劫（本世免罚 1 枚，转世重发）。`,
+      outcome: '失败（天逆珠免罚）'
+    }
+  }
+
   _settleFailure (preview, { roll, nowMs }) {
     const { plan } = preview
     const state = this.state
     const lossPlan = FAILURE_PLAN[plan.type] || FAILURE_PLAN.minor
+
+    // V6.10 批 H：一次性突破成本修正 —— 失败也算用掉（「下次突破」的语义）
+    this._consumeMechCostMul()
+
+    // V6.8 批 F：破晓「天逆珠」先判 —— 命中则整支返回，不走下面的损失 / 道伤结算
+    const pardoned = this._tryTianNiZhu(preview, nowMs)
+    if (pardoned) return pardoned
 
     // 失败：损失 30%（小重 20%）当前灵气储备，下限 0；不掉级、不遗失宝物
     const lostQi = state.resources.qi * lossPlan.qiLossPct
@@ -579,17 +687,21 @@ class CultivationSystem {
     return Math.max(byLevel, flagged)
   }
 
-  /** 单关口档案（含战绩；index 越界自动收敛） */
+  /** 单关口档案（含战绩；index 越界自动收敛）——V6.4 起带 `worldDesc`（本界文案，未登记界为空串） */
   trialNodeView (index = this.trialNode) {
     const i = Math.min(Math.max(index | 0, 0), TRIAL_NODES.length - 1)
     const st = this.tribul.nodeStats[String(i)] || { tries: 0, passes: 0 }
-    return { ...TRIAL_NODES[i], total: TRIAL_NODES.length, tries: st.tries, passes: st.passes }
+    return {
+      ...TRIAL_NODES[i], total: TRIAL_NODES.length, tries: st.tries, passes: st.passes,
+      worldDesc: trialTextOf(this.worldId, i)
+    }
   }
 
   /** 八关口全览：passed 已渡 ｜ current 当前 ｜ locked 尚未行至 */
   nodesView () {
     const cleared = this.trialCleared
     const cur = this.trialNode
+    const wid = this.worldId
     return TRIAL_NODES.map((n, i) => {
       const st = this.tribul.nodeStats[String(i)] || { tries: 0, passes: 0 }
       return {
@@ -600,7 +712,9 @@ class CultivationSystem {
         passes: st.passes,
         passed: i < cleared,
         current: i === cur,
-        locked: i > cleared
+        locked: i > cleared,
+        // V6.4 批 D1：本界关口文案（未抽定 / 未登记界 → ''，面板回落原 desc）
+        worldDesc: trialTextOf(wid, i)
       }
     })
   }

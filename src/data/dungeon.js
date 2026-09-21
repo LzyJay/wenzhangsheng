@@ -172,10 +172,10 @@ export function techPoolOf (depth) {
  * 字段：unlockRealm 对齐 REALM_META 下标（2 金丹 3 元婴 4 化神 5 炼虚）；matPerH 1~2。
  */
 export const SIGNATURE_DUNGEONS = [
-  { id: 'sig_tianhe', name: '天河秘境', theme: '水行 · 灵泉产出', source: '《修真聊天群》', unlockRealm: 2,
+  { id: 'sig_tianhe', name: '天河秘境', theme: '水行 · 灵泉产出', source: '《我师兄实在太稳健了》', unlockRealm: 2,
     material: 'mat_lingcao', matPerH: 2,
     desc: '一川星辉垂落如瀑，掬一捧便是半瓶灵液。' },
-  { id: 'sig_yaochi', name: '瑶池秘境', theme: '灵药 · 灵圃产出', source: '《修真聊天群》', unlockRealm: 2,
+  { id: 'sig_yaochi', name: '瑶池秘境', theme: '灵药 · 灵圃产出', source: '《我师兄实在太稳健了》', unlockRealm: 2,
     material: 'mat_lingcao', matPerH: 2,
     desc: '池畔仙桃三千年一熟，药香隔十里可闻。' },
   { id: 'sig_minghe', name: '冥河禁地', theme: '高危 · 绝品产出', source: '《一念永恒》', unlockRealm: 4,
@@ -184,13 +184,13 @@ export const SIGNATURE_DUNGEONS = [
   { id: 'sig_huanyue', name: '幻月洞府', theme: '洞府 · 传承', source: '《诛仙》', unlockRealm: 3,
     material: 'frag_canjuan', matPerH: 1,
     desc: '月上中天时石门自开，雾里看剑，剑里看心。' },
-  { id: 'sig_shijian', name: '时间秘境', theme: '时间 · 挂机倍速', source: '《修真聊天群》', unlockRealm: 3,
+  { id: 'sig_shijian', name: '时间秘境', theme: '时间 · 挂机倍速', source: '《我师兄实在太稳健了》', unlockRealm: 3,
     material: 'mat_lingcao', matPerH: 2,
     desc: '洞中一日，世上……不，是洞中一日，世上才一时。' },
-  { id: 'sig_tianting', name: '天庭碎片秘境', theme: '遗迹 · 仙品产出', source: '《修真聊天群》', unlockRealm: 5,
+  { id: 'sig_tianting', name: '天庭碎片秘境', theme: '遗迹 · 仙品产出', source: '《我师兄实在太稳健了》', unlockRealm: 5,
     material: 'mat_kuang', matPerH: 2,
     desc: '旧日天庭崩碎后的残垣，断瓦里偶见仙家气度。' },
-  { id: 'sig_hualing', name: '化灵遗迹', theme: '古修 · 功法残卷', source: '《修真聊天群》', unlockRealm: 3,
+  { id: 'sig_hualing', name: '化灵遗迹', theme: '古修 · 功法残卷', source: '《我师兄实在太稳健了》', unlockRealm: 3,
     material: 'frag_canjuan', matPerH: 2,
     desc: '古修坐化之地，灵气化了形，会在廊下走来走去。' },
   { id: 'sig_qiling', name: '泣灵秘藏', theme: '宝藏 · 一次性', source: '《凡人修仙传》', unlockRealm: 3,
@@ -209,9 +209,10 @@ export const SIGNATURE_DUNGEONS = [
     material: 'frag_canjuan', matPerH: 1,
     desc: '风中自有人抚琴，听懂了，道行便长一分。' },
 
-  // ── V5.4 A4b · 补齐 6 条（各配一个原缺本源界：破晓 / 望族 / 幽傩 / 天工 / 武元 / 香火）──────
+  // ── V5.4 A4b · 补齐 6 条（各配一个原缺本源界：破晓 / 望族 / 幽傩 / 天工 / 无缺 / 香火）──────
   //   口径：source 必须＝该界 worlds.js 的 proto（本源＝原著出处；V5.1-自测 / V5.4-自测 双向盯）；
-  //   门槛按世界难度错开（因果·进阶 3 / 家族经营 2 / 黑暗高难 4 / 匠造 3 / 武道经商 2 / 神道游历 3）。
+  //   门槛按世界难度错开（因果·进阶 3 / 家族经营 2 / 黑暗高难 4 / 匠造 3 / 古典极致 2 / 神道游历 3）。
+  //   11 号换源《我欲封天》后本条同步更名（id 保留，存档兼容）。
   { id: 'sig_nixing', name: '逆星洞府', theme: '洞府 · 因果传承', source: '《仙逆》', unlockRealm: 3,
     material: 'frag_canjuan', matPerH: 2,
     desc: '洞壁刻满星辰与因果，进得去的人，出来都像换了一条命。' },
@@ -224,9 +225,12 @@ export const SIGNATURE_DUNGEONS = [
   { id: 'sig_shenji', name: '神机炉坊', theme: '匠造 · 机关炉火', source: '《仙工开物》', unlockRealm: 3,
     material: 'mat_kuang', matPerH: 2,
     desc: '炉火三百年未熄，傀儡在流水线上排成一队，等着上工。' },
-  { id: 'sig_yuanshi', name: '元石斗场', theme: '武道 · 技炼赌斗', source: '《没钱修什么仙？》', unlockRealm: 2,
+  // ⚠ id 锁定（招牌秘境键位 / 存档，2026-09-20 换源）：`sig_yuanshi` 字面带「元石」属**历史键名残留**，
+  //   与已废弃的旧原型「元石斗场」无关——对外名已改「赐名台」、`source` 已改《我欲封天》，
+  //   material / matPerH / unlockRealm 零改动；禁止按旧名"修正" id（改 id ＝ 老档招牌识别失败）。
+  { id: 'sig_yuanshi', name: '赐名台', theme: '极致 · 点化赋形', source: '《我欲封天》', unlockRealm: 2,
     material: 'mat_kuang', matPerH: 1,
-    desc: '台上打得热闹，台下押得更热闹；赢家通吃，输家去挖矿。' },
+    desc: '半成形的器与灵排着队等你开口——叫出名字，它们就替你站稳了。' },
   { id: 'sig_wuzhu', name: '无主祠庙', theme: '神道 · 香火遗留', source: '《我本无意成仙》', unlockRealm: 3,
     material: 'mat_lingcao', matPerH: 1,
     desc: '不知哪路神道留下的祠庙，香火未尽，来者自取。' }

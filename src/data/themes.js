@@ -38,7 +38,7 @@ export const SKIN_AUTO = 'auto'
 export const WORLD_SKIN = {
   qinglan: 'yue',      // 青岚界 #7fd6a8 青绿
   poxiao: 'yue',       // 破晓星域 #9fb8ff 蓝紫
-  denghuo: 'zhu',      // 灯火人间 #ffb37a 暖橙
+  denghuo: 'zhu',      // 观云界 #ffb37a 暖橙
   qingyun: 'yue',      // 青云古界 #7fd6c8 青碧
   wangzu: 'default',   // 望族山河 #ffd98a 金黄
   younuo: 'xuan',      // 幽傩界 #c98bff 紫
@@ -46,7 +46,7 @@ export const WORLD_SKIN = {
   tiangong: 'default', // 天工界 #b8c98b 黄绿
   liumian: 'xuan',     // 六面囚笼 #b9a8c9 灰紫
   jiuding: 'default',  // 九鼎九州 #e8c878 正金
-  wuyuan: 'zhu',       // 武元大陆 #e8986a 橘红
+  wuyuan: 'zhu',       // 无缺古界 #e8986a 橘红
   xianghuo: 'xuan'     // 人间香火 #cfc7ba 暖灰
 }
 
