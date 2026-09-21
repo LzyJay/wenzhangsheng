@@ -705,14 +705,29 @@ export function travelDayKey (now) {
   return periodKeyOf(now, gameDaysToMs(MECH.dayGameDays))
 }
 
-/** V5.3 A4c：抽一次「界游之礼」（random 注入便于自测；返回 rolls 条目副本） */
-export function rollTravelGift (r = Math.random()) {
+/** V5.3 A4c：抽一次「界游之礼」（random 注入便于自测；返回 rolls 条目副本）
+ *  V7.3 **池化**：给 `worldId` 时，两条材料礼改派**本界材料**（当量等价、按界定种子稳定）——
+ *    · 灵草席（p 0.3，原 3 份 ≈ 1 h）→ 本界**凡档**材料，份数按当量折算
+ *    · 妖丹席（p 0.2，原 1 份 ＝ 1 h）→ 本界**良档**材料
+ *    · 灵石席与权重**逐位不动**；**不给 worldId 时完全走原 rolls**（老调用 / 自测零行为差）。 */
+export function rollTravelGift (r = Math.random(), worldId = null) {
   let acc = 0
+  let hit = null
   for (const it of WORLD_TRAVEL.gift.rolls) {
     acc += it.p
-    if (r < acc) return Object.assign({}, it)
+    if (r < acc) { hit = it; break }
   }
-  return Object.assign({}, WORLD_TRAVEL.gift.rolls[WORLD_TRAVEL.gift.rolls.length - 1])
+  if (!hit) hit = WORLD_TRAVEL.gift.rolls[WORLD_TRAVEL.gift.rolls.length - 1]
+  if (!worldId || hit.kind !== 'mats') return Object.assign({}, hit)
+  const pool = worldMatPool(worldId, [hit.id === 'mat_yaodan' ? 'liang' : 'fan'])
+  if (!pool.length) return Object.assign({}, hit)
+  let s = 2166136261
+  const seed = `gift|${worldId}|${hit.id}`
+  for (let i = 0; i < seed.length; i++) { s ^= seed.charCodeAt(i); s = Math.imul(s, 16777619) }
+  const pick = pool[(s >>> 0) % pool.length]
+  const target = matsHOf([{ id: hit.id, n: hit.n }])          // 原席当量（灵草×3 ＝ 1h；妖丹×1 ＝ 1h）
+  const n = Math.max(1, Math.round(target / (matHOf(pick.id) || 1)))
+  return { p: hit.p, kind: 'mats', id: pick.id, n, fromWorld: true }
 }
 
 /** V5.3 A4c：「界游之礼」折当量 h（量级口径 / 回执用） */

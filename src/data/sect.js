@@ -279,6 +279,54 @@ export const SHOP = [
   { id: 'mat_wannianru',   cost: 1100, n: 1 }
 ]
 
+// ═══════════════════════════════════════════════════════════════════════════
+// V7.3（D9 批次）· **宗门商店按界补货**
+//   口径：常驻 10 条（`SHOP`，逐条不动、被 V3.5.1 钉住）之外，**每界再补 2 件本界材料**
+//     （凡 / 良 / 珍 / 绝 档，由「界 ＋ 定种子」选出 → 同一存档稳定，不引随机）。
+//   贡献价 ≈ 材料当量 × `SHOP_CONTRIB_PER_H`（与既有 10 条同量级：灵草 1/3 h → 93 ≈ 表中 100）。
+//   ⚠ 导入就地声明（ESM 顶层声明可置于任意位置，调用时已初始化）。
+// ═══════════════════════════════════════════════════════════════════════════
+import { worldMatPool } from './items.js'
+import { matHOf } from './worldMechanics.js'
+
+/** 每界补货席数 */
+export const SHOP_WORLD_SLOTS = 2
+/** 贡献价折算：1 h 当量 → 多少贡献（与常驻 10 条同量级） */
+export const SHOP_CONTRIB_PER_H = 280
+/** 本界补货的品质档（绝档可入买路，仙档量级过大不入店） */
+export const SHOP_WORLD_QUALITIES = ['fan', 'liang', 'zhen', 'jue']
+
+/** 某界的补货条目（未抽定界 / 该界无材料 → 空数组） */
+export function worldShopEntries (worldId) {
+  if (!worldId) return []
+  const pool = worldMatPool(worldId, SHOP_WORLD_QUALITIES)
+  if (!pool.length) return []
+  let s = 2166136261
+  const seed = `shop|${worldId}`
+  for (let i = 0; i < seed.length; i++) { s ^= seed.charCodeAt(i); s = Math.imul(s, 16777619) }
+  s = s >>> 0
+  const picked = []
+  const used = new Set()
+  const want = Math.min(SHOP_WORLD_SLOTS, pool.length)
+  while (picked.length < want) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0
+    const idx = s % pool.length
+    if (used.has(idx)) continue
+    used.add(idx)
+    picked.push(pool[idx])
+  }
+  return picked.map((x) => ({
+    id: x.id,
+    cost: Math.max(20, Math.round(matHOf(x.id) * SHOP_CONTRIB_PER_H)),
+    n: 1
+  }))
+}
+
+/** 本界货架 ＝ 常驻 10 条 ＋ 本界补货（worldId 未定时只有常驻 → 老档行为逐位不变） */
+export function shopOf (worldId) {
+  return SHOP.concat(worldShopEntries(worldId))
+}
+
 /**
  * 任务板刷新周期（主人 2026-09-19：宗门任务单独设为 **7 游戏天**）
  *   新换算：1 现实分钟 = 1 游戏天 → 7 游戏天 ≈ 现实 7 分钟一轮。

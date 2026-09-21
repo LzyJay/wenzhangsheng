@@ -44,10 +44,12 @@ export const ACHV_NO_TITLE = ''
  */
 export const ACHV_TIERS = [
   { idx: 0, id: 'fan', name: '凡', need: 0, title: '初入道途', shards: 0, mats: [] },
-  { idx: 1, id: 'ling', name: '灵', need: 150, title: '灵心初启', shards: 2, mats: [{ id: 'mat_lingcao', n: 3 }] },
-  { idx: 2, id: 'xuan', name: '玄', need: 400, title: '玄机客', shards: 4, mats: [{ id: 'mat_kuang', n: 3 }] },
-  { idx: 3, id: 'wang', name: '王', need: 800, title: '一方尊', shards: 6, mats: [{ id: 'mat_yaodan', n: 3 }] },
-  { idx: 4, id: 'huang', name: '皇', need: 1300, title: '皇者无名', shards: 10, mats: [{ id: 'mat_yaodan', n: 5 }, { id: 'mat_kuang', n: 5 }] }
+  // V7.3（D9 批次）：每档追加 1 件**公用库新增材料**（V7.1 入库的 97 条）——
+  //   成就阶梯是世界无关的长期线，故挂**公用**材料而非本界物（本界物走宗门 / 秘境 / 机制）。
+  { idx: 1, id: 'ling', name: '灵', need: 150, title: '灵心初启', shards: 2, mats: [{ id: 'mat_lingcao', n: 3 }, { id: 'mat_xuanshen', n: 2 }] },
+  { idx: 2, id: 'xuan', name: '玄', need: 400, title: '玄机客', shards: 4, mats: [{ id: 'mat_kuang', n: 3 }, { id: 'mat_chiyang', n: 2 }] },
+  { idx: 3, id: 'wang', name: '王', need: 800, title: '一方尊', shards: 6, mats: [{ id: 'mat_yaodan', n: 3 }, { id: 'mat_zifu', n: 1 }] },
+  { idx: 4, id: 'huang', name: '皇', need: 1300, title: '皇者无名', shards: 10, mats: [{ id: 'mat_yaodan', n: 5 }, { id: 'mat_kuang', n: 5 }, { id: 'mat_longxian', n: 1 }] }
 ]
 
 /**

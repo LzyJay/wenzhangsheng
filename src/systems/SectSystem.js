@@ -62,6 +62,7 @@
 
 import {
   SECT, RANKS, TASKS, LIBRARY, SHOP, sectDayKey, getTask,
+  shopOf,              // V7.3：宗门商店按界补货（常驻 10 条 ＋ 本界 2 件）
   contribOf, REALM_GRANTS, realmGrant, taskDurationMs, CONTRIB_GROWTH,
   SECT_REFRESH_DAYS, sectMsToNextRefresh, fmtSectRefreshPeriod,
   DABI, dabiKeyOf, dabiMsToNext, dabiContribOf, OFFERING, offeringContrib,
@@ -1596,7 +1597,9 @@ class SectSystem {
 
   shopView () {
     const d = this.joined ? this.rankMeta.discount : 0
-    return SHOP.map((e) => {
+    // V7.3：按界补货（常驻 10 条 ＋ 本界 2 件材料）；未抽定世界 → 与改前逐位一致
+    const wid = (this.state.world && this.state.world.worldId) || null
+    return shopOf(wid).map((e) => {
       const it = getItem(e.id)
       return {
         ...e,

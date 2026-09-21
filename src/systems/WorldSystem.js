@@ -358,7 +358,8 @@ class WorldSystem {
     }
     if (kind === 'talisman') {
       // 「界游之礼」＝换界后首个轮回的小机缘（增补 §一.4）——只给灵石或既有材料，不发境界
-      const g = rollTravelGift(rg)
+      // V7.3：界游之礼**池化** —— 传入**换界后的新界**，材料礼改派本界材料（当量等价、稳定）
+      const g = rollTravelGift(rg, (atomic && atomic.worldId) || null)
       out.gift = g
       out.giftH = travelGiftH(g)
       if (g.kind === 'mats') {
