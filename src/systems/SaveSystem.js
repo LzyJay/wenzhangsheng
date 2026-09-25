@@ -22,7 +22,7 @@ import { OFFLINE, getRealmMeta } from '../data/realms.js'
 
 const SAVE_KEY = 'wenzhangsheng.save'      // localStorage 键（兼作热备槽）
 const SCHEMA_VERSION = 1
-const APP_VERSION = '6.9.0'                                // V6.9.0（阶段六终版：剧情线批 A~H / 12 界宗门 96 宗 / 功法库 144 本·界 / 换界散修化 / 转世与各界继承 / GM 控制台 / 12 界事件池与入宗彩蛋）；与 package.json 同步
+const APP_VERSION = '7.9.0'                                // V7.9.0（阶段七终版：物品库 504 条与行囊图标网格 / 品质色板珍良互换 ＋ 类型页签 / 481 条产出接线与炼器线 / 秘境 66 档位槽 / 世界机制第 2 材料位）；与 package.json 同步
 const LOG_MAX = 40
 const BACKUP_INTERVAL_MS = 60 * 1000
 
