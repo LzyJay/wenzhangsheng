@@ -95,7 +95,6 @@ npm run dev
 | `npm start` | 以实机窗口启动 |
 | `npm run dist` | 打包 NSIS 安装版与便携版到 `release/` |
 | `npm run gen:values` | 由 `data-source/` 的 CSV 重生成数值表 |
-| `node tests/wcs_regress.mjs` | 全量回归（3720 项 / 71 份，约 4 秒） |
 
 > 打包务必**先 `npm run build` 再 `npm run dist`** —— electron-builder 不会自动重建 `dist/`，否则会把旧产物打进包（历史上踩过一次）。
 
@@ -168,10 +167,6 @@ A：不能，已内置单实例锁；重复启动只会唤起已有小窗。
 
 A：改 `data-source/72级数值表.csv`，再跑 `npm run gen:values` 重新生成 `src/data/realms.js`（生成物禁手改）。改平衡只动 `src/data/`。
 
-#### Q：为什么回归能跑这么快？
-
-A：`tests/wcs_regress.mjs` 自动择优解释器（真 Node ≥22.7 免 flag → 带 `--experimental-detect-module` → Electron 充当 node），默认 `min(8, CPU)` 并发。可用 `--only V4.7` 只跑单份、`--serial` 串行排查、`--list` 只列清单。
-
 #### Q：构建时报模块解析失败？
 
 A：先确认 Node ≥ 22.7，再删 `node_modules` 重装。本项目为纯前端构建，不需要 Python / C++ 工具链。
@@ -191,11 +186,10 @@ A：先确认 Node ≥ 22.7，再删 `node_modules` 重装。本项目为纯前�
 | `src/ui/` | 面板视图层（10 个 `*Panel.js`，只依赖 `data/` 与 `util/`） |
 | `src/scenes/` `src/audio/` | Phaser 表现层 / 程序化音效引擎 |
 | `electron/` | 主进程（窗口 / 托盘 / 存档 IO，无游戏逻辑） |
-| `tests/` | 回归运行器与 CDP 真机脚本；阶段一遗留脚本在 `tests/legacy/` |
 | `scripts/` | 工具链（数值生成 / 对账 / 图标 / MD→HTML / 起窗口） |
 | `docs/` `design/` `data-source/` | 过程文档 / UI 交互稿 / 数值源 CSV |
 
-版本号在 `package.json` 与 `src/systems/SaveSystem.js` 的 `APP_VERSION` 两处同步，另有 16 份自测版本钉同改，共 18 份。
+版本号在 `package.json` 与 `src/systems/SaveSystem.js` 的 `APP_VERSION` 两处同步。
 
 ## 音乐素材
 
