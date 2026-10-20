@@ -17,3 +17,19 @@ $null
 # 系统杂项
 Thumbs.db
 Desktop.ini
+
+# 音频素材：第三方商业唱片，版权原因不入库（目录内仅保留 README.md）
+assets/bgm/*.mp3
+assets/bgm/*.wav
+assets/bgm/*.ogg
+assets/bgm/*.m4a
+assets/bgm/*.flac
+
+# 环境变量与密钥：任何情况下都不提交
+.env
+.env.*
+*.pem
+*.key
+*.p12
+secrets/
+
