@@ -15,8 +15,8 @@
 
 | 路径 | 角色 |
 |---|---|
-| `D:\02 work\小软件\修仙\问长生\` | **git 仓库根**（本会话新建，main 分支） |
-| `D:\02 work\小软件\修仙\游戏开发\04-分阶段开发计划\问长生-开发计划.md` | **开发计划册（进度唯一权威）**。⚠ 在 git 仓库**外**，文档改动不进 git status；回写义务见其 §十「四件套」 |
+| `<项目根>\` | **git 仓库根**（本会话新建，main 分支） |
+| `<工作区根>\游戏开发\04-分阶段开发计划\问长生-开发计划.md` | **开发计划册（进度唯一权威）**。⚠ 在 git 仓库**外**，文档改动不进 git status；回写义务见其 §十「四件套」 |
 | `src/main.js` | 装配层（唯一同时碰 DOM 与 systems；现 3822 行） |
 | `src/ui/*Panel.js` | **V3.5.5 新建的面板 UI 层**（共 8 个，见下） |
 | `src/systems/` | 纯逻辑层（禁 DOM/Phaser/横向 import）——**本任务不动** |
@@ -83,7 +83,7 @@ e7b7c99 feat(V3.5.3): 统一加成接口——BonusLedger + 五提供方 bonusVi
 
 ```bash
 export PATH="/c/Program Files/nodejs:$PATH"        # Git Bash 下必须（node 24.19，本会话装的）
-cd "/d/02 work/小软件/修仙/问长生"
+cd "<项目根>"
 
 node tests/wcs_regress.mjs                          # 全量回归（期望 1547 全绿）
 npm run build                                       # vite 三产物（node 24 下无 html-proxy 坑）
@@ -91,7 +91,7 @@ npm run build                                       # vite 三产物（node 24 �
 # 实机（沙箱内 start/cmd 均会被作业对象回收，必须 WMI 创建）：
 SAVE="$APPDATA/问长生/save.json"
 cp "$SAVE" "$TEMP/save.backup3.json" && sha256sum "$SAVE"   # 点验前备份留哈希
-wmic process call create '"D:\02 work\小软件\修仙\问长生\node_modules\electron\dist\electron.exe" "D:\02 work\小软件\修仙\问长生" --remote-debugging-port=9229'
+wmic process call create '"<项目根>\node_modules\electron\dist\electron.exe" "<项目根>" --remote-debugging-port=9229'
 sleep 10 && curl -s http://127.0.0.1:9229/json/version      # 确认 CDP 活了
 node tests/V2整合版-CDP烟测.mjs                      # 期望 40/40
 node scripts/verify_v35x.mjs 9229                    # 期望 11/11（版本断言先改成 3.5.6）

@@ -1,7 +1,7 @@
 # Handoff: 问长生 v0.2.0 · 2.1 功法系统收尾 + 后续模块开发
 
 **Written:** 2026-09-16 20:10 (GMT+8) by 小w（前一 AI 会话，因主人要求收尾交接而中断）
-**Repo / cwd:** `D:\02 work\小软件\修仙\问长生\`（无 git —— **无版本控制，任何改动前先自行备份**）
+**Repo / cwd:** `<项目根>\`（无 git —— **无版本控制，任何改动前先自行备份**）
 **接手方式：** 主人会把本文档指给你。读完先按「开工前必读」核对理解，再动手。
 
 ---
@@ -30,9 +30,9 @@
 ## 二、Context & current state
 
 ### 项目三层结构（重要）
-- `D:\02 work\小软件\修仙\` = 设计库（玩法/数值权威源，只读参考）
-- `D:\02 work\小软件\修仙\游戏开发\` = 开发文档（`04-分阶段开发计划\问长生-开发计划.md` 是计划权威源）
-- `D:\02 work\小软件\修仙\问长生\` = **代码工程**（你在这里干活）
+- `<工作区根>\` = 设计库（玩法/数值权威源，只读参考）
+- `<工作区根>\游戏开发\` = 开发文档（`04-分阶段开发计划\问长生-开发计划.md` 是计划权威源）
+- `<项目根>\` = **代码工程**（你在这里干活）
 
 ### 本会话已完成（截至交接）
 
@@ -53,7 +53,7 @@
 | `index.html` | `:898-912 #tech-overlay`（复用背包遮罩骨架 `.ov`，含 #tech-note 脚注）；样式与 `#bag-overlay` 同族 |
 | `package.json` | version = 0.2.0 |
 
-**C. 逻辑自测（全在 `C:\Users\Administrator\AppData\Local\Temp\wcs_*.mjs`，纯 Node 直跑 systems 层）：**
+**C. 逻辑自测（全在 `%TEMP%\wcs_*.mjs`，纯 Node 直跑 systems 层）：**
 - `wcs_selftest.mjs` 39 项（数值公式）/ `wcs_selftest2.mjs` 47 项（灵根+存档+单位+三态默认）/ `wcs_selftest3.mjs` 44 项 / `wcs_geom.mjs` 20 项（视觉几何）/ `wcs_selftest4.mjs` **81 项（功法，本轮新增）** —— **合计 231 项，2026-09-16 20:05 实测全绿**
 - `wcs_cdp.mjs / cdp2 / cdp3` 是 CDP 真机驱动脚本（cdp3 覆盖 v0.1.4 的 62 项含拖拽区安全 9 条；**尚未为 0.2.0 功法 UI 写 CDP 用例**）
 
@@ -81,31 +81,31 @@
 - vite/npm/build 受 safe-delete 钩子干扰 → 必须加 `env -u CODEBUDDY_SAFE_DELETE_SANDBOX -u CODEBUDDY_SAFE_DELETE_REPORT_PATH`
 - electron-builder 必设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 和 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`
 - 杀进程用 `MSYS_NO_PATHCONV=1 taskkill /F /IM electron.exe`（或 `问长生.exe`）；打包版进程名叫 `问长生.exe`
-- node 用托管版：`export PATH="/c/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3:$PATH"`
+- node 用托管版：`export PATH="$HOME/.workbuddy/binaries/node/versions/22.22.2-3:$PATH"`
 
 **Verify by running（全部实测过）：**
 
 ```bash
 # ① 逻辑自测（231 项，应全绿）
-export PATH="/c/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2-3:$PATH"
-cd "C:/Users/Administrator/AppData/Local/Temp"
+export PATH="$HOME/.workbuddy/binaries/node/versions/22.22.2-3:$PATH"
+cd "%TEMP%"
 for f in wcs_selftest.mjs wcs_selftest2.mjs wcs_selftest3.mjs wcs_geom.mjs wcs_selftest4.mjs; do
   node "$f" 2>&1 | grep -a -E "通过 |❌"
 done
 
 # ② 构建（应 ✓ built）
-cd "D:/02 work/小软件/修仙/问长生"
+cd "<项目根>"
 env -u CODEBUDDY_SAFE_DELETE_SANDBOX -u CODEBUDDY_SAFE_DELETE_REPORT_PATH npx vite build
 
 # ③ 启动应用（CDP 验证用；主人屏幕上会出现 420×320 小窗）
 env -u ELECTRON_RUN_AS_NODE -u CODEBUDDY_SAFE_DELETE_SANDBOX ./node_modules/electron/dist/electron.exe . --remote-debugging-port=9222
 # 然后 Node WebSocket 连 http://127.0.0.1:9222/json 驱动（参考 Temp 里 wcs_cdp3.mjs 的写法；
-# CDP 方法论与坑见技能 C:\Users\Administrator\.workbuddy\skills\electron-ui-headless-verify\SKILL.md）
+# CDP 方法论与坑见技能 %USERPROFILE%\.workbuddy\skills\electron-ui-headless-verify\SKILL.md）
 
 # ④ 打包（收尾时执行）
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
-cd "D:/02 work/小软件/修仙/问长生"
+cd "<项目根>"
 env -u ELECTRON_RUN_AS_NODE -u CODEBUDDY_SAFE_DELETE_SANDBOX -u CODEBUDDY_SAFE_DELETE_REPORT_PATH npx electron-builder --win --x64
 
 # ⑤ 打包版冒烟：跑 release/win-unpacked/问长生.exe，读 %APPDATA%\问长生\save.json
@@ -117,7 +117,7 @@ env -u ELECTRON_RUN_AS_NODE -u CODEBUDDY_SAFE_DELETE_SANDBOX -u CODEBUDDY_SAFE_D
 1. **先跑 ①② 确认基线全绿**（交接时的状态）。
 2. **写 `wcs_cdp4.mjs`**（抄 cdp3 骨架）覆盖 v0.2.0：三处 UI 小修断言（无 #life-hint、灵石为文字、背包按钮为「背包」文本且不遮突破按钮）+ 功法遮罩全流程（打开→17 本目录渲染→升级按钮→装备/卸下→槽位解锁文案→与背包互斥→Esc 顺序→拖拽区安全→零报错）。注意：升级会扣资源，用 `window.__wcs` 直接构造或测完把 state 还原（勿写盘）。
 3. 全绿后向主人汇报（简短），请主人手验：升级扣费、装备后 `+xx/秒` 变化、背包键不挡突破按钮。
-4. 更新 `问长生-开发计划.md`（v0.2.0 增量 + 2.1 打勾 + 版本日志行），`python scripts/md2html.py <md> <html>` 重新生成 HTML（python 用 `C:\Users\Administrator\.workbuddy\binaries\python\versions\3.13.12\python.exe`）。
+4. 更新 `问长生-开发计划.md`（v0.2.0 增量 + 2.1 打勾 + 版本日志行），`python scripts/md2html.py <md> <html>` 重新生成 HTML（python 用 `%USERPROFILE%\.workbuddy\binaries\python\versions\3.13.12\python.exe`）。
 5. 打包 0.2.0 + 冒烟（见 ④⑤）。
 6. 问主人是否清掉 release 里 0.1.4 旧 exe。
 7. 主人验收后 → 等主人指令进 2.2 丹药系统（**不要自作主张开新模块**）。
@@ -126,5 +126,5 @@ env -u ELECTRON_RUN_AS_NODE -u CODEBUDDY_SAFE_DELETE_SANDBOX -u CODEBUDDY_SAFE_D
 
 - 上一轮曾出现过 **1 次未复现的偶发**（v0.1.4 时背包首次打开失败，连跑 6 次不再出现）——如实记录在案，若 CDP 中再遇到要追查而非略过。
 - 会话曾因 429 限流中断一次（主人说「继续」后接上），无遗留损坏；交接前已复核全部自测与构建。
-- `Temp` 目录里的测试脚本没有备份，**建议接手后立刻把 `wcs_*.mjs` 拷一份进项目**（如 `D:\02 work\小软件\修仙\问长生\tests\`），机器清 Temp 就没了。
-- 主人长期项目记忆在 `C:\Users\Administrator\WorkBuddy\Try\.workbuddy\memory\MEMORY.md`（含更全的项目铁律），可交叉阅读，但以本文档 + 设计库文档为准。
+- `Temp` 目录里的测试脚本没有备份，**建议接手后立刻把 `wcs_*.mjs` 拷一份进项目**（如 `<项目根>\tests\`），机器清 Temp 就没了。
+- 主人长期项目记忆在 `%USERPROFILE%\WorkBuddy\Try\.workbuddy\memory\MEMORY.md`（含更全的项目铁律），可交叉阅读，但以本文档 + 设计库文档为准。
